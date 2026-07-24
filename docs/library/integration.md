@@ -115,3 +115,8 @@ apply_cleanup_with_segments(
 | Models | Prefer `tiny-q5_1` / `base-q5_1` for first download |
 | Threading | Inference runs on `spawn_blocking` |
 | Build | cmake + C++ toolchain at **build** time; ffmpeg at **runtime** for files |
+
+## Native hosts
+
+Prefer **[`aurum-ffi`](ffi.md)** (C ABI) instead of shelling out to the CLI.
+Rust hosts may use `aurum_ffi::Engine` or call `aurum-core` directly as above.

@@ -108,9 +108,10 @@ nav:
       - Cleanup: guide/cleanup.md
       - Configuration: guide/configuration.md
       - Output formats: guide/output.md
-  - Library (aurum-core):
+  - Library:
       - Overview: library/overview.md
       - Integration: library/integration.md
+      - Native embeds (FFI): library/ffi.md
       - Partials & cancel: library/partials.md
   - Operations:
       - Troubleshooting: operations/troubleshooting.md

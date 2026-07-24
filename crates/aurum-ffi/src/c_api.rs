@@ -511,7 +511,7 @@ mod tests {
     }
 
     #[test]
-    fn reserved_nonzero_rejected() {
+    fn reserved_nonzero_rejected_on_config_and_opts() {
         use std::ffi::CString;
         use tempfile::tempdir;
         let dir = tempdir().unwrap();
@@ -526,5 +526,24 @@ mod tests {
         let mut out = ptr::null_mut();
         let st = unsafe { aurum_engine_create(&cfg, &mut out) };
         assert_eq!(st, FfiStatus::InvalidArg.as_i32());
+
+        cfg.reserved = [0; 6];
+        let mut engine = ptr::null_mut();
+        assert_eq!(unsafe { aurum_engine_create(&cfg, &mut engine) }, 0);
+
+        let model = CString::new("tiny-q5_1").unwrap();
+        let mut opts = AurumTranscribeOptsC {
+            model: model.as_ptr(),
+            language: ptr::null(),
+            timestamps: 0,
+            reserved: [0; 7],
+        };
+        opts.reserved[3] = 1;
+        let mut tr = ptr::null_mut();
+        let st = unsafe {
+            aurum_engine_transcribe_pcm(engine, [0.0f32; 16].as_ptr(), 16, &opts, &mut tr)
+        };
+        assert_eq!(st, FfiStatus::InvalidArg.as_i32());
+        unsafe { aurum_engine_destroy(engine) };
     }
 }

@@ -32,11 +32,11 @@ flowchart LR
 
 ## Design rules
 
-1. **CLI owns UX** — progress, first-run tips, OpenRouter SRT policy
-2. **Core owns truth** — providers return normalized results + honesty fields
-3. **FFI owns a narrow embed surface** — PCM, preload, cancel, rules cleanup (`aurum-ffi`)
-4. **Fail closed** — bad magic, oversized audio, missing keys, offline missing models
-5. **No default network** except explicit model download or remote provider
+1. **CLI owns UX** — progress, first-run tips, OpenRouter SRT policy  
+2. **Core owns truth** — providers return normalized results + honesty fields  
+3. **FFI owns a narrow embed surface** — PCM, preload, cancel, rules cleanup ([guide](../library/ffi.md))  
+4. **Fail closed** — bad magic, oversized audio, missing keys, offline missing models  
+5. **No default network** except explicit model download or remote provider  
 6. **ASR ≠ cleanup** — separate stages (transcription vs text cleanup)
 
 ## Process model cache

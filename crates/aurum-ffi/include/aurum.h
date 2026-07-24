@@ -9,6 +9,9 @@
  *   - At most one exclusive op (preload or transcribe_pcm) per engine at a time.
  *   - Distinct engines may run concurrently (process-wide Tokio runtime).
  *   - aurum_engine_cancel is safe from another thread during transcribe.
+ *   - Do NOT call blocking exports from inside a host async runtime task
+ *     (e.g. nested Tokio); they use Handle::block_on and will fail/panic
+ *     if already inside a runtime — call from a plain OS thread / queue.
  *
  * Lifecycle:
  *   - Zero-initialize config/opts structs (reserved fields must be 0).

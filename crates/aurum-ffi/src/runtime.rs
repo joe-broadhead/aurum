@@ -47,10 +47,6 @@ pub fn end_op() {
     ACTIVE_OPS.fetch_sub(1, Ordering::SeqCst);
 }
 
-pub fn active_ops() -> usize {
-    ACTIVE_OPS.load(Ordering::SeqCst)
-}
-
 /// Reject new work and wait briefly for in-flight ops, then mark shut down.
 ///
 /// The Tokio `Runtime` remains until process exit (OnceCell); new calls fail with `STATE`.

@@ -66,3 +66,13 @@ aurum --version
 
 You do not need the CLI binary to use the library. See
 [Library integration](../library/integration.md).
+
+## Native library (`aurum-ffi`)
+
+For C/Swift/Kotlin embeds, build the FFI crate (not needed for CLI users):
+
+```bash
+cargo build -p aurum-ffi --release
+```
+
+See [Native embeds](../library/ffi.md).

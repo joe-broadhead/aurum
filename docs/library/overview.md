@@ -1,9 +1,14 @@
-# aurum-core overview
+# Library overview
 
-`aurum-core` is the reusable library behind the CLI. Apps can share the same
-transcription and cleanup stack without shelling out to the binary.
+Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 
-## What you get
+| Crate | Role |
+|-------|------|
+| **`aurum-core`** | Engine: providers, PCM, models, cleanup, output |
+| **`aurum-stt`** | CLI package (`cargo install aurum-stt` → binary `aurum`) |
+| **`aurum-ffi`** | C ABI façade for native hosts ([FFI guide](ffi.md)) |
+
+## aurum-core
 
 | Area | API |
 |------|-----|
@@ -17,24 +22,25 @@ transcription and cleanup stack without shelling out to the binary.
 | Output | `format_result` — txt / srt / json |
 | Post-ASR | special-token strip, timestamp clamp |
 
+```toml
+aurum-core = "0.0.0"
+# or git tag = "v0.0.0"
+```
+
+See [Integration](integration.md).
+
 ## Stability
 
-!!! warning "Experimental API"
-    Until `0.1.0`, expect breaking changes. Pin a git **rev** or release **tag**
-    in production consumers.
+!!! warning "Experimental Rust API"
+    Until `aurum-core` `0.1.0`, expect breaking changes. Pin a git **tag** or **rev**.
 
-## Crates.io
+The **C ABI** (`AURUM_ABI_VERSION`) is versioned separately and is intended to stay
+narrow; see [Native embeds](ffi.md).
 
-Published on crates.io as **`aurum-core`**. CLI binary package is **`aurum-stt`** (`cargo install aurum-stt`).
+## crates.io
 
-## C / native embeds (`aurum-ffi`)
-
-Native hosts should use the **`aurum-ffi`** crate (C header `include/aurum.h`):
-
-- `aurum_engine_transcribe_pcm` — 16 kHz mono f32
-- `aurum_engine_preload` / `is_model_ready`
-- `aurum_engine_cancel`
-- `aurum_cleanup_rules` — on-device only
-- `aurum_shutdown` — process teardown (Metal-safe)
-
-Rust hosts may call the same façade via `aurum_ffi::Engine`.
+| Package | Install / depend |
+|---------|------------------|
+| `aurum-core` | `aurum-core = "0.0.0"` |
+| `aurum-stt` | `cargo install aurum-stt` → runs `aurum` |
+| `aurum-ffi` | Build from the workspace (link `libaurum_ffi` + `aurum.h`) |

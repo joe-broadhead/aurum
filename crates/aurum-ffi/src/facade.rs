@@ -194,7 +194,8 @@ impl Engine {
             cancel: Some(self.cancel.clone()),
         };
 
-        // Borrow PCM through `block_on` — synchronous; no extra full-buffer copy.
+        // Synchronous block_on: no *extra* FFI-side buffer copy. Core still copies once
+        // inside `from_pcm_slice` so the spawn_blocking worker can own `'static` PCM.
         let outcome =
             runtime::block_on(async { self.provider.transcribe_pcm(samples, &options).await });
 
@@ -238,6 +239,9 @@ impl Engine {
 }
 
 /// On-device rules cleanup (no network, no engine handle required).
+///
+/// Does not participate in engine busy / `ACTIVE_OPS` accounting (pure string work;
+/// no whisper context). `shutdown`'s drain waits only for preload/transcribe.
 pub fn cleanup_rules(text: &str, style: CleanupStyle) -> Result<String, FfiError> {
     let rules = RulesCleanup::new();
     let core_style = style.to_core();
@@ -250,19 +254,13 @@ pub fn cleanup_rules(text: &str, style: CleanupStyle) -> Result<String, FfiError
     }
 }
 
-/// Process-level teardown: wait for in-flight ops, clear whisper cache, stop new work.
+/// Process-level teardown: wait for in-flight engine ops, clear whisper cache, stop new work.
 ///
 /// Hosts must not start new calls after this. Safe to call with no engines left.
 /// Prefer destroy engines first; then `shutdown` before process exit (Metal).
 pub fn shutdown() {
-    runtime::shutdown_runtime();
-    // Only clear contexts once ops have drained (shutdown_runtime waits briefly).
-    if runtime::active_ops() == 0 {
-        clear_context_cache();
-    } else {
-        // Still clear — process is exiting; better than leaking Metal state.
-        clear_context_cache();
-    }
+    runtime::shutdown_runtime(); // rejects new work + brief drain of ACTIVE_OPS
+    clear_context_cache();
 }
 
 #[cfg(test)]
@@ -395,5 +393,29 @@ mod tests {
 
         let err = engine.preload("tiny-q5_1").unwrap_err();
         assert_eq!(err.status, FfiStatus::State);
+    }
+
+    #[test]
+    fn distinct_engines_have_independent_busy() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().display().to_string();
+        let a = Engine::new(EngineConfig {
+            cache_dir: path.clone(),
+            local_only: true,
+            progress_logging: false,
+        })
+        .unwrap();
+        let b = Engine::new(EngineConfig {
+            cache_dir: path,
+            local_only: true,
+            progress_logging: false,
+        })
+        .unwrap();
+
+        let _hold_a = BusyGuard::acquire(&a.busy, "test").unwrap();
+        // B must not see STATE from A's exclusive op — only ModelNotReady (empty cache).
+        let err = b.preload("tiny-q5_1").unwrap_err();
+        assert_eq!(err.status, FfiStatus::ModelNotReady);
+        assert!(!b.busy.load(Ordering::SeqCst));
     }
 }

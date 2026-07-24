@@ -64,6 +64,15 @@ pub struct TranscriptionResult {
     /// Whether segment timestamps are considered reliable.
     #[serde(default = "default_true")]
     pub timestamps_reliable: bool,
+    /// Post-ASR cleanup style applied to [`Self::text`] (default: raw).
+    #[serde(default)]
+    pub cleanup_style: crate::cleanup::CleanupStyle,
+    /// Cleanup backend used, if any cleanup beyond raw was applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_provider: Option<crate::cleanup::CleanupProviderKind>,
+    /// Pre-cleanup ASR text when cleanup rewrote [`Self::text`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_text: Option<String>,
 }
 
 fn default_backend_kind() -> BackendKind {
@@ -90,6 +99,9 @@ impl TranscriptionResult {
             duration_secs,
             backend_kind: BackendKind::Asr,
             timestamps_reliable: true,
+            cleanup_style: crate::cleanup::CleanupStyle::Raw,
+            cleanup_provider: None,
+            original_text: None,
         }
     }
 
@@ -111,6 +123,9 @@ impl TranscriptionResult {
             backend_kind: BackendKind::LlmAssisted,
             // LLM timestamps are never treated as reliable ASR timing.
             timestamps_reliable: false,
+            cleanup_style: crate::cleanup::CleanupStyle::Raw,
+            cleanup_provider: None,
+            original_text: None,
         }
     }
 }

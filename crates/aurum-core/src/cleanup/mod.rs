@@ -122,6 +122,9 @@ pub async fn apply_cleanup(
     style: CleanupStyle,
 ) -> Result<CleanupResult> {
     if matches!(style, CleanupStyle::Raw) {
+        result.cleanup_style = CleanupStyle::Raw;
+        result.cleanup_provider = None;
+        result.original_text = None;
         return Ok(CleanupResult {
             text: result.text.clone(),
             style,
@@ -130,7 +133,10 @@ pub async fn apply_cleanup(
         });
     }
     let out = cleanup.cleanup(&result.text, style).await?;
+    result.original_text = Some(out.original_text.clone());
     result.text = out.text.clone();
+    result.cleanup_style = out.style;
+    result.cleanup_provider = Some(out.provider);
     Ok(out)
 }
 

@@ -17,11 +17,18 @@
   "duration_secs": 5.29,
   "backend_kind": "asr",
   "timestamps_reliable": true,
+  "cleanup_style": "raw",
   "segments": [
     { "start": 0.0, "end": 3.9, "text": "…" }
   ]
 }
 ```
 
-For OpenRouter, `backend_kind` is `llm_assisted` and `timestamps_reliable` is
-always `false`.
+After `--cleanup clean` (rules), JSON also includes:
+
+- `cleanup_style`: e.g. `"clean"`
+- `cleanup_provider`: `"rules"` or `"openrouter"`
+- `original_text`: pre-cleanup ASR string
+
+For OpenRouter **transcription**, `backend_kind` is `llm_assisted` and
+`timestamps_reliable` is always `false` (independent of cleanup).

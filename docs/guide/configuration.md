@@ -26,6 +26,11 @@ model = "base"
 language = "auto"
 output = "txt"
 
+[cleanup]
+style = "raw"              # raw | clean | bullets | professional | summary
+provider = "rules"         # rules (on-device) | openrouter
+# openrouter_model = "google/gemini-2.5-flash"
+
 [openrouter]
 # api_key = "sk-or-..."   # prefer env var
 # model = "google/gemini-2.5-flash"

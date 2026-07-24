@@ -150,6 +150,9 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         cli.output_file.as_deref(),
         cli.timestamps,
         cli.verbose,
+        cli.cleanup.as_deref(),
+        cli.cleanup_provider.as_deref(),
+        cli.cleanup_model.as_deref(),
     );
 
     let model = cfg.resolve_model(cli.model.is_some());
@@ -279,20 +282,16 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         }
     };
 
-    let cleanup_style = cli
-        .cleanup
-        .as_deref()
-        .map(CleanupStyle::parse)
-        .transpose()?
-        .unwrap_or(CleanupStyle::Raw);
-    let cleanup_kind = cli
-        .cleanup_provider
-        .as_deref()
-        .map(CleanupProviderKind::parse)
-        .transpose()?
-        .unwrap_or(CleanupProviderKind::Rules);
+    // Config file defaults, then CLI overrides (already merged into cfg).
+    let cleanup_style = CleanupStyle::parse(&cfg.cleanup_style)?;
+    let cleanup_kind = CleanupProviderKind::parse(&cfg.cleanup_provider)?;
 
-    if !matches!(cleanup_style, CleanupStyle::Raw) {
+    // Always stamp cleanup metadata (raw when off) for JSON consumers.
+    if matches!(cleanup_style, CleanupStyle::Raw) {
+        result.cleanup_style = CleanupStyle::Raw;
+        result.cleanup_provider = None;
+        result.original_text = None;
+    } else {
         if cli.verbose || atty_stderr() {
             eprintln!(
                 "aurum: cleanup style={} provider={}",
@@ -309,7 +308,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
                 let c = OpenRouterCleanup::new(
                     cfg.openrouter_api_key.clone(),
                     Some(cfg.openrouter_base_url.clone()),
-                    cli.cleanup_model
+                    cfg.cleanup_openrouter_model
                         .clone()
                         .or_else(|| Some(cfg.openrouter_default_model.clone())),
                 )?;

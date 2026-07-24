@@ -37,6 +37,35 @@ aurum talk.m4a --cleanup clean --cleanup-provider openrouter
 aurum talk.m4a --cleanup summary --cleanup-provider openrouter --cleanup-model google/gemini-2.5-flash
 ```
 
+## Config defaults
+
+```toml
+[cleanup]
+style = "raw"              # raw | clean | bullets | professional | summary
+provider = "rules"         # rules | openrouter
+# openrouter_model = "google/gemini-2.5-flash"
+```
+
+CLI flags override the file. Precedence: CLI > config > built-in (`raw` / `rules`).
+
+## JSON fields
+
+When `-o json`:
+
+```json
+{
+  "text": "Hello world.",
+  "cleanup_style": "clean",
+  "cleanup_provider": "rules",
+  "original_text": "um, hello world",
+  "backend_kind": "asr",
+  "timestamps_reliable": true
+}
+```
+
+- `cleanup_style` is always present (`raw` when cleanup is off).
+- `cleanup_provider` and `original_text` appear only when a non-raw cleanup ran.
+
 ## Library
 
 ```rust

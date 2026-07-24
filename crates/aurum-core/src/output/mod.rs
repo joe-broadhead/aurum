@@ -128,6 +128,11 @@ struct JsonOutput<'a> {
     backend_kind: crate::providers::BackendKind,
     /// False for LLM-assisted backends — segment times are best-effort only.
     timestamps_reliable: bool,
+    cleanup_style: crate::cleanup::CleanupStyle,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cleanup_provider: Option<crate::cleanup::CleanupProviderKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original_text: Option<&'a str>,
     segments: &'a [Segment],
 }
 
@@ -140,6 +145,9 @@ fn format_json(result: &TranscriptionResult) -> Result<String> {
         duration_secs: result.duration_secs,
         backend_kind: result.backend_kind,
         timestamps_reliable: result.timestamps_reliable,
+        cleanup_style: result.cleanup_style,
+        cleanup_provider: result.cleanup_provider,
+        original_text: result.original_text.as_deref(),
         segments: &result.segments,
     };
     serde_json::to_string_pretty(&payload).map_err(|e| {
@@ -198,7 +206,25 @@ mod tests {
         assert_eq!(v["language"], "en");
         assert_eq!(v["timestamps_reliable"], true);
         assert_eq!(v["backend_kind"], "asr");
+        assert_eq!(v["cleanup_style"], "raw");
+        assert!(v.get("cleanup_provider").is_none() || v["cleanup_provider"].is_null());
+        assert!(v.get("original_text").is_none() || v["original_text"].is_null());
         assert!(v["segments"].as_array().unwrap().len() == 2);
+    }
+
+    #[test]
+    fn json_includes_cleanup_metadata() {
+        let mut r = sample_result();
+        r.cleanup_style = crate::cleanup::CleanupStyle::Clean;
+        r.cleanup_provider = Some(crate::cleanup::CleanupProviderKind::Rules);
+        r.original_text = Some("um hello".into());
+        r.text = "Hello.".into();
+        let s = format_result(&r, OutputFormat::Json).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+        assert_eq!(v["cleanup_style"], "clean");
+        assert_eq!(v["cleanup_provider"], "rules");
+        assert_eq!(v["original_text"], "um hello");
+        assert_eq!(v["text"], "Hello.");
     }
 
     #[test]

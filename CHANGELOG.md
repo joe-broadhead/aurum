@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Download progress callbacks (`DownloadProgress` / `with_download_progress`)
 - Cleanup/flow stage (Zephyr-style): `RulesCleanup` on-device + `OpenRouterCleanup` LLM
 - CLI: `--cleanup`, `--cleanup-provider`, `--cleanup-model`
+- Config `[cleanup]` defaults (`style`, `provider`, `openrouter_model`)
+- JSON: `cleanup_style`, optional `cleanup_provider` + `original_text`
 
 ## [0.0.0] - 2026-07-24
 

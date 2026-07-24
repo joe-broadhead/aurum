@@ -18,6 +18,8 @@ pub const DEFAULT_LOCAL_MODEL: &str = "base";
 pub const DEFAULT_OPENROUTER_MODEL: &str = "google/gemini-2.5-flash";
 pub const DEFAULT_LANGUAGE: &str = "auto";
 pub const DEFAULT_OUTPUT: &str = "txt";
+pub const DEFAULT_CLEANUP: &str = "raw";
+pub const DEFAULT_CLEANUP_PROVIDER: &str = "rules";
 
 /// On-disk configuration file schema.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -26,6 +28,8 @@ pub struct ConfigFile {
     pub default: DefaultSection,
     #[serde(default)]
     pub openrouter: OpenRouterSection,
+    #[serde(default)]
+    pub cleanup: CleanupSection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +65,29 @@ pub struct OpenRouterSection {
     pub base_url: Option<String>,
 }
 
+/// Post-ASR cleanup defaults (Zephyr-style flow).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupSection {
+    /// `raw` | `clean` | `bullets` | `professional` | `summary`
+    #[serde(default = "default_cleanup")]
+    pub style: String,
+    /// `rules` (on-device) | `openrouter`
+    #[serde(default = "default_cleanup_provider")]
+    pub provider: String,
+    /// Optional model id when provider is openrouter.
+    pub openrouter_model: Option<String>,
+}
+
+impl Default for CleanupSection {
+    fn default() -> Self {
+        Self {
+            style: default_cleanup(),
+            provider: default_cleanup_provider(),
+            openrouter_model: None,
+        }
+    }
+}
+
 fn default_provider() -> String {
     DEFAULT_PROVIDER.to_string()
 }
@@ -72,6 +99,12 @@ fn default_language() -> String {
 }
 fn default_output() -> String {
     DEFAULT_OUTPUT.to_string()
+}
+fn default_cleanup() -> String {
+    DEFAULT_CLEANUP.to_string()
+}
+fn default_cleanup_provider() -> String {
+    DEFAULT_CLEANUP_PROVIDER.to_string()
 }
 
 /// Fully-resolved runtime configuration after merging all sources.
@@ -87,6 +120,12 @@ pub struct Config {
     pub openrouter_api_key: Option<String>,
     pub openrouter_base_url: String,
     pub openrouter_default_model: String,
+    /// Cleanup style name (`raw`, `clean`, …).
+    pub cleanup_style: String,
+    /// Cleanup backend name (`rules`, `openrouter`).
+    pub cleanup_provider: String,
+    /// Optional dedicated model for OpenRouter cleanup.
+    pub cleanup_openrouter_model: Option<String>,
     pub config_path: Option<PathBuf>,
     pub cache_dir: PathBuf,
 }
@@ -162,6 +201,9 @@ impl Config {
             openrouter_api_key,
             openrouter_base_url,
             openrouter_default_model,
+            cleanup_style: file.cleanup.style,
+            cleanup_provider: file.cleanup.provider,
+            cleanup_openrouter_model: file.cleanup.openrouter_model,
             config_path,
             cache_dir,
         }
@@ -178,6 +220,9 @@ impl Config {
         output_file: Option<&Path>,
         timestamps: bool,
         verbose: bool,
+        cleanup: Option<&str>,
+        cleanup_provider: Option<&str>,
+        cleanup_model: Option<&str>,
     ) {
         if let Some(p) = provider {
             self.provider = p.to_string();
@@ -199,6 +244,15 @@ impl Config {
         }
         if verbose {
             self.verbose = true;
+        }
+        if let Some(c) = cleanup {
+            self.cleanup_style = c.to_string();
+        }
+        if let Some(p) = cleanup_provider {
+            self.cleanup_provider = p.to_string();
+        }
+        if let Some(m) = cleanup_model {
+            self.cleanup_openrouter_model = Some(m.to_string());
         }
     }
 
@@ -286,6 +340,11 @@ model = "base"
 language = "auto"
 output = "txt"
 
+[cleanup]
+# style = "raw"            # raw | clean | bullets | professional | summary
+# provider = "rules"       # rules (on-device) | openrouter
+# openrouter_model = "google/gemini-2.5-flash"
+
 [openrouter]
 # api_key = "sk-or-..."
 # model = "google/gemini-2.5-flash"
@@ -329,6 +388,35 @@ model = "google/gemini-2.5-flash"
         assert_eq!(cfg.output, "json");
         assert_eq!(cfg.openrouter_api_key.as_deref(), Some("test-key"));
         assert_eq!(cfg.openrouter_default_model, "google/gemini-2.5-flash");
+        assert_eq!(cfg.cleanup_style, "raw");
+        assert_eq!(cfg.cleanup_provider, "rules");
+    }
+
+    #[test]
+    fn parses_cleanup_section() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[default]
+provider = "local"
+model = "base"
+
+[cleanup]
+style = "clean"
+provider = "rules"
+openrouter_model = "google/gemini-2.5-flash"
+"#,
+        )
+        .unwrap();
+        let cfg = Config::load_from(&path).unwrap();
+        assert_eq!(cfg.cleanup_style, "clean");
+        assert_eq!(cfg.cleanup_provider, "rules");
+        assert_eq!(
+            cfg.cleanup_openrouter_model.as_deref(),
+            Some("google/gemini-2.5-flash")
+        );
     }
 
     #[test]
@@ -343,6 +431,10 @@ provider = "local"
 model = "base"
 language = "auto"
 output = "txt"
+
+[cleanup]
+style = "clean"
+provider = "rules"
 "#,
         )
         .unwrap();
@@ -355,6 +447,9 @@ output = "txt"
             Some(Path::new("out.srt")),
             true,
             true,
+            Some("summary"),
+            Some("openrouter"),
+            Some("openai/gpt-audio-mini"),
         );
         assert_eq!(cfg.provider, "openrouter");
         assert_eq!(cfg.model.as_deref(), Some("google/gemini-2.5-flash"));
@@ -363,6 +458,12 @@ output = "txt"
         assert_eq!(cfg.output_file.as_deref(), Some(Path::new("out.srt")));
         assert!(cfg.timestamps);
         assert!(cfg.verbose);
+        assert_eq!(cfg.cleanup_style, "summary");
+        assert_eq!(cfg.cleanup_provider, "openrouter");
+        assert_eq!(
+            cfg.cleanup_openrouter_model.as_deref(),
+            Some("openai/gpt-audio-mini")
+        );
     }
 
     #[test]
@@ -373,5 +474,7 @@ output = "txt"
         assert_eq!(cfg.provider, "local");
         assert_eq!(cfg.language, "auto");
         assert_eq!(cfg.output, "txt");
+        assert_eq!(cfg.cleanup_style, "raw");
+        assert_eq!(cfg.cleanup_provider, "rules");
     }
 }

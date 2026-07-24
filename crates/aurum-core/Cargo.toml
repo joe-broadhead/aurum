@@ -5,11 +5,24 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/aurum-core"
 rust-version.workspace = true
-description = "Reusable local-first transcription core for Aurum (experimental API)"
-readme = "../../README.md"
-keywords = ["transcription", "whisper", "speech-to-text", "stt"]
-categories = ["multimedia::audio"]
+description = "Reusable local-first transcription core for Aurum (whisper.cpp + provider trait)"
+readme = "README.md"
+keywords = ["transcription", "whisper", "speech-to-text", "stt", "asr"]
+categories = ["multimedia::audio", "api-bindings"]
+include = [
+  "src/**/*",
+  "examples/**/*",
+  "Cargo.toml",
+  "README.md",
+  "LICENSE",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 async-trait = { workspace = true }

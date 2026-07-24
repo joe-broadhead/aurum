@@ -1,5 +1,5 @@
 /target
-# Cargo.lock is committed for the binary application
+# Cargo.lock is committed for the application workspace
 **/*.rs.bk
 .DS_Store
 *.swp
@@ -9,8 +9,12 @@
 !.env.example
 /dist
 /tmp
+/site
+.venv/
 *.bin
 !tests/fixtures/**
 .idea/
 .vscode/
 *.pdb
+release-assets/
+release-notes.md

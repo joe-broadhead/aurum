@@ -1,205 +1,99 @@
 # Aurum
 
-**Aurum** *(Latin: gold)* is a local-first, cross-platform transcription CLI with a clean provider abstraction.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/Rust-1.89%2B-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Docs](https://img.shields.io/badge/docs-mkdocs%20material-blue.svg?logo=materialformkdocs&logoColor=white)](https://joe-broadhead.github.io/aurum/)
+[![CI](https://github.com/joe-broadhead/aurum/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/joe-broadhead/aurum/actions/workflows/ci.yml)
 
-- **Local by default** — whisper.cpp, no API key required  
-- **One remote provider** — OpenRouter (LLM-assisted multimodal audio)  
-- **Predictable output** — `txt`, `srt`, `json`  
-- **Workspace layout** — `aurum-core` library + `aurum` CLI binary  
+**Aurum** *(Latin: gold)* — local-first, cross-platform **transcription CLI** with a reusable Rust core for apps like ZephyrFlow.
 
-> Status: **v0.0.0** (experimental). The CLI is usable; the `aurum-core` API is not stable yet.
+- **Local by default** — whisper.cpp, no API key  
+- **Clean provider trait** — OpenRouter optional (LLM-assisted)  
+- **Scriptable output** — `txt` / `srt` / `json`  
+- **Library + CLI** — `aurum-core` + `aurum` binary  
 
-## Quick start
+> Status: **v0.0.0** experimental. No crates.io publish until approved. Releases are tagged via the same prepare → merge → tag → assets flow as ZephyrFlow / dbt-nova.
 
-### Install from source
+## 30-second path
 
 ```bash
-# Prerequisites: Rust 1.89+, cmake, a C/C++ toolchain, ffmpeg
-# macOS:  brew install cmake ffmpeg
-# Ubuntu: sudo apt install build-essential cmake ffmpeg
-
 git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
-cargo install --path crates/aurum
-```
-
-### Transcribe
-
-```bash
-# Local (default) — downloads the "base" model on first run (~142 MB)
-aurum meeting.m4a
-
-# Fast trial model (~32 MB quantized)
-aurum meeting.m4a --model tiny-q5_1
-
-# Subtitles
-aurum meeting.m4a --model small-q5_1 -o srt --output-file meeting.srt
-
-# Structured JSON
-aurum meeting.m4a -o json
-
-# List models + cache status
+./Scripts/install.sh
 aurum models
-
-# Remote via OpenRouter (LLM-assisted — not dedicated ASR)
-export OPENROUTER_API_KEY=sk-or-...
-aurum meeting.m4a --provider openrouter
+aurum meeting.m4a --model tiny-q5_1
 ```
 
-First local run downloads the selected ggml model into the platform cache dir
-(`~/Library/Caches/aurum/models` on macOS, `~/.cache/aurum/models` on Linux) with a progress bar.
+Prerequisites: **Rust 1.89+**, **cmake**, C/C++ toolchain, **ffmpeg**.
 
-## Workspace layout
+## Workspace
 
-```text
-aurum/
-├── crates/
-│   ├── aurum-core/     # reusable library (experimental API)
-│   └── aurum/          # CLI binary
-├── tests/fixtures/     # sample audio
-└── README.md
-```
+| Crate | Role |
+|-------|------|
+| [`aurum-core`](crates/aurum-core) | Reusable library |
+| [`aurum`](crates/aurum) | CLI binary |
 
-Depend on the core from other Rust projects:
+### Use `aurum-core` from another project
 
 ```toml
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "PIN_ME" }
+# or path = "../aurum/crates/aurum-core"
 ```
+
+See [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).
 
 ## CLI
 
-```text
-aurum <AUDIO_FILE> [OPTIONS]
+```bash
+aurum <AUDIO_FILE> [--provider local|openrouter] [--model NAME] [-o txt|srt|json]
 aurum models
-aurum transcribe <AUDIO_FILE> [OPTIONS]
-
-Options:
-  --provider <local|openrouter>   Default: local
-  --model <NAME>                  Local ggml name or OpenRouter model id
-  --language <CODE>               e.g. en, auto (default: auto)
-  -o, --output <txt|srt|json>     Default: txt
-  --output-file <PATH>            Optional explicit output path
-  --timestamps                    Include timestamps where available
-  --allow-unreliable-timestamps   Force SRT on OpenRouter (not recommended)
-  -v, --verbose
-  -h, --help
-  --version
 ```
 
-## Providers
+| Provider | Notes |
+|----------|--------|
+| `local` | whisper.cpp; Metal on macOS; model cache under platform cache dir |
+| `openrouter` | LLM-assisted; `OPENROUTER_API_KEY`; SRT off by default |
 
-### Local (default)
+## Docs
 
-| Detail | Value |
-|--------|--------|
-| Engine | whisper.cpp via `whisper-rs` |
-| Models | full + quantized (`tiny-q5_1`, `base-q5_1`, …) — see `aurum models` |
-| Default | `base` |
-| Cache | platform cache dir + `/models` |
-| GPU | Metal enabled automatically on macOS builds |
-| Context | Process-level model cache (reuse across calls in-process) |
-
-### OpenRouter
-
-OpenRouter does **not** expose `/api/v1/audio/transcriptions`. Aurum sends audio through multimodal **chat completions** (`input_audio`).
-
-> **Semantics:** this is **LLM-assisted** transcription, not a dedicated ASR backend.  
-> It may paraphrase, drop filler, or invent timestamps. Prefer `--provider local` when verbatim accuracy matters.  
-> JSON always sets `timestamps_reliable: false` and `backend_kind: "llm_assisted"`.  
-> SRT is refused unless you pass `--allow-unreliable-timestamps`.
-
-| Detail | Value |
-|--------|--------|
-| Auth | `OPENROUTER_API_KEY` (preferred) or config file |
-| Default model | `google/gemini-2.5-flash` |
-| Upload | Compressed (mp3 when ffmpeg allows), capped ~24 MB |
-
-## Output formats
-
-| Format | Description |
-|--------|-------------|
-| `txt`  | Clean plain text (default) |
-| `srt`  | SubRip cues with timestamps (local ASR only by default) |
-| `json` | `{ text, segments, language, model, provider, duration_secs, backend_kind, timestamps_reliable }` |
-
-## Configuration
-
-Platform config dir + `/aurum/config.toml`  
-(e.g. `~/.config/aurum/config.toml` on Linux, `~/Library/Application Support/aurum/config.toml` on macOS).
-
-```toml
-[default]
-provider = "local"
-model = "base"
-language = "auto"
-output = "txt"
-
-[openrouter]
-# api_key = "sk-or-..."
-# model = "google/gemini-2.5-flash"
+```bash
+python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
+.venv/bin/mkdocs serve
+.venv/bin/mkdocs build --strict
 ```
 
-**Precedence:** CLI flags > environment variables > config file > built-in defaults.
+Published site (when Pages enabled): <https://joe-broadhead.github.io/aurum/>
 
-## Audio handling
-
-- Accepts common formats: mp3, m4a, wav, flac, ogg, …
-- Converts to 16 kHz mono PCM when required
-- Uses **system ffmpeg** (not bundled)
-
-### Safety limits
-
-| Limit | Default |
-|-------|---------|
-| Max duration | ~2.25 hours (aligned with PCM budget) |
-| Max decoded PCM | ~500 MB (enforced during decode) |
-| Max remote upload | ~24 MB compressed |
-
-Whisper special tokens such as `[BLANK_AUDIO]` are stripped. Segment timestamps are clamped to audio duration.
-
-## Library use (experimental)
-
-```rust
-use aurum_core::audio::load_audio;
-use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions, TranscriptionProvider};
-use std::path::PathBuf;
-
-# async fn example() -> aurum_core::Result<()> {
-let audio = load_audio(std::path::Path::new("meeting.m4a")).await?;
-let provider = LocalWhisperProvider::new(PathBuf::from("/tmp/aurum-cache"));
-let result = provider
-    .transcribe(&audio, &TranscriptionOptions {
-        model: "tiny-q5_1".into(),
-        language: "en".into(),
-        timestamps: true,
-    })
-    .await?;
-println!("{}", result.text);
-# Ok(())
-# }
-```
+| | |
+|--|--|
+| Install | [docs/getting-started/installation.md](docs/getting-started/installation.md) |
+| Quickstart | [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md) |
+| Architecture | [docs/development/architecture.md](docs/development/architecture.md) |
+| Release | [docs/development/release.md](docs/development/release.md) |
+| Security | [SECURITY.md](SECURITY.md) |
 
 ## Development
 
 ```bash
-cargo build -p aurum
-cargo test --workspace
-cargo run -p aurum -- tests/fixtures/sample.wav --model tiny-q5_1
-cargo test -p aurum-core --test local_integration -- --ignored --nocapture
+make ci                 # fmt + clippy + test + version-check
+make build              # release CLI
+cargo test --workspace --locked
 ```
+
+## Release (maintainer)
+
+Do **not** tag without approval. Flow mirrors ZephyrFlow:
+
+1. Bump `VERSION` + workspace version + `CHANGELOG`  
+2. `workflow_dispatch` → **Prepare Release**  
+3. Merge `release/x.y.z` PR  
+4. Tag workflow creates `vX.Y.Z` and dispatches multi-platform binary build  
+
+See [docs/development/release.md](docs/development/release.md).
 
 ## Non-goals (v0.0.0)
 
-- Real-time / microphone streaming  
-- Speaker diarization  
-- Summarization / LLM post-processing  
-- Multiple remote providers  
-- GUI / plugins  
-- Stable library API guarantees  
-
-## Name
-
-**Aurum** is Latin for *gold*. Soft fallback name if ever needed: `aurum-stt`.
+Streaming mic, diarization, summarization, multi-remote providers, stable library API.
 
 ## License
 

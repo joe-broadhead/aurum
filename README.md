@@ -14,7 +14,7 @@
 ### Install from source
 
 ```bash
-# Prerequisites: Rust 1.75+, cmake, a C/C++ toolchain, ffmpeg
+# Prerequisites: Rust 1.89+, cmake, a C/C++ toolchain, ffmpeg
 # macOS:  brew install cmake ffmpeg
 # Ubuntu: sudo apt install build-essential cmake ffmpeg
 
@@ -151,8 +151,8 @@ output = "txt"
 
 | Limit | Default |
 |-------|---------|
-| Max duration | 3 hours |
-| Max decoded PCM | ~500 MB |
+| Max duration | ~2.25 hours (aligned with PCM budget) |
+| Max decoded PCM | ~500 MB (enforced during decode) |
 | Max remote upload | ~24 MB compressed |
 
 Whisper special tokens such as `[BLANK_AUDIO]` are stripped. Segment timestamps are clamped to audio duration.

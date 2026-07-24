@@ -1,7 +1,7 @@
 //! CLI definition and orchestration.
 
 use aurum_core::audio;
-use aurum_core::config::{Config, DEFAULT_LOCAL_MODEL, DEFAULT_OPENROUTER_MODEL};
+use aurum_core::config::Config;
 use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
 use aurum_core::output::{self, OutputFormat};
@@ -11,7 +11,7 @@ use aurum_core::providers::{
 };
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Aurum — local-first transcription CLI (Latin: gold).
 #[derive(Debug, Parser)]
@@ -136,7 +136,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         cli.verbose,
     );
 
-    let model = resolve_model(&cfg, cli.model.is_some());
+    let model = cfg.resolve_model(cli.model.is_some());
     let provider_name = cfg.provider.to_ascii_lowercase();
     let format = OutputFormat::parse(&cfg.output)?;
 
@@ -158,13 +158,15 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         .into());
     }
 
-    if provider_name == "openrouter" && want_timestamps && !cli.allow_unreliable_timestamps {
-        if atty_stderr() {
-            eprintln!(
-                "aurum: warning: OpenRouter timestamps are best-effort only \
-                 (timestamps_reliable=false in JSON)"
-            );
-        }
+    if provider_name == "openrouter"
+        && want_timestamps
+        && !cli.allow_unreliable_timestamps
+        && atty_stderr()
+    {
+        eprintln!(
+            "aurum: warning: OpenRouter timestamps are best-effort only \
+             (timestamps_reliable=false in JSON)"
+        );
     }
 
     tracing::info!(
@@ -294,42 +296,6 @@ fn format_approx(n: u64) -> String {
     }
 }
 
-fn resolve_model(cfg: &Config, model_explicitly_set: bool) -> String {
-    if model_explicitly_set {
-        return cfg
-            .model
-            .clone()
-            .unwrap_or_else(|| default_for(&cfg.provider));
-    }
-
-    match cfg.provider.as_str() {
-        "openrouter" => {
-            let m = cfg
-                .model
-                .clone()
-                .unwrap_or_else(|| DEFAULT_OPENROUTER_MODEL.to_string());
-            if m.contains('/') {
-                m
-            } else if m == DEFAULT_LOCAL_MODEL || model::lookup_model(&m).is_ok() {
-                cfg.openrouter_default_model.clone()
-            } else {
-                m
-            }
-        }
-        _ => cfg
-            .model
-            .clone()
-            .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
-    }
-}
-
-fn default_for(provider: &str) -> String {
-    match provider {
-        "openrouter" => DEFAULT_OPENROUTER_MODEL.to_string(),
-        _ => DEFAULT_LOCAL_MODEL.to_string(),
-    }
-}
-
 fn init_tracing(verbose: bool) {
     let filter = if verbose {
         "aurum=debug,aurum_core=debug,info"
@@ -359,11 +325,4 @@ pub fn report_error(err: &TranscriptionError) {
             eprintln!("  Create it with a [openrouter] api_key, or export OPENROUTER_API_KEY.");
         }
     }
-}
-
-#[allow(dead_code)]
-pub fn default_output_path(input: &Path, format: OutputFormat) -> PathBuf {
-    let mut out = input.to_path_buf();
-    out.set_extension(format.default_extension());
-    out
 }

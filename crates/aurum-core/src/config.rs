@@ -148,8 +148,8 @@ impl Config {
             .clone()
             .unwrap_or_else(|| DEFAULT_OPENROUTER_MODEL.to_string());
 
-        let cache_dir = Self::default_cache_dir()
-            .unwrap_or_else(|_| PathBuf::from(std::env::temp_dir()).join("aurum-cache"));
+        let cache_dir =
+            Self::default_cache_dir().unwrap_or_else(|_| std::env::temp_dir().join("aurum-cache"));
 
         Self {
             provider: file.default.provider,
@@ -168,6 +168,7 @@ impl Config {
     }
 
     /// Apply CLI overrides on top of the loaded config.
+    #[allow(clippy::too_many_arguments)]
     pub fn apply_cli(
         &mut self,
         provider: Option<&str>,
@@ -201,17 +202,40 @@ impl Config {
         }
     }
 
-    /// Effective model name for the selected provider.
-    pub fn effective_model(&self) -> String {
-        if let Some(m) = &self.model {
-            // If the user left the generic default "base" while on openrouter, swap to
-            // the openrouter default unless they explicitly set a model via CLI already.
-            // Simpler rule: if provider is openrouter and model looks like a local whisper
-            // short name (no slash), use openrouter default only when model equals local default
-            // AND it came from defaults. For v0 we just return what's set; CLI layer picks
-            // the right default per provider.
-            return m.clone();
+    /// Resolve the effective model for the active provider.
+    ///
+    /// When `model_explicitly_set` is false and the provider is openrouter, a bare
+    /// local whisper name (e.g. config default `base`) is replaced with the
+    /// openrouter default model id.
+    pub fn resolve_model(&self, model_explicitly_set: bool) -> String {
+        if model_explicitly_set {
+            return self
+                .model
+                .clone()
+                .unwrap_or_else(|| self.default_model_for_provider());
         }
+        match self.provider.as_str() {
+            "openrouter" => {
+                let m = self
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| self.openrouter_default_model.clone());
+                if m.contains('/') {
+                    m
+                } else if m == DEFAULT_LOCAL_MODEL || crate::model::lookup_model(&m).is_ok() {
+                    self.openrouter_default_model.clone()
+                } else {
+                    m
+                }
+            }
+            _ => self
+                .model
+                .clone()
+                .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
+        }
+    }
+
+    fn default_model_for_provider(&self) -> String {
         match self.provider.as_str() {
             "openrouter" => self.openrouter_default_model.clone(),
             _ => DEFAULT_LOCAL_MODEL.to_string(),

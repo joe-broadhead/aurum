@@ -43,13 +43,20 @@ pub fn normalize_result(mut result: TranscriptionResult) -> TranscriptionResult 
             continue;
         }
         seg.text = trimmed.to_string();
+        // Drop non-finite / inverted spans (LLM backends can emit NaN).
+        if !seg.start.is_finite() || !seg.end.is_finite() {
+            continue;
+        }
         // Clamp timestamps into [0, duration].
         if result.duration_secs > 0.0 {
             seg.start = seg.start.clamp(0.0, result.duration_secs);
-            seg.end = seg.end.clamp(seg.start, result.duration_secs);
+            seg.end = seg.end.clamp(0.0, result.duration_secs);
         } else {
             seg.start = seg.start.max(0.0);
-            seg.end = seg.end.max(seg.start);
+            seg.end = seg.end.max(0.0);
+        }
+        if seg.end < seg.start {
+            std::mem::swap(&mut seg.start, &mut seg.end);
         }
         cleaned_segments.push(seg);
     }
@@ -98,8 +105,11 @@ fn is_only_marker(text: &str) -> bool {
     if t.is_empty() {
         return false;
     }
-    SPECIAL_MARKERS.iter().any(|m| t.eq_ignore_ascii_case(m))
-        || (t.starts_with('[') && t.ends_with(']') && t.len() <= 32)
+    // Only drop known non-speech markers — not arbitrary bracketed phrases.
+    SPECIAL_MARKERS
+        .iter()
+        .any(|m| t.eq_ignore_ascii_case(m.trim_matches(|c| c == '[' || c == ']')))
+        || SPECIAL_MARKERS.iter().any(|m| t.eq_ignore_ascii_case(m))
 }
 
 /// UTF-8–safe truncation for error messages (never panics on char boundaries).

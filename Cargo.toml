@@ -12,7 +12,7 @@ edition = "2021"
 license = "MIT"
 authors = ["Joe Broadhead"]
 repository = "https://github.com/joe-broadhead/aurum"
-rust-version = "1.75"
+rust-version = "1.89"
 
 [workspace.dependencies]
 aurum-core = { path = "crates/aurum-core", version = "0.0.0" }

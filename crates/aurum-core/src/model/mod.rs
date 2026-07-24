@@ -410,8 +410,11 @@ async fn download_model(info: &ModelInfo, dest: &Path, show_progress: bool) -> R
         let _ = fs::remove_file(&partial);
     }
 
+    // Bound total download time so a stalled transfer can't hold the lock forever.
     let client = reqwest::Client::builder()
         .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(30 * 60))
         .build()
         .map_err(|e| ProviderError::ModelDownload {
             model: info.name.to_string(),
@@ -498,10 +501,52 @@ async fn download_model(info: &ModelInfo, dest: &Path, show_progress: bool) -> R
         "model download complete"
     );
 
+    // Fail closed when we have a known-good pin for this filename.
+    if let Some(expected) = pinned_sha256(info.filename) {
+        if digest != expected {
+            let _ = fs::remove_file(dest);
+            return Err(ProviderError::ModelDownload {
+                model: info.name.to_string(),
+                reason: format!(
+                    "sha256 mismatch (got {digest}, expected {expected}) — refusing to cache"
+                ),
+            }
+            .into());
+        }
+    }
+
     let checksum_path = dest.with_extension("bin.sha256");
     let _ = fs::write(&checksum_path, format!("{digest}  {}\n", info.filename));
 
+    // Best-effort cleanup of orphaned partials from prior crashed runs.
+    sweep_stale_partials(dest.parent().unwrap_or_else(|| Path::new(".")));
+
     Ok(())
+}
+
+/// Independently pinned SHA-256 digests for models we have verified.
+/// Unlisted models still get magic + size checks and a self-written sidecar.
+fn pinned_sha256(filename: &str) -> Option<&'static str> {
+    match filename {
+        "ggml-tiny.bin" => Some("be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"),
+        "ggml-tiny-q5_1.bin" => {
+            Some("818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7")
+        }
+        _ => None,
+    }
+}
+
+fn sweep_stale_partials(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    for ent in entries.flatten() {
+        let name = ent.file_name();
+        let name = name.to_string_lossy();
+        if name.contains(".bin.partial.") {
+            let _ = fs::remove_file(ent.path());
+        }
+    }
 }
 
 /// Basic integrity check: file exists, is large enough, and starts with ggml magic-ish bytes.
@@ -550,14 +595,46 @@ fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
     );
 
     if !magic_ok {
-        tracing::warn!(
-            model = info.name,
-            header = ?hdr,
-            "model header did not match expected ggml/gguf magic; continuing anyway"
-        );
+        let _ = fs::remove_file(path);
+        return Err(ProviderError::ModelDownload {
+            model: info.name.to_string(),
+            reason: format!(
+                "model header {:?} is not a recognized ggml/gguf magic — refusing to use file",
+                hdr
+            ),
+        }
+        .into());
+    }
+
+    // When a pin exists, also enforce it on cache hits.
+    if let Some(expected) = pinned_sha256(info.filename) {
+        if !verify_against_expected(path, expected) {
+            let _ = fs::remove_file(path);
+            return Err(ProviderError::ModelDownload {
+                model: info.name.to_string(),
+                reason: format!("cached model failed pinned sha256 check ({expected})"),
+            }
+            .into());
+        }
     }
 
     Ok(())
+}
+
+fn verify_against_expected(path: &Path, expected: &str) -> bool {
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => return false,
+        }
+    }
+    hex::encode(hasher.finalize()) == expected
 }
 
 #[cfg(test)]

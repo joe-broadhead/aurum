@@ -53,13 +53,26 @@ jobs:
         run: |
           rustup component add clippy
           cargo clippy --workspace --all-targets -- -D warnings
-        continue-on-error: true
 
       - name: cargo test
         run: cargo test --workspace
 
       - name: cargo build --release
         run: cargo build -p aurum --release
+
+  msrv:
+    name: msrv (1.89)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust 1.89
+        uses: dtolnay/rust-toolchain@1.89.0
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - name: cargo check
+        run: cargo check --workspace
 
   integration-local:
     name: integration (local tiny-q5_1, macOS)

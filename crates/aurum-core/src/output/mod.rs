@@ -93,7 +93,7 @@ fn format_srt(result: &TranscriptionResult) -> String {
             continue;
         }
         // SRT forbids unescaped newlines inside cue text — flatten.
-        let text = text.replace('\r', " ").replace('\n', " ");
+        let text = text.replace(['\r', '\n'], " ");
         out.push_str(&format!(
             "{}\n{} --> {}\n{}\n\n",
             cue,
@@ -142,9 +142,9 @@ fn format_json(result: &TranscriptionResult) -> Result<String> {
         timestamps_reliable: result.timestamps_reliable,
         segments: &result.segments,
     };
-    Ok(serde_json::to_string_pretty(&payload).map_err(|e| {
+    serde_json::to_string_pretty(&payload).map_err(|e| {
         crate::error::TranscriptionError::internal(format!("json serialize failed: {e}"))
-    })?)
+    })
 }
 
 #[cfg(test)]

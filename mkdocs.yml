@@ -1,5 +1,5 @@
 site_name: Aurum
-site_description: "Local-first, cross-platform transcription CLI and reusable Rust core (Latin: gold)."
+site_description: "Local-first, cross-platform transcription CLI and reusable Rust core."
 site_url: https://joe-broadhead.github.io/aurum/
 repo_url: https://github.com/joe-broadhead/aurum
 repo_name: joe-broadhead/aurum

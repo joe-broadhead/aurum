@@ -1,6 +1,6 @@
 # aurum
 
-Command-line interface for [Aurum](https://github.com/joe-broadhead/aurum) — local-first transcription.
+Command-line interface for [Aurum](https://github.com/joe-broadhead/aurum) — on-device speech-to-text.
 
 ```bash
 cargo install --path crates/aurum --locked

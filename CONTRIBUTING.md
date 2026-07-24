@@ -1,6 +1,6 @@
 # Contributing to Aurum
 
-Thanks for helping build a clean, local-first transcription foundation.
+Thanks for helping build a clean, on-device speech-to-text foundation.
 
 ## Ground rules
 

@@ -31,7 +31,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Initial experimental release of **Aurum** (Latin: gold)
+- Initial experimental release of **Aurum**
 - Workspace split: `aurum-core` (library) + `aurum` (CLI)
 - Local transcription via whisper.cpp (`whisper-rs`, Metal on macOS)
 - Process-level `WhisperContext` cache with pre-exit clear (Metal-safe)

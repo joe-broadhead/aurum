@@ -17,15 +17,14 @@ use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 
-/// Aurum — local-first transcription CLI (Latin: gold).
+/// Aurum — on-device speech-to-text CLI.
 #[derive(Debug, Parser)]
 #[command(
     name = "aurum",
     version,
-    about = "Local-first, cross-platform transcription CLI (Latin: gold)",
-    long_about = "Aurum converts audio files to text using local whisper.cpp models by default, \
-                  with optional OpenRouter remote transcription and Zephyr-style cleanup.\n\n\
-                  Aurum is Latin for gold.\n\n\
+    about = "Audio in. Text out. On-device by default.",
+    long_about = "Aurum turns audio files into text with whisper.cpp on-device by default, \
+                  optional OpenRouter, and Zephyr-style cleanup.\n\n\
                   Quick start:\n  \
                     aurum meeting.m4a\n  \
                     aurum meeting.m4a --cleanup clean\n  \

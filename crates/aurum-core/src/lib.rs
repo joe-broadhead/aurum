@@ -1,8 +1,8 @@
 //! # aurum-core
 //!
-//! Reusable local-first transcription library (experimental API).
+//! Reusable on-device speech-to-text library (experimental API).
 //!
-//! Aurum (Latin: *gold*) converts audio to text using local whisper.cpp models
+//! Aurum converts audio to text using local whisper.cpp models
 //! by default, with an optional OpenRouter remote provider.
 //!
 //! The API may change without notice until a stable `0.1.0`.

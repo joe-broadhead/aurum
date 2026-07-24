@@ -1,6 +1,6 @@
 # aurum-core
 
-Reusable **local-first transcription** library for [Aurum](https://github.com/joe-broadhead/aurum).
+Reusable **on-device speech-to-text** library for [Aurum](https://github.com/joe-broadhead/aurum).
 
 - Local whisper.cpp provider (`whisper-rs`)
 - Optional OpenRouter (LLM-assisted) provider

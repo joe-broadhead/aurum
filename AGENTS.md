@@ -1,10 +1,10 @@
 # AGENTS.md
 
-Local-first transcription CLI + reusable core.  
+On-device speech-to-text CLI + reusable core.  
 Stack: **Rust 1.89+**, Cargo workspace (`aurum-core` + `aurum` binary).  
 Version source of truth: `VERSION` (must match workspace `version` and CHANGELOG).
 
-Aurum (Latin: *gold*). Soft fallback name: `aurum-stt`.
+Aurum. Soft fallback name if needed: `aurum-stt`.
 
 ## Layout
 

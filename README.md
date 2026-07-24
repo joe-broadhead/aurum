@@ -17,13 +17,13 @@
  / ___ \ |_| | |  | |_| | | | | | |
 /_/   \_\__,_|_|   \__,_|_| |_| |_|
                                    
-     Local-first transcription
-            (Latin: gold)
+   Audio in. Text out.
+   On-device by default.
 ```
 
 <div align="center">
 
-Audio file in · text out — **on-device by default**, no API key.  
+**Audio in. Text out. On-device by default.** No API key required.  
 Clean provider trait · Zephyr-style cleanup · reusable **`aurum-core`** for apps like ZephyrFlow.
 
 [Docs](https://joe-broadhead.github.io/aurum/) · [Quickstart](docs/getting-started/quickstart.md) · [Library](docs/library/integration.md) · [Cleanup](docs/guide/cleanup.md)
@@ -34,7 +34,7 @@ Clean provider trait · Zephyr-style cleanup · reusable **`aurum-core`** for ap
 
 ## What it does
 
-Aurum is a **local-first transcription CLI** and Rust library:
+Aurum is an **on-device speech-to-text CLI** and Rust library:
 
 1. Point it at an audio file (mp3, m4a, wav, …)
 2. It runs **whisper.cpp** locally (Metal on macOS)

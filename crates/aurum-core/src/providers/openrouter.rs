@@ -142,6 +142,8 @@ impl TranscriptionProvider for OpenRouterProvider {
                 ]
             }],
             "temperature": 0,
+            // Required by some providers (e.g. Voxtral) when temperature is 0.
+            "top_p": 1,
         });
 
         tracing::debug!(

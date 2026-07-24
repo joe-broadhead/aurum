@@ -26,3 +26,15 @@ transcription and cleanup stack without shelling out to the binary.
 ## Crates.io
 
 Published on crates.io as **`aurum-core`**. CLI binary package is **`aurum-stt`** (`cargo install aurum-stt`).
+
+## C / native embeds (`aurum-ffi`)
+
+Native hosts should use the **`aurum-ffi`** crate (C header `include/aurum.h`):
+
+- `aurum_engine_transcribe_pcm` — 16 kHz mono f32
+- `aurum_engine_preload` / `is_model_ready`
+- `aurum_engine_cancel`
+- `aurum_cleanup_rules` — on-device only
+- `aurum_shutdown` — process teardown (Metal-safe)
+
+Rust hosts may call the same façade via `aurum_ffi::Engine`.

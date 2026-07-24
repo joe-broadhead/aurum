@@ -116,6 +116,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurum-ffi"
+version = "0.0.0"
+dependencies = [
+ "aurum-core",
+ "once_cell",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
 name = "aurum-stt"
 version = "0.0.0"
 dependencies = [

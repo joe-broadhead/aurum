@@ -82,6 +82,7 @@ echo "um, hello there" | aurum cleanup -s clean
 |-------|------|
 | [`aurum-core`](crates/aurum-core) | Reusable library |
 | [`aurum-stt`](crates/aurum) | CLI binary (`aurum`) |
+| [`aurum-ffi`](crates/aurum-ffi) | C ABI for native embeds |
 
 ```toml
 # Depend on the library (pin a commit or tag)

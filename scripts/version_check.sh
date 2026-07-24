@@ -16,7 +16,7 @@ if [ "${ws_version}" != "${version}" ]; then
   exit 1
 fi
 
-for manifest in crates/aurum-core/Cargo.toml crates/aurum/Cargo.toml; do
+for manifest in crates/aurum-core/Cargo.toml crates/aurum/Cargo.toml crates/aurum-ffi/Cargo.toml; do
   if grep -q '^version\.workspace = true' "${manifest}"; then
     continue
   fi

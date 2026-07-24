@@ -9,7 +9,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 
-for crate in aurum-core aurum-stt; do
+for crate in aurum-core aurum-stt aurum-ffi; do
   echo "==> cargo package -p ${crate} --list"
   cargo package -p "${crate}" --list --allow-dirty 2>/dev/null | head -30 || \
     cargo package -p "${crate}" --list | head -30

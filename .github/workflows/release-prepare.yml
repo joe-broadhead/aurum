@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   prepare:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +85,8 @@ jobs:
             --body "Automated release PR for **v${VERSION}**.
 
           Merging will tag \`v${VERSION}\` (via release-tag workflow) and publish CLI binaries (via release workflow).
+
+          **Does not publish to crates.io.** That remains a manual maintainer step.
 
           **Do not merge without explicit maintainer approval.**
           "

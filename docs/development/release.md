@@ -53,14 +53,21 @@ git push origin v0.0.0
 | `aurum-windows-x86_64.exe` | Windows |
 | `SHA256SUMS` | Checksums |
 
-## crates.io
+## crates.io (optional, separate from GitHub Release)
 
-Not automated. When approved:
+Not triggered by tags. Prefer GitHub Release binaries for the CLI.
+
+**Local:**
 
 ```bash
 ./scripts/publish_dry_run.sh
-cargo publish -p aurum-core
-# CLI binary package optional; prefer GitHub Release binaries
+cargo publish -p aurum-core          # first
+cargo publish -p aurum               # only after core is on the index
 ```
 
-Publish order: **`aurum-core` first**, then `aurum` if desired.
+**CI (manual workflow):** Actions → **Publish crates.io**
+
+1. Repo secret or environment `crates-io` secret: `CARGO_REGISTRY_TOKEN`
+2. Dry-run `aurum-core` → real publish `aurum-core` → optional `aurum`
+
+`aurum` dry-run / publish fails until `aurum-core` exists on crates.io — expected.

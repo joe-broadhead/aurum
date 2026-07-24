@@ -11,7 +11,7 @@ public issues or pull requests.
 
 ## Scope notes
 
-Aurum is a on-device speech-to-text CLI and library. Reports are especially welcome for:
+Aurum is an on-device speech-to-text CLI and library. Reports are especially welcome for:
 
 - Unexpected network access on the default (`local`) provider path
 - API key leakage in logs, debug output, or error messages

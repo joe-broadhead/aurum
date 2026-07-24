@@ -17,7 +17,7 @@ permissions:
 jobs:
   validate:
     name: Validate Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     outputs:
       release_tag: ${{ steps.resolve_tag.outputs.release_tag }}
@@ -90,11 +90,12 @@ jobs:
             target: aarch64-apple-darwin
             asset: macos-arm64
             bin: aurum
-          - os: macos-13
+          # Cross-compile Intel Mac from Apple Silicon runner (macos-13 is deprecated).
+          - os: macos-14
             target: x86_64-apple-darwin
             asset: macos-x86_64
             bin: aurum
-          - os: ubuntu-22.04
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             asset: linux-x86_64
             bin: aurum
@@ -127,6 +128,9 @@ jobs:
         run: choco install cmake -y --no-progress
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v2-aurum-release
+          key: ${{ matrix.target }}
 
       - name: Build release binary
         shell: bash
@@ -153,7 +157,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [validate, build]
     permissions:

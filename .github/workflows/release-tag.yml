@@ -53,6 +53,14 @@ jobs:
             echo "Missing merge commit SHA."
             exit 1
           fi
+          # Ensure VERSION/CHANGELOG match the branch version before tagging
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "${file_version}" != "${version}" ]; then
+            echo "VERSION (${file_version}) != branch version (${version})"
+            exit 1
+          fi
+          chmod +x scripts/version_check.sh
+          ./scripts/version_check.sh
           git tag -a "${tag}" "${MERGE_SHA}" -m "Release ${tag}"
           # GITHUB_TOKEN tag push may not trigger release.yml — dispatch below.
           git push origin "${tag}"

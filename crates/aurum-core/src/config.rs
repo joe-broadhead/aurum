@@ -286,12 +286,30 @@ impl Config {
     /// When `model_explicitly_set` is false and the provider is openrouter, a bare
     /// local whisper name (e.g. config default `base`) is replaced with the
     /// openrouter default model id.
-    pub fn resolve_model(&self, model_explicitly_set: bool) -> String {
+    /// Resolve model for the active provider.
+    ///
+    /// Returns `Err` if OpenRouter is selected with an explicit bare local whisper name
+    /// (e.g. `--provider openrouter --model tiny`) — that cannot be a remote model id.
+    pub fn resolve_model(&self, model_explicitly_set: bool) -> Result<String> {
         if model_explicitly_set {
-            return self
+            let m = self
                 .model
                 .clone()
                 .unwrap_or_else(|| self.default_model_for_provider());
+            if self.provider == "openrouter"
+                && !m.contains('/')
+                && (crate::model::lookup_model(&m).is_ok() || m == DEFAULT_LOCAL_MODEL)
+            {
+                return Err(UserError::Other {
+                    message: format!(
+                        "model '{m}' looks like a local whisper model, not an OpenRouter id.\n  \
+                         Hint: use e.g. google/gemini-2.5-flash-lite or openai/gpt-audio-mini, \
+                         or omit --model to use the OpenRouter default."
+                    ),
+                }
+                .into());
+            }
+            return Ok(m);
         }
         match self.provider.as_str() {
             "openrouter" => {
@@ -300,17 +318,17 @@ impl Config {
                     .clone()
                     .unwrap_or_else(|| self.openrouter_default_model.clone());
                 if m.contains('/') {
-                    m
+                    Ok(m)
                 } else if m == DEFAULT_LOCAL_MODEL || crate::model::lookup_model(&m).is_ok() {
-                    self.openrouter_default_model.clone()
+                    Ok(self.openrouter_default_model.clone())
                 } else {
-                    m
+                    Ok(m)
                 }
             }
-            _ => self
+            _ => Ok(self
                 .model
                 .clone()
-                .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
+                .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string())),
         }
     }
 

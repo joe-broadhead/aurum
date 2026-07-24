@@ -214,7 +214,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         cli.cleanup_model.as_deref(),
     );
 
-    let model = cfg.resolve_model(cli.model.is_some());
+    let model = cfg.resolve_model(cli.model.is_some())?;
     let provider_name = cfg.provider.to_ascii_lowercase();
     let format = OutputFormat::parse(&cfg.output)?;
 

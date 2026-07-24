@@ -1,0 +1,58 @@
+[package]
+name = "aurum"
+version = "0.0.0"
+edition = "2021"
+description = "Local-first, cross-platform transcription CLI with clean provider abstraction"
+license = "MIT"
+authors = ["Joe Broadhead"]
+readme = "README.md"
+repository = "https://github.com/joe-broadhead/aurum"
+keywords = ["transcription", "whisper", "speech-to-text", "cli", "stt"]
+categories = ["command-line-utilities", "multimedia::audio"]
+rust-version = "1.75"
+
+[lib]
+name = "aurum"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aurum"
+path = "src/main.rs"
+
+[dependencies]
+async-trait = "0.1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+directories = "6"
+hound = "3.5"
+indicatif = "0.17"
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+futures-util = "0.3"
+which = "7"
+sha2 = "0.10"
+hex = "0.4"
+
+# whisper-rs is platform-gated below for optional GPU backends
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+whisper-rs = { version = "0.16" }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "io-util", "process"] }
+wiremock = "0.6"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

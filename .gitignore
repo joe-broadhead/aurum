@@ -1,0 +1,16 @@
+/target
+# Cargo.lock is committed for the binary application
+**/*.rs.bk
+.DS_Store
+*.swp
+*.swo
+.env
+.env.*
+!.env.example
+/dist
+/tmp
+*.bin
+!tests/fixtures/**
+.idea/
+.vscode/
+*.pdb

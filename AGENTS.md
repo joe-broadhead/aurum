@@ -13,7 +13,7 @@ crates/aurum-core/   # library (providers, audio, models, output)
 crates/aurum/        # CLI binary
 docs/                # MkDocs Material
 tests/fixtures/      # sample audio
-Scripts/             # release / install helpers
+scripts/             # release / install helpers
 ```
 
 ## Commands

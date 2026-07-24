@@ -14,7 +14,7 @@ Must match:
 - crate versions via `version.workspace = true`
 
 ```bash
-./Scripts/version_check.sh
+./scripts/version_check.sh
 ```
 
 ## Checklist before prepare

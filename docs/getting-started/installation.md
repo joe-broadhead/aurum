@@ -23,7 +23,7 @@ sudo apt install build-essential cmake pkg-config ffmpeg
 ```bash
 git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
-./Scripts/install.sh
+./scripts/install.sh
 # or: cargo install --path crates/aurum --locked --force
 aurum --version
 ```

@@ -65,8 +65,8 @@ jobs:
             echo "VERSION (${file_version}) != tag (${RELEASE_VERSION})"
             exit 1
           fi
-          chmod +x Scripts/version_check.sh
-          ./Scripts/version_check.sh
+          chmod +x scripts/version_check.sh
+          ./scripts/version_check.sh
           grep -qE "^## \\[${RELEASE_VERSION}\\]" CHANGELOG.md
 
       - uses: dtolnay/rust-toolchain@stable

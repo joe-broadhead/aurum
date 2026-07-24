@@ -58,7 +58,7 @@ Aurum is a **local-first transcription CLI** and Rust library:
 ```bash
 git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
-./Scripts/install.sh
+./scripts/install.sh
 aurum models
 aurum meeting.m4a --model tiny-q5_1
 aurum meeting.m4a --cleanup clean

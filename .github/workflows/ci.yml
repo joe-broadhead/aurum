@@ -50,8 +50,8 @@ jobs:
 
       - name: version sync
         run: |
-          chmod +x Scripts/version_check.sh
-          ./Scripts/version_check.sh
+          chmod +x scripts/version_check.sh
+          ./scripts/version_check.sh
 
   test:
     name: test (${{ matrix.os }})

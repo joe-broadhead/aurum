@@ -30,7 +30,7 @@ clean:
 	rm -rf site .venv
 
 version-check:
-	@./Scripts/version_check.sh
+	@./scripts/version_check.sh
 
 ci: fmt lint test version-check
 	@echo "ci ok"

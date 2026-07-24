@@ -47,7 +47,7 @@ Aurum is an on-device speech-to-text **CLI** and **Rust library**:
 
 OpenRouter is available as an **optional** remote path for ASR or cleanup — never the default.
 
-> **v0.0.0** public preview. The CLI is usable; the library API may change before `0.1.0`.
+> **v0.0.0** released. Binaries on [GitHub Releases](https://github.com/joe-broadhead/aurum/releases/tag/v0.0.0). Library API may change before `0.1.0`.
 
 ## Highlights
 
@@ -82,7 +82,7 @@ echo "um, hello there" | aurum cleanup -s clean
 
 ```toml
 # Depend on the library (pin a commit or tag)
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "master" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.0" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).

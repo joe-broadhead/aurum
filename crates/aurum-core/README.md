@@ -15,7 +15,7 @@ Reusable **on-device speech-to-text** library for [Aurum](https://github.com/joe
 ## Depend
 
 ```toml
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "master" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.0" }
 # or: path = "../aurum/crates/aurum-core"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```

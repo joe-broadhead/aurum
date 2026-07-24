@@ -1,0 +1,36 @@
+:root {
+  --md-primary-fg-color: #5b3fd6;
+  --md-accent-fg-color: #f59e0b;
+}
+
+.md-typeset code {
+  border-radius: 4px;
+}
+
+/* Soft callout for tip admonitions (matches house primary) */
+.md-typeset .admonition.tip,
+.md-typeset details.tip {
+  border-color: #5b3fd6;
+}
+
+/* Better table styling */
+.md-typeset table:not([class]) {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.md-typeset table:not([class]) th {
+  background-color: var(--md-default-fg-color--lightest);
+}
+
+/* Mermaid diagrams: readable sizing + responsive width */
+.md-typeset .mermaid {
+  font-size: 0.9rem;
+  overflow-x: auto;
+}
+
+.md-typeset .mermaid svg {
+  width: 100%;
+  height: auto;
+}

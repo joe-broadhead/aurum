@@ -7,6 +7,7 @@ use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// HuggingFace repo hosting official ggml whisper.cpp models.
 const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
@@ -284,11 +285,96 @@ fn format_bytes(n: u64) -> String {
     }
 }
 
+/// Progress event while downloading a model (library hosts / UI).
+#[derive(Debug, Clone)]
+pub struct DownloadProgress {
+    pub model: String,
+    pub downloaded_bytes: u64,
+    pub total_bytes: u64,
+}
+
+impl DownloadProgress {
+    pub fn fraction(&self) -> Option<f64> {
+        if self.total_bytes == 0 {
+            None
+        } else {
+            Some((self.downloaded_bytes as f64 / self.total_bytes as f64).clamp(0.0, 1.0))
+        }
+    }
+}
+
+/// Callback for download progress. Invoked from the async download task.
+pub type DownloadProgressCallback = Arc<dyn Fn(DownloadProgress) + Send + Sync>;
+
+/// Options for [`ensure_model`].
+#[derive(Clone, Default)]
+pub struct EnsureModelOptions {
+    /// When true, never hit the network; fail if the model is not already cached.
+    pub local_only: bool,
+    /// Show CLI-style progress on stderr (indicatif).
+    pub show_progress: bool,
+    /// Optional structured progress hook for embedders.
+    pub on_progress: Option<DownloadProgressCallback>,
+}
+
+impl EnsureModelOptions {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn local_only(mut self, v: bool) -> Self {
+        self.local_only = v;
+        self
+    }
+
+    pub fn show_progress(mut self, v: bool) -> Self {
+        self.show_progress = v;
+        self
+    }
+
+    pub fn on_progress(mut self, cb: DownloadProgressCallback) -> Self {
+        self.on_progress = Some(cb);
+        self
+    }
+}
+
+/// True if a usable model file is already on disk.
+pub fn is_model_cached(cache_dir: &Path, model_name: &str) -> bool {
+    let Ok(info) = lookup_model(model_name) else {
+        return false;
+    };
+    let path = model_path(cache_dir, info);
+    path.exists()
+        && path
+            .metadata()
+            .map(|m| m.len() > 1_000_000)
+            .unwrap_or(false)
+        && verify_model_basic(&path, info).is_ok()
+        && verify_cached_checksum(&path)
+}
+
 /// Ensure a model is present locally, downloading if needed. Returns the path.
 pub async fn ensure_model(
     cache_dir: &Path,
     model_name: &str,
     show_progress: bool,
+) -> Result<PathBuf> {
+    ensure_model_with_options(
+        cache_dir,
+        model_name,
+        EnsureModelOptions {
+            show_progress,
+            ..EnsureModelOptions::default()
+        },
+    )
+    .await
+}
+
+/// Ensure model with offline / progress options.
+pub async fn ensure_model_with_options(
+    cache_dir: &Path,
+    model_name: &str,
+    opts: EnsureModelOptions,
 ) -> Result<PathBuf> {
     let info = lookup_model(model_name)?;
     let path = model_path(cache_dir, info);
@@ -311,6 +397,13 @@ pub async fn ensure_model(
         let _ = fs::remove_file(&path);
     }
 
+    if opts.local_only {
+        return Err(UserError::ModelNotCached {
+            model: model_name.to_string(),
+        }
+        .into());
+    }
+
     fs::create_dir_all(models_dir(cache_dir)).map_err(|e| EnvironmentError::DirectoryAccess {
         path: models_dir(cache_dir).display().to_string(),
         reason: e.to_string(),
@@ -329,7 +422,7 @@ pub async fn ensure_model(
             reason: e.to_string(),
         })?;
 
-    if show_progress {
+    if opts.show_progress {
         eprintln!("aurum: waiting for model download lock ({}) …", info.name);
     }
     lock_file.lock().map_err(|e| EnvironmentError::Other {
@@ -350,7 +443,15 @@ pub async fn ensure_model(
         return Ok(path);
     }
 
-    if show_progress {
+    if opts.local_only {
+        let _ = lock_file.unlock();
+        return Err(UserError::ModelNotCached {
+            model: model_name.to_string(),
+        }
+        .into());
+    }
+
+    if opts.show_progress {
         eprintln!(
             "aurum: downloading model `{}` ({}) — first run only …",
             info.name,
@@ -358,7 +459,7 @@ pub async fn ensure_model(
         );
     }
 
-    let result = download_model(info, &path, show_progress).await;
+    let result = download_model(info, &path, opts.show_progress, opts.on_progress.as_ref()).await;
     let _ = lock_file.unlock();
     result?;
     verify_model_basic(&path, info)?;
@@ -394,7 +495,12 @@ fn verify_cached_checksum(path: &Path) -> bool {
     true
 }
 
-async fn download_model(info: &ModelInfo, dest: &Path, show_progress: bool) -> Result<()> {
+async fn download_model(
+    info: &ModelInfo,
+    dest: &Path,
+    show_progress: bool,
+    on_progress: Option<&DownloadProgressCallback>,
+) -> Result<()> {
     let url = format!("{HF_BASE}/{}?download=true", info.filename);
     tracing::info!(model = info.name, %url, "downloading model");
 
@@ -478,6 +584,13 @@ async fn download_model(info: &ModelInfo, dest: &Path, show_progress: bool) -> R
         downloaded += chunk.len() as u64;
         if let Some(pb) = &pb {
             pb.set_position(downloaded.min(total));
+        }
+        if let Some(cb) = on_progress {
+            cb(DownloadProgress {
+                model: info.name.to_string(),
+                downloaded_bytes: downloaded,
+                total_bytes: total,
+            });
         }
     }
 

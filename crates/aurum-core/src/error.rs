@@ -57,6 +57,18 @@ pub enum UserError {
     InvalidModel { model: String, available: String },
 
     #[error(
+        "model '{model}' is not cached and downloads are disabled (local_only).\n  \
+         Hint: download it once while online, or pass local_only=false."
+    )]
+    ModelNotCached { model: String },
+
+    #[error(
+        "unsupported PCM sample rate {got} Hz (need {need}).\n  \
+         Hint: resample to {need} Hz mono f32 before calling from_pcm."
+    )]
+    UnsupportedSampleRate { got: u32, need: u32 },
+
+    #[error(
         "OpenRouter API key is missing.\n  \
          Set OPENROUTER_API_KEY in your environment, or add api_key under [openrouter] in the config file.\n  \
          Get a key at https://openrouter.ai/keys"

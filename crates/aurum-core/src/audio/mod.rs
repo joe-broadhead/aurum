@@ -28,14 +28,18 @@ pub const DEFAULT_MAX_DECODED_BYTES: usize = 500 * 1024 * 1024;
 /// Max compressed upload size for remote providers (~24 MB keeps base64 JSON manageable).
 pub const DEFAULT_MAX_UPLOAD_BYTES: usize = 24 * 1024 * 1024;
 
+/// Sample rate required by the local whisper.cpp path (Hz).
+pub const WHISPER_SAMPLE_RATE: u32 = 16_000;
+
 /// In-memory audio ready for a transcription provider.
 #[derive(Debug, Clone)]
 pub struct AudioInput {
-    /// Original file path (for display / remote upload).
+    /// Original file path when loaded from disk; synthetic label for PCM (`pcm://…`).
     pub source_path: PathBuf,
-    /// 16 kHz mono f32 samples in [-1.0, 1.0], shared to avoid extra copies.
+    /// Mono f32 samples in [-1.0, 1.0], shared to avoid extra copies.
+    /// For the local provider this must be [`WHISPER_SAMPLE_RATE`].
     pub samples: Arc<[f32]>,
-    /// Sample rate — always 16_000 after conversion.
+    /// Sample rate of [`Self::samples`].
     pub sample_rate: u32,
     /// Duration in seconds.
     pub duration_secs: f64,
@@ -48,6 +52,69 @@ impl AudioInput {
 
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
+    }
+
+    /// Build from pre-decoded mono PCM (e.g. mic capture). No ffmpeg, no disk I/O.
+    ///
+    /// `sample_rate` must be [`WHISPER_SAMPLE_RATE`] (16 kHz). Resample upstream if needed.
+    pub fn from_pcm(samples: impl Into<Arc<[f32]>>, sample_rate: u32) -> Result<Self> {
+        Self::from_pcm_with_limits(
+            samples,
+            sample_rate,
+            DEFAULT_MAX_DURATION_SECS,
+            DEFAULT_MAX_DECODED_BYTES,
+        )
+    }
+
+    /// Like [`from_pcm`](Self::from_pcm) with explicit safety limits.
+    pub fn from_pcm_with_limits(
+        samples: impl Into<Arc<[f32]>>,
+        sample_rate: u32,
+        max_duration_secs: f64,
+        max_decoded_bytes: usize,
+    ) -> Result<Self> {
+        if sample_rate != WHISPER_SAMPLE_RATE {
+            return Err(UserError::UnsupportedSampleRate {
+                got: sample_rate,
+                need: WHISPER_SAMPLE_RATE,
+            }
+            .into());
+        }
+        let samples: Arc<[f32]> = samples.into();
+        if samples.is_empty() {
+            return Err(UserError::InvalidAudio {
+                reason: "PCM buffer is empty".into(),
+            }
+            .into());
+        }
+        let decoded_bytes = samples.len().saturating_mul(std::mem::size_of::<f32>());
+        let duration_secs = samples.len() as f64 / f64::from(sample_rate);
+        if duration_secs > max_duration_secs {
+            return Err(UserError::AudioTooLong {
+                duration_secs,
+                max_secs: max_duration_secs,
+            }
+            .into());
+        }
+        if decoded_bytes > max_decoded_bytes {
+            return Err(UserError::AudioTooLarge {
+                decoded_bytes,
+                max_bytes: max_decoded_bytes,
+            }
+            .into());
+        }
+        Ok(Self {
+            source_path: PathBuf::from(format!("pcm://{sample_rate}hz/{}", samples.len())),
+            samples,
+            sample_rate,
+            duration_secs,
+        })
+    }
+
+    /// Copy a slice into a new [`AudioInput`] (convenience for mic chunks already at 16 kHz).
+    pub fn from_pcm_slice(samples: &[f32], sample_rate: u32) -> Result<Self> {
+        let owned: Arc<[f32]> = samples.to_vec().into();
+        Self::from_pcm(owned, sample_rate)
     }
 }
 
@@ -531,6 +598,13 @@ mod tests {
             try_load_wav_direct(&path, DEFAULT_MAX_DURATION_SECS, DEFAULT_MAX_DECODED_BYTES)
                 .unwrap();
         assert_eq!(audio.samples.len(), samples.len());
+    }
+
+    #[test]
+    fn from_pcm_basic() {
+        let audio = AudioInput::from_pcm_slice(&[0.0; 3200], WHISPER_SAMPLE_RATE).unwrap();
+        assert_eq!(audio.len(), 3200);
+        assert!((audio.duration_secs - 0.2).abs() < 1e-9);
     }
 
     #[test]

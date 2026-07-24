@@ -10,24 +10,33 @@
 //! ## Example
 //!
 //! ```rust,no_run
-//! use aurum_core::audio::load_audio;
-//! use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions, TranscriptionProvider};
+//! use aurum_core::audio::{AudioInput, WHISPER_SAMPLE_RATE};
+//! use aurum_core::pcm::PcmBuffer;
+//! use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
 //! use std::path::PathBuf;
 //!
 //! # async fn demo() -> aurum_core::error::Result<()> {
-//! let audio = load_audio(std::path::Path::new("meeting.m4a")).await?;
-//! let provider = LocalWhisperProvider::new(PathBuf::from("/tmp/aurum-cache"));
+//! let provider = LocalWhisperProvider::new(PathBuf::from("/tmp/aurum-cache"))
+//!     .with_progress(false)
+//!     .with_local_only(false);
+//! provider.preload("tiny-q5_1").await?;
+//!
+//! // Mic host: push PCM, then finalize (no files / ffmpeg).
+//! let mut buf = PcmBuffer::dictation();
+//! buf.push(&[0.0f32; 1600])?;
 //! let result = provider
-//!     .transcribe(
-//!         &audio,
+//!     .transcribe_pcm(
+//!         buf.samples(),
 //!         &TranscriptionOptions {
 //!             model: "tiny-q5_1".into(),
-//!             language: "auto".into(),
-//!             timestamps: true,
+//!             language: "en".into(),
+//!             timestamps: false,
 //!         },
 //!     )
 //!     .await?;
+//! let _ = AudioInput::from_pcm_slice(buf.samples(), WHISPER_SAMPLE_RATE)?;
 //! println!("{}", result.text);
+//! aurum_core::providers::local::clear_context_cache();
 //! # Ok(())
 //! # }
 //! ```
@@ -37,14 +46,16 @@ pub mod config;
 pub mod error;
 pub mod model;
 pub mod output;
+pub mod pcm;
 pub mod postprocess;
 pub mod providers;
 
-pub use audio::{load_audio, AudioInput};
+pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
 pub use config::Config;
 pub use error::{Result, TranscriptionError};
-pub use model::{list_models, ModelInfo, ModelStatus};
+pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
 pub use output::{format_result, OutputFormat};
+pub use pcm::PcmBuffer;
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, Segment, TranscriptionOptions, TranscriptionProvider,
     TranscriptionResult,

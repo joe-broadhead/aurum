@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- PCM-first embedder API: `AudioInput::from_pcm` / `from_pcm_slice`, `WHISPER_SAMPLE_RATE`
+- `PcmBuffer` for mic-style accumulate/rolling windows (`pcm` module)
+- `LocalWhisperProvider::transcribe_pcm`, `preload`, `is_model_cached` / `is_model_loaded`
+- `with_local_only` + `EnsureModelOptions` / `ModelNotCached` (fail closed offline)
+- Download progress callbacks (`DownloadProgress` / `with_download_progress`)
+
 ## [0.0.0] - 2026-07-24
 
 ### Added

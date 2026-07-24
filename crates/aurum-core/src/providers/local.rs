@@ -2,13 +2,20 @@
 //!
 //! Maintains a process-level cache of loaded `WhisperContext` values keyed by
 //! model path so repeated calls (library batch use, tests) do not reload ggml.
+//!
+//! Embedders (mic hosts) should prefer:
+//! - [`LocalWhisperProvider::preload`] at startup
+//! - [`LocalWhisperProvider::transcribe_pcm`] or [`AudioInput::from_pcm`] for buffers
+//! - [`crate::pcm::PcmBuffer`] to accumulate capture chunks
 
 use super::{
     BackendKind, Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
 };
-use crate::audio::AudioInput;
+use crate::audio::{AudioInput, WHISPER_SAMPLE_RATE};
 use crate::error::{ProviderError, Result};
-use crate::model;
+use crate::model::{
+    self, DownloadProgressCallback, EnsureModelOptions,
+};
 use crate::postprocess;
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
@@ -56,26 +63,26 @@ impl ContextCache {
         let ctx = Arc::new(ctx);
 
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        // Another thread may have inserted while we loaded — prefer existing.
         let entry = guard.entry(key).or_insert_with(|| Arc::clone(&ctx));
         Ok(Arc::clone(entry))
     }
 
-    /// Drop all cached contexts now, while Metal/GPU is still valid.
-    ///
-    /// Must be called before process exit. If contexts are still alive when the
-    /// Metal device singleton is torn down (static destructors), ggml asserts.
     fn clear(&self) {
         if let Ok(mut guard) = self.inner.lock() {
             guard.clear();
         }
     }
+
+    fn contains(&self, model_path: &Path) -> bool {
+        self.inner
+            .lock()
+            .map(|g| g.contains_key(model_path))
+            .unwrap_or(false)
+    }
 }
 
 impl Drop for ContextCache {
     fn drop(&mut self) {
-        // Best-effort: if the CLI forgot to clear, try dropping here. On some
-        // platforms Metal may already be gone; prefer explicit clear in main.
         self.clear();
     }
 }
@@ -89,6 +96,9 @@ pub fn clear_context_cache() {
 pub struct LocalWhisperProvider {
     cache_dir: PathBuf,
     show_progress: bool,
+    /// When true, never download models — fail if missing from cache.
+    local_only: bool,
+    on_download_progress: Option<DownloadProgressCallback>,
 }
 
 impl LocalWhisperProvider {
@@ -96,12 +106,93 @@ impl LocalWhisperProvider {
         Self {
             cache_dir,
             show_progress: true,
+            local_only: false,
+            on_download_progress: None,
         }
     }
 
     pub fn with_progress(mut self, show: bool) -> Self {
         self.show_progress = show;
         self
+    }
+
+    /// Fail closed if the model is not already on disk (no network).
+    pub fn with_local_only(mut self, local_only: bool) -> Self {
+        self.local_only = local_only;
+        self
+    }
+
+    /// Structured download progress for UI hosts (in addition to optional CLI bar).
+    pub fn with_download_progress(mut self, cb: DownloadProgressCallback) -> Self {
+        self.on_download_progress = Some(cb);
+        self
+    }
+
+    pub fn cache_dir(&self) -> &Path {
+        &self.cache_dir
+    }
+
+    pub fn local_only(&self) -> bool {
+        self.local_only
+    }
+
+    /// Whether the ggml file is present and passes basic integrity checks.
+    pub fn is_model_cached(&self, model: &str) -> bool {
+        model::is_model_cached(&self.cache_dir, model)
+    }
+
+    /// Whether a WhisperContext for this model is already loaded in-process.
+    pub fn is_model_loaded(&self, model: &str) -> bool {
+        let Ok(info) = model::lookup_model(model) else {
+            return false;
+        };
+        let path = model::model_path(&self.cache_dir, info);
+        CONTEXT_CACHE.contains(&path)
+    }
+
+    fn ensure_opts(&self) -> EnsureModelOptions {
+        let mut opts = EnsureModelOptions::new()
+            .local_only(self.local_only)
+            .show_progress(self.show_progress);
+        if let Some(cb) = &self.on_download_progress {
+            opts = opts.on_progress(Arc::clone(cb));
+        }
+        opts
+    }
+
+    /// Download (unless `local_only`) and load the model into the process cache.
+    pub async fn preload(&self, model: &str) -> Result<PathBuf> {
+        let path =
+            model::ensure_model_with_options(&self.cache_dir, model, self.ensure_opts()).await?;
+        let model_name = model.to_string();
+        let path_clone = path.clone();
+        tokio::task::spawn_blocking(move || CONTEXT_CACHE.get_or_load(&path_clone, &model_name))
+            .await
+            .map_err(|e| ProviderError::TranscriptionFailed {
+                reason: format!("preload worker panicked: {e}"),
+            })??;
+        Ok(path)
+    }
+
+    /// Transcribe a mono PCM buffer (must be [`WHISPER_SAMPLE_RATE`] Hz).
+    ///
+    /// Preferred entry point for mic hosts — no temp files, no ffmpeg.
+    pub async fn transcribe_pcm(
+        &self,
+        samples: &[f32],
+        options: &TranscriptionOptions,
+    ) -> Result<TranscriptionResult> {
+        let input = AudioInput::from_pcm_slice(samples, WHISPER_SAMPLE_RATE)?;
+        self.transcribe(&input, options).await
+    }
+
+    /// Transcribe an owned/shared PCM buffer already wrapped as [`AudioInput`].
+    pub async fn transcribe_audio(
+        &self,
+        input: &AudioInput,
+        options: &TranscriptionOptions,
+    ) -> Result<TranscriptionResult> {
+        self.transcribe(input, options).await
     }
 }
 
@@ -120,15 +211,24 @@ impl TranscriptionProvider for LocalWhisperProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
+        if input.sample_rate != WHISPER_SAMPLE_RATE {
+            return Err(crate::error::UserError::UnsupportedSampleRate {
+                got: input.sample_rate,
+                need: WHISPER_SAMPLE_RATE,
+            }
+            .into());
+        }
+
         let model_name = options.model.clone();
         let language = options.language.clone();
         let timestamps = options.timestamps;
         let samples: Arc<[f32]> = Arc::clone(&input.samples);
         let duration_secs = input.duration_secs;
         let cache_dir = self.cache_dir.clone();
-        let show_progress = self.show_progress;
+        let opts = self.ensure_opts();
 
-        let model_path = model::ensure_model(&cache_dir, &model_name, show_progress).await?;
+        let model_path =
+            model::ensure_model_with_options(&cache_dir, &model_name, opts).await?;
 
         let result = tokio::task::spawn_blocking(move || {
             run_whisper(
@@ -182,8 +282,6 @@ fn run_whisper(
         .clamp(1, 8);
     params.set_n_threads(n_threads);
 
-    // Keep `lang` alive for the duration of `full()`.
-    // Do NOT call set_detect_language(true) — empty segments on current whisper-rs.
     let lang = language.trim().to_ascii_lowercase();
     let auto = lang.is_empty() || lang == "auto";
     if auto {

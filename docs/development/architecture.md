@@ -3,12 +3,14 @@
 ```text
 aurum (CLI)
  └── aurum-core
-      ├── audio/          load + limits + upload encode
+      ├── audio/          load + limits + upload encode + PCM
+      ├── pcm/            mic buffer helpers
       ├── model/          catalogue, download, lock, integrity
       ├── providers/
       │    ├── local      whisper.cpp + context cache
-      │    └── openrouter multimodal chat
-      ├── postprocess/    markers, clamp, NaN guard
+      │    └── openrouter multimodal chat (ASR path)
+      ├── postprocess/    ASR markers, clamp, NaN guard
+      ├── cleanup/        flow styles (rules | openrouter LLM)
       ├── output/         txt srt json
       ├── config/
       └── error/          user | environment | provider

@@ -1,6 +1,9 @@
 //! CLI definition and orchestration.
 
 use aurum_core::audio;
+use aurum_core::cleanup::{
+    apply_cleanup, CleanupProviderKind, CleanupStyle, OpenRouterCleanup, RulesCleanup, TextCleanup,
+};
 use aurum_core::config::Config;
 use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
@@ -38,6 +41,7 @@ pub struct Cli {
 }
 
 #[derive(Debug, Subcommand)]
+#[allow(clippy::large_enum_variant)]
 pub enum Commands {
     /// List local whisper models and cache status.
     #[command(visible_alias = "list-models")]
@@ -81,6 +85,18 @@ pub struct TranscribeArgs {
     /// Allow SRT/timestamp output from OpenRouter despite unreliable timings.
     #[arg(long = "allow-unreliable-timestamps")]
     pub allow_unreliable_timestamps: bool,
+
+    /// Post-transcript cleanup style (default: raw = off).
+    #[arg(long = "cleanup", value_name = "raw|clean|bullets|professional|summary")]
+    pub cleanup: Option<String>,
+
+    /// Cleanup backend: on-device rules (default) or OpenRouter LLM.
+    #[arg(long = "cleanup-provider", value_name = "rules|openrouter")]
+    pub cleanup_provider: Option<String>,
+
+    /// Model id when using --cleanup-provider openrouter.
+    #[arg(long = "cleanup-model", value_name = "MODEL")]
+    pub cleanup_model: Option<String>,
 
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
@@ -231,7 +247,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         timestamps: want_timestamps,
     };
 
-    let result = match provider_name.as_str() {
+    let mut result = match provider_name.as_str() {
         "local" => {
             let provider = LocalWhisperProvider::new(cfg.cache_dir.clone()).with_progress(true);
             if cli.verbose {
@@ -262,6 +278,45 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
             .into());
         }
     };
+
+    let cleanup_style = cli
+        .cleanup
+        .as_deref()
+        .map(CleanupStyle::parse)
+        .transpose()?
+        .unwrap_or(CleanupStyle::Raw);
+    let cleanup_kind = cli
+        .cleanup_provider
+        .as_deref()
+        .map(CleanupProviderKind::parse)
+        .transpose()?
+        .unwrap_or(CleanupProviderKind::Rules);
+
+    if !matches!(cleanup_style, CleanupStyle::Raw) {
+        if cli.verbose || atty_stderr() {
+            eprintln!(
+                "aurum: cleanup style={} provider={}",
+                cleanup_style.as_str(),
+                cleanup_kind.as_str()
+            );
+        }
+        match cleanup_kind {
+            CleanupProviderKind::Rules => {
+                let c = RulesCleanup::new();
+                apply_cleanup(&mut result, &c as &dyn TextCleanup, cleanup_style).await?;
+            }
+            CleanupProviderKind::OpenRouter => {
+                let c = OpenRouterCleanup::new(
+                    cfg.openrouter_api_key.clone(),
+                    Some(cfg.openrouter_base_url.clone()),
+                    cli.cleanup_model
+                        .clone()
+                        .or_else(|| Some(cfg.openrouter_default_model.clone())),
+                )?;
+                apply_cleanup(&mut result, &c as &dyn TextCleanup, cleanup_style).await?;
+            }
+        }
+    }
 
     if let Some(path) = &cfg.output_file {
         if let Some(parent) = path.parent() {

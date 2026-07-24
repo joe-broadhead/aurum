@@ -552,7 +552,7 @@ async fn download_model(
             ProgressStyle::with_template(
                 "{msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
             )
-            .unwrap()
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
             .progress_chars("=>-"),
         );
         pb.set_message(format!("Downloading {}", info.name));

@@ -42,6 +42,7 @@
 //! ```
 
 pub mod audio;
+pub mod cleanup;
 pub mod config;
 pub mod error;
 pub mod model;
@@ -51,6 +52,10 @@ pub mod postprocess;
 pub mod providers;
 
 pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
+pub use cleanup::{
+    apply_cleanup, CleanupProviderKind, CleanupResult, CleanupStyle, OpenRouterCleanup,
+    RulesCleanup, TextCleanup,
+};
 pub use config::Config;
 pub use error::{Result, TranscriptionError};
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};

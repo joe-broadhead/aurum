@@ -2,7 +2,8 @@
 
 use aurum_core::audio;
 use aurum_core::cleanup::{
-    apply_cleanup, CleanupProviderKind, CleanupStyle, OpenRouterCleanup, RulesCleanup, TextCleanup,
+    apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupStyle, OpenRouterCleanup,
+    RulesCleanup, SegmentCleanupPolicy, TextCleanup,
 };
 use aurum_core::config::Config;
 use aurum_core::error::{Result, TranscriptionError, UserError};
@@ -23,11 +24,12 @@ use std::path::PathBuf;
     version,
     about = "Local-first, cross-platform transcription CLI (Latin: gold)",
     long_about = "Aurum converts audio files to text using local whisper.cpp models by default, \
-                  with optional OpenRouter remote transcription.\n\n\
+                  with optional OpenRouter remote transcription and Zephyr-style cleanup.\n\n\
                   Aurum is Latin for gold.\n\n\
                   Quick start:\n  \
                     aurum meeting.m4a\n  \
-                    aurum meeting.m4a --model tiny-q5_1\n  \
+                    aurum meeting.m4a --cleanup clean\n  \
+                    aurum cleanup --style bullets < notes.txt\n  \
                     aurum models\n  \
                     aurum --help"
 )]
@@ -50,6 +52,10 @@ pub enum Commands {
     /// Transcribe an audio file (default when AUDIO_FILE is given positionally).
     #[command(visible_alias = "t")]
     Transcribe(TranscribeArgs),
+
+    /// Clean existing text (stdin or file) without re-transcribing.
+    #[command(visible_alias = "flow")]
+    Cleanup(CleanupArgs),
 }
 
 #[derive(Debug, Clone, Default, clap::Args)]
@@ -98,7 +104,52 @@ pub struct TranscribeArgs {
     #[arg(long = "cleanup-model", value_name = "MODEL")]
     pub cleanup_model: Option<String>,
 
+    /// Segment policy after cleanup: auto | keep | clear | per-segment.
+    #[arg(long = "cleanup-segments", value_name = "auto|keep|clear|per-segment")]
+    pub cleanup_segments: Option<String>,
+
     /// Verbose diagnostics.
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
+}
+
+/// Args for `aurum cleanup`.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct CleanupArgs {
+    /// Optional text file (default: read stdin).
+    #[arg(value_name = "TEXT_FILE")]
+    pub input: Option<PathBuf>,
+
+    /// Cleanup style (default: clean for this subcommand, or config).
+    #[arg(long = "style", short = 's', value_name = "raw|clean|bullets|professional|summary")]
+    pub style: Option<String>,
+
+    /// Alias for --style (matches transcribe flag naming).
+    #[arg(long = "cleanup", value_name = "STYLE")]
+    pub cleanup: Option<String>,
+
+    /// Cleanup backend: rules (default) or openrouter.
+    #[arg(long = "provider", value_name = "rules|openrouter")]
+    pub provider: Option<String>,
+
+    /// Alias for --provider.
+    #[arg(long = "cleanup-provider", value_name = "rules|openrouter")]
+    pub cleanup_provider: Option<String>,
+
+    /// Model when provider is openrouter.
+    #[arg(long = "model", value_name = "MODEL")]
+    pub model: Option<String>,
+
+    #[arg(long = "cleanup-model", value_name = "MODEL")]
+    pub cleanup_model: Option<String>,
+
+    /// Output format for structured result.
+    #[arg(short = 'o', long = "output", value_name = "txt|json", value_parser = ["txt", "json"])]
+    pub output: Option<String>,
+
+    #[arg(long = "output-file", value_name = "PATH")]
+    pub output_file: Option<PathBuf>,
+
     #[arg(short = 'v', long)]
     pub verbose: bool,
 }
@@ -113,19 +164,21 @@ pub async fn run(cli: Cli) -> Result<()> {
             Ok(())
         }
         Some(Commands::Transcribe(args)) => run_transcribe(args).await,
+        Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
         None => {
             if cli.transcribe.audio_file.is_none() {
-                // No args at all — show a short nudge rather than clap's missing-arg only.
                 eprintln!(
                     "aurum: missing AUDIO_FILE\n\n  \
                      Examples:\n    \
                      aurum meeting.m4a\n    \
-                     aurum meeting.m4a --model tiny-q5_1 -o srt\n    \
+                     aurum meeting.m4a --cleanup clean\n    \
+                     echo 'um hello' | aurum cleanup --style clean\n    \
                      aurum models\n\n  \
                      Run `aurum --help` for full options."
                 );
                 return Err(UserError::Other {
-                    message: "AUDIO_FILE is required (or use `aurum models`)".into(),
+                    message: "AUDIO_FILE is required (or use `aurum models` / `aurum cleanup`)"
+                        .into(),
                 }
                 .into());
             }
@@ -282,40 +335,24 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         }
     };
 
-    // Config file defaults, then CLI overrides (already merged into cfg).
     let cleanup_style = CleanupStyle::parse(&cfg.cleanup_style)?;
     let cleanup_kind = CleanupProviderKind::parse(&cfg.cleanup_provider)?;
+    let segment_policy = cli
+        .cleanup_segments
+        .as_deref()
+        .map(SegmentCleanupPolicy::parse)
+        .transpose()?
+        .unwrap_or(SegmentCleanupPolicy::Auto);
 
-    // Always stamp cleanup metadata (raw when off) for JSON consumers.
-    if matches!(cleanup_style, CleanupStyle::Raw) {
-        result.cleanup_style = CleanupStyle::Raw;
-        result.cleanup_provider = None;
-        result.original_text = None;
-    } else {
-        if cli.verbose || atty_stderr() {
-            eprintln!(
-                "aurum: cleanup style={} provider={}",
-                cleanup_style.as_str(),
-                cleanup_kind.as_str()
-            );
-        }
-        match cleanup_kind {
-            CleanupProviderKind::Rules => {
-                let c = RulesCleanup::new();
-                apply_cleanup(&mut result, &c as &dyn TextCleanup, cleanup_style).await?;
-            }
-            CleanupProviderKind::OpenRouter => {
-                let c = OpenRouterCleanup::new(
-                    cfg.openrouter_api_key.clone(),
-                    Some(cfg.openrouter_base_url.clone()),
-                    cfg.cleanup_openrouter_model
-                        .clone()
-                        .or_else(|| Some(cfg.openrouter_default_model.clone())),
-                )?;
-                apply_cleanup(&mut result, &c as &dyn TextCleanup, cleanup_style).await?;
-            }
-        }
-    }
+    apply_configured_cleanup(
+        &mut result,
+        &cfg,
+        cleanup_style,
+        cleanup_kind,
+        segment_policy,
+        cli.verbose,
+    )
+    .await?;
 
     if let Some(path) = &cfg.output_file {
         if let Some(parent) = path.parent() {
@@ -338,6 +375,156 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         eprintln!("aurum: note: transcript is empty (silence or no speech detected)");
     }
 
+    Ok(())
+}
+
+async fn run_cleanup_cmd(cli: CleanupArgs) -> Result<()> {
+    init_tracing(cli.verbose);
+    let mut cfg = Config::load()?;
+
+    // Prefer explicit cleanup flags; style defaults to `clean` for this subcommand
+    // when neither CLI nor non-raw config is set — operators expect cleanup to do something.
+    let style_raw = cli
+        .style
+        .as_deref()
+        .or(cli.cleanup.as_deref())
+        .unwrap_or(if cfg.cleanup_style == "raw" {
+            "clean"
+        } else {
+            cfg.cleanup_style.as_str()
+        });
+    let provider_raw = cli
+        .provider
+        .as_deref()
+        .or(cli.cleanup_provider.as_deref())
+        .unwrap_or(cfg.cleanup_provider.as_str());
+    let model = cli
+        .model
+        .as_deref()
+        .or(cli.cleanup_model.as_deref())
+        .map(|s| s.to_string())
+        .or_else(|| cfg.cleanup_openrouter_model.clone());
+
+    if let Some(m) = model {
+        cfg.cleanup_openrouter_model = Some(m);
+    }
+
+    let style = CleanupStyle::parse(style_raw)?;
+    let kind = CleanupProviderKind::parse(provider_raw)?;
+
+    let text = read_cleanup_input(cli.input.as_deref()).await?;
+    if text.trim().is_empty() {
+        return Err(UserError::Other {
+            message: "no input text (empty file or stdin)".into(),
+        }
+        .into());
+    }
+
+    if cli.verbose || atty_stderr() {
+        eprintln!(
+            "aurum: cleanup-only style={} provider={}",
+            style.as_str(),
+            kind.as_str()
+        );
+    }
+
+    let backend = build_cleanup_backend(&cfg, kind)?;
+    let out = cleanup_text(&text, backend.as_ref(), style).await?;
+
+    let format = match cli.output.as_deref().unwrap_or("txt") {
+        "json" => "json",
+        _ => "txt",
+    };
+
+    let body = if format == "json" {
+        serde_json::to_string_pretty(&serde_json::json!({
+            "text": out.text,
+            "cleanup_style": out.style,
+            "cleanup_provider": out.provider,
+            "original_text": out.original_text,
+        }))
+        .map_err(|e| TranscriptionError::internal(format!("json: {e}")))?
+    } else {
+        out.text.clone()
+    };
+
+    if let Some(path) = &cli.output_file {
+        if let Some(parent) = path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        std::fs::write(path, format!("{body}\n"))?;
+        if cli.verbose || atty_stderr() {
+            eprintln!("aurum: wrote {}", path.display());
+        }
+    } else {
+        let mut stdout = io::stdout().lock();
+        writeln!(stdout, "{body}")?;
+    }
+    Ok(())
+}
+
+async fn read_cleanup_input(path: Option<&std::path::Path>) -> Result<String> {
+    match path {
+        Some(p) => {
+            if !p.exists() {
+                return Err(UserError::FileNotFound {
+                    path: p.display().to_string(),
+                }
+                .into());
+            }
+            Ok(std::fs::read_to_string(p)?)
+        }
+        None => {
+            use std::io::Read;
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf)?;
+            Ok(buf)
+        }
+    }
+}
+
+fn build_cleanup_backend(
+    cfg: &Config,
+    kind: CleanupProviderKind,
+) -> Result<Box<dyn TextCleanup>> {
+    match kind {
+        CleanupProviderKind::Rules => Ok(Box::new(RulesCleanup::new())),
+        CleanupProviderKind::OpenRouter => Ok(Box::new(OpenRouterCleanup::new(
+            cfg.openrouter_api_key.clone(),
+            Some(cfg.openrouter_base_url.clone()),
+            cfg.cleanup_openrouter_model
+                .clone()
+                .or_else(|| Some(cfg.openrouter_default_model.clone())),
+        )?)),
+    }
+}
+
+async fn apply_configured_cleanup(
+    result: &mut aurum_core::TranscriptionResult,
+    cfg: &Config,
+    style: CleanupStyle,
+    kind: CleanupProviderKind,
+    segments: SegmentCleanupPolicy,
+    verbose: bool,
+) -> Result<()> {
+    if matches!(style, CleanupStyle::Raw) {
+        result.cleanup_style = CleanupStyle::Raw;
+        result.cleanup_provider = None;
+        result.original_text = None;
+        return Ok(());
+    }
+    if verbose || atty_stderr() {
+        eprintln!(
+            "aurum: cleanup style={} provider={} segments={}",
+            style.as_str(),
+            kind.as_str(),
+            segments.resolve(style).as_str()
+        );
+    }
+    let backend = build_cleanup_backend(cfg, kind)?;
+    apply_cleanup_with_segments(result, backend.as_ref(), style, segments).await?;
     Ok(())
 }
 

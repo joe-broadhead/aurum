@@ -94,6 +94,7 @@ version = "0.0.0"
 dependencies = [
  "aurum-core",
  "clap",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",

@@ -24,6 +24,8 @@ Cleanup is **off by default** (`raw`) so ASR output stays verbatim unless you as
 
 ## CLI
 
+### With transcription
+
 ```bash
 # On-device cleanup only
 aurum talk.m4a --model tiny-q5_1 --cleanup clean
@@ -31,10 +33,29 @@ aurum talk.m4a --cleanup bullets
 aurum talk.m4a --cleanup professional
 aurum talk.m4a --cleanup summary
 
+# Segment policy (default auto: clear for bullets/summary, keep otherwise)
+aurum talk.m4a --cleanup clean --cleanup-segments keep
+aurum talk.m4a --cleanup bullets --cleanup-segments clear
+aurum talk.m4a --cleanup clean --cleanup-segments per-segment
+
 # LLM cleanup (explicit)
 export OPENROUTER_API_KEY=sk-or-...
 aurum talk.m4a --cleanup clean --cleanup-provider openrouter
 aurum talk.m4a --cleanup summary --cleanup-provider openrouter --cleanup-model google/gemini-2.5-flash
+```
+
+### Cleanup only (no audio)
+
+```bash
+# stdin
+echo "um, hello there, you know" | aurum cleanup --style clean
+
+# file
+aurum cleanup notes.txt --style bullets
+aurum cleanup draft.txt --style professional -o json
+
+# alias
+cat notes.txt | aurum flow -s summary
 ```
 
 ## Config defaults

@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CLI: `--cleanup`, `--cleanup-provider`, `--cleanup-model`
 - Config `[cleanup]` defaults (`style`, `provider`, `openrouter_model`)
 - JSON: `cleanup_style`, optional `cleanup_provider` + `original_text`
+- `aurum cleanup` / `aurum flow` subcommand (stdin or text file)
+- `--cleanup-segments auto|keep|clear|per-segment` (auto clears on bullets/summary)
 
 ## [0.0.0] - 2026-07-24
 

@@ -53,8 +53,8 @@ pub mod providers;
 
 pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
 pub use cleanup::{
-    apply_cleanup, CleanupProviderKind, CleanupResult, CleanupStyle, OpenRouterCleanup,
-    RulesCleanup, TextCleanup,
+    apply_cleanup, apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupResult,
+    CleanupStyle, OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
 };
 pub use config::Config;
 pub use error::{Result, TranscriptionError};

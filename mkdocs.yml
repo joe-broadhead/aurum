@@ -118,5 +118,6 @@ nav:
   - Development:
       - Contributing: development/contributing.md
       - Architecture: development/architecture.md
+      - FFI design (aurum-ffi): development/aurum-ffi.md
       - CI & Quality: development/ci.md
       - Release: development/release.md

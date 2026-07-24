@@ -1,13 +1,13 @@
-# Partial-like decode (host-driven)
+# Partials & cancel
 
 Aurum does **not** run a background streaming whisper loop. Dictation hosts can
 still show interim text by:
 
 1. Accumulating mic PCM in `PcmBuffer` (or your own `Vec<f32>`)
-2. Using [`PartialWindowPolicy`](https://docs.rs/aurum-core) / `PartialClock`
-3. Calling `transcribe_pcm` on a rolling slice when the clock says so
+2. Using `PartialWindowPolicy` / `PartialClock`
+3. Calling `transcribe_pcm` on a rolling slice when the clock is ready
 4. Calling `transcribe_pcm` on the full buffer at finalize
-5. Using [`CancelFlag`](https://docs.rs/aurum-core) if the user cancels mid-hold
+5. Using `CancelFlag` if the user cancels mid-hold
 
 ## Example
 
@@ -56,13 +56,13 @@ aurum_core::providers::local::clear_context_cache();
 # }
 ```
 
-## Defaults (Zephyr-aligned)
+## Defaults (dictation-oriented)
 
 | Parameter | Default |
 |-----------|---------|
 | Min audio before partial | ~1 s |
 | Rolling window | ~15 s |
 | Interval | ~1.2 s |
-| Energy gate | RMS ≥ ~0.0005 |
+| Energy gate | RMS on the **decode window** |
 
-Tune via `PartialWindowPolicy` fields / `with_min_rms`.
+Tune via `PartialWindowPolicy` / `with_min_rms`.

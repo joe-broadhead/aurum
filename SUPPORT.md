@@ -1,7 +1,7 @@
 # Support
 
-- **Docs:** https://joe-broadhead.github.io/aurum/ (when Pages is enabled)
-- **Bugs:** GitHub Issues
+- **Docs:** https://joe-broadhead.github.io/aurum/
+- **Bugs:** [GitHub Issues](https://github.com/joe-broadhead/aurum/issues)
 - **Security:** GitHub Security Advisories (see [SECURITY.md](SECURITY.md))
 
 When filing a bug, include:
@@ -10,5 +10,5 @@ When filing a bug, include:
 - Aurum version (`aurum --version`)
 - Provider (`local` / `openrouter`) and model name
 - Whether ffmpeg is installed (`ffmpeg -version`)
-- Command line used (redact API keys)
+- Command line used (**redact API keys**)
 - Relevant stderr with `-v` (no need to paste full transcripts)

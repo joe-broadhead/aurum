@@ -2,45 +2,57 @@
 
 Reusable **on-device speech-to-text** library for [Aurum](https://github.com/joe-broadhead/aurum).
 
-- Local whisper.cpp provider (`whisper-rs`)
-- Optional OpenRouter (LLM-assisted) provider
-- Audio load/convert, model cache, txt/srt/json formatters
+**Audio in. Text out. On-device by default.**
 
-**API status:** experimental until `0.1.0`. Prefer a pinned git `rev` or tag.
+- Local whisper.cpp (`whisper-rs`, Metal on macOS)
+- Optional OpenRouter (LLM-assisted ASR)
+- PCM-first mic host API · partial-window helpers · cancel
+- Cleanup / flow (rules or OpenRouter)
+- Model download, pins, txt/srt/json
 
-## Use in another crate
+**API status:** experimental until `0.1.0`. Pin a git `rev` or tag.
+
+## Depend
 
 ```toml
-# path
-aurum-core = { path = "../aurum/crates/aurum-core" }
-
-# git (pin the rev!)
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "…" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "b445fdf" }
+# or: path = "../aurum/crates/aurum-core"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
+
+## Quick example
 
 ```rust
 use aurum_core::audio::load_audio;
-use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions, TranscriptionProvider};
+use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
 
 # async fn demo() -> aurum_core::Result<()> {
 let audio = load_audio(std::path::Path::new("meeting.m4a")).await?;
-let provider = LocalWhisperProvider::new(std::path::PathBuf::from("/tmp/aurum-cache"));
-let result = provider.transcribe(&audio, &TranscriptionOptions {
-    model: "tiny-q5_1".into(),
-    language: "en".into(),
-    timestamps: true,
-}).await?;
+let provider = LocalWhisperProvider::new(std::path::PathBuf::from("/tmp/aurum-cache"))
+    .with_progress(false);
+let result = provider
+    .transcribe(
+        &audio,
+        &TranscriptionOptions {
+            model: "tiny-q5_1".into(),
+            language: "en".into(),
+            timestamps: true,
+            cancel: None,
+        },
+    )
+    .await?;
 println!("{}", result.text);
 aurum_core::providers::local::clear_context_cache();
 # Ok(())
 # }
 ```
 
-Full docs: <https://joe-broadhead.github.io/aurum/library/integration/>
+Docs: <https://joe-broadhead.github.io/aurum/library/integration/>
 
 ## Build requirements
 
-cmake + C/C++ toolchain (whisper-rs). ffmpeg at runtime for non-WAV inputs.
+- **Build:** cmake + C/C++ toolchain  
+- **Runtime (files):** ffmpeg for non-16 kHz mono WAV  
 
 ## License
 

@@ -2,35 +2,21 @@
 
 ## Cargo dependency
 
-### Path (monorepo / local checkout)
+```toml
+# Path (local checkout)
+aurum-core = { path = "../aurum/crates/aurum-core" }
+
+# Git — always pin a rev or tag
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "b445fdf" }
+```
+
+Also need a Tokio runtime for async APIs:
 
 ```toml
-[dependencies]
-aurum-core = { path = "../aurum/crates/aurum-core" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-### Git (private or public)
-
-```toml
-[dependencies]
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "REPLACE_WITH_SHA" }
-```
-
-Use a **pinned `rev`** (or tag once releases exist). Avoid floating `branch = "main"` in shipping apps.
-
-### Optional: workspace member
-
-```toml
-# consumer Cargo.toml
-[workspace]
-members = ["app", "…"]
-
-# if you vendor aurum as a submodule:
-# members = ["app", "vendor/aurum/crates/aurum-core"]
-```
-
-## Minimal example (file)
+## File transcription
 
 ```rust
 use aurum_core::audio::load_audio;
@@ -49,6 +35,7 @@ async fn main() -> aurum_core::Result<()> {
                 model: "tiny-q5_1".into(),
                 language: "en".into(),
                 timestamps: true,
+                cancel: None,
             },
         )
         .await?;
@@ -64,29 +51,19 @@ async fn main() -> aurum_core::Result<()> {
 use aurum_core::pcm::PcmBuffer;
 use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
 use std::path::PathBuf;
-use std::sync::Arc;
 
 #[tokio::main]
 async fn main() -> aurum_core::Result<()> {
     let provider = LocalWhisperProvider::new(PathBuf::from("/tmp/aurum-cache"))
         .with_progress(false)
-        // Fail closed if model not already downloaded:
-        .with_local_only(true)
-        .with_download_progress(Arc::new(|p| {
-            if let Some(f) = p.fraction() {
-                eprintln!("download {} {:.0}%", p.model, f * 100.0);
-            }
-        }));
+        .with_local_only(true); // fail closed if model not cached
 
-    // Startup (use local_only=false once to fetch):
-    // provider.with_local_only(false).preload("tiny-q5_1").await?;
     if provider.is_model_cached("tiny-q5_1") {
         provider.preload("tiny-q5_1").await?;
     }
 
     let mut buf = PcmBuffer::dictation(); // ~60s rolling @ 16 kHz
-    // on each mic callback:
-    buf.push(&/* [f32] @ 16 kHz mono */ vec![0.0; 512])?;
+    buf.push(&/* mic chunk: [f32] @ 16 kHz mono */ vec![0.0; 512])?;
 
     let result = provider
         .transcribe_pcm(
@@ -95,6 +72,7 @@ async fn main() -> aurum_core::Result<()> {
                 model: "tiny-q5_1".into(),
                 language: "en".into(),
                 timestamps: false,
+                cancel: None,
             },
         )
         .await?;
@@ -104,32 +82,36 @@ async fn main() -> aurum_core::Result<()> {
 }
 ```
 
-| API | Use |
-|-----|-----|
-| `AudioInput::from_pcm` / `from_pcm_slice` | Wrap existing 16 kHz mono f32 |
-| `PcmBuffer` | Accumulate mic chunks (rolling or bounded) |
-| `LocalWhisperProvider::transcribe_pcm` | Finalize without files |
-| `preload` | Load ggml into process cache at startup |
-| `with_local_only(true)` | No network if model missing |
-| `with_download_progress` | UI progress hook |
+For interim text and cancel, see [Partials & cancel](partials.md).
 
-## Host-oriented notes
+## Cleanup after ASR
+
+```rust
+use aurum_core::cleanup::{
+    apply_cleanup_with_segments, CleanupStyle, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
+};
+
+# async fn demo(mut result: aurum_core::TranscriptionResult) -> aurum_core::Result<()> {
+let rules = RulesCleanup::new();
+apply_cleanup_with_segments(
+    &mut result,
+    &rules as &dyn TextCleanup,
+    CleanupStyle::Clean,
+    SegmentCleanupPolicy::Auto,
+)
+.await?;
+# Ok(())
+# }
+```
+
+## Host checklist
 
 | Concern | Guidance |
 |---------|----------|
-| Sample rate | **16 kHz mono f32 only** — resample in the host |
+| Sample rate | **16 kHz mono f32** — resample in the host |
 | Long-lived process | Reuse one provider; context cache is process-global |
 | Shutdown | Always `clear_context_cache()` before exit (Metal) |
-| Offline / Local Only | `with_local_only(true)` + never construct OpenRouter |
-| Models | Prefer quantized (`tiny-q5_1` / `base-q5_1`) for first download |
+| Offline | `with_local_only(true)`; never construct OpenRouter |
+| Models | Prefer `tiny-q5_1` / `base-q5_1` for first download |
 | Threading | Inference runs on `spawn_blocking` |
-| Partials | Use `PartialClock` + `transcribe_pcm` on a rolling slice — see [Partials](partials.md) |
-| Cancel | Pass `CancelFlag` in `TranscriptionOptions` |
-
-## System deps for consumers
-
-Linking `aurum-core` still needs **cmake** + a C++ toolchain at **build** time
-(for whisper-rs). End users of a fully static product binary do not need Rust,
-but your CI image does.
-
-ffmpeg is required at **runtime** for non-16 kHz-mono-WAV inputs.
+| Build | cmake + C++ toolchain at **build** time; ffmpeg at **runtime** for files |

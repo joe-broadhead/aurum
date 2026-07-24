@@ -5,7 +5,7 @@
 
 ## Versioning
 
-Semantic versioning. Public preview line is `0.x.y`. Source of truth: **`VERSION`**.
+Semantic versioning. Source of truth: **`VERSION`**.
 
 Must match:
 
@@ -20,18 +20,19 @@ Must match:
 ## Checklist before prepare
 
 1. `VERSION` set to intended release  
-2. `CHANGELOG.md` has `## [x.y.z] - YYYY-MM-DD` (move notes out of Unreleased)  
+2. `CHANGELOG.md` has `## [x.y.z] - YYYY-MM-DD` (nothing important left only under Unreleased)  
 3. `cargo test --workspace --locked`  
 4. `cargo clippy --workspace --all-targets --locked -- -D warnings`  
 5. `mkdocs build --strict`  
-6. Integration test optional: `AURUM_INTEGRATION=1 cargo test -p aurum-core --test local_integration -- --ignored`
+6. Optional: `AURUM_INTEGRATION=1 cargo test -p aurum-core --test local_integration -- --ignored`  
+7. Optional: `./scripts/publish_dry_run.sh`  
 
-## Flow (same shape as ZephyrFlow / dbt-nova)
+## Flow
 
 ```text
 1. workflow_dispatch → Prepare Release (version=0.0.0)
 2. Merge release/0.0.0 PR into main
-3. release-tag creates v0.0.0
+3. release-tag creates v0.0.0 (after version_check)
 4. release.yml builds platform binaries + SHA256SUMS + GitHub Release
 ```
 
@@ -54,12 +55,12 @@ git push origin v0.0.0
 
 ## crates.io
 
-**Not automated in v0.0.0.** When approved:
+Not automated. When approved:
 
 ```bash
-cargo publish -p aurum-core --dry-run
+./scripts/publish_dry_run.sh
 cargo publish -p aurum-core
-# CLI binary package is optional on crates.io; prefer GitHub Release binaries
+# CLI binary package optional; prefer GitHub Release binaries
 ```
 
-Consumers should prefer **git tags/revs** until the API stabilizes at `0.1.0`.
+Publish order: **`aurum-core` first**, then `aurum` if desired.

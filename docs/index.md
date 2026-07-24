@@ -5,47 +5,52 @@
 Aurum turns audio files into text with **whisper.cpp on-device by default**, optional OpenRouter, and Zephyr-style cleanup. The same core powers the `aurum` CLI and embeds in apps like ZephyrFlow.
 
 !!! tip "Local by default"
-    No API key required for the default path. Models download once into the platform cache, then inference stays local.
+    No API key required on the default path. Models download once into the platform cache, then inference stays local.
 
 ## 30-second path
 
 ```bash
 git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
-cargo install --path crates/aurum --locked
+./scripts/install.sh
+aurum models
 aurum meeting.m4a --model tiny-q5_1
+aurum meeting.m4a --cleanup clean
 ```
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  A[Audio file] --> B[ffmpeg / WAV load]
+  A[Audio / PCM] --> B[Load + limits]
   B --> C{Provider}
   C -->|local| D[whisper.cpp]
-  C -->|openrouter| E[LLM-assisted chat audio]
+  C -->|openrouter| E[LLM-assisted audio]
   D --> F[postprocess]
   E --> F
-  F --> G[txt / srt / json]
+  F --> G[optional cleanup]
+  G --> H[txt / srt / json]
 ```
 
 ## Workspace
 
 | Crate | Role |
 |-------|------|
-| [`aurum-core`](library/overview.md) | Reusable library (providers, audio, models, output) |
+| [`aurum-core`](library/overview.md) | Library: providers, PCM, models, cleanup, output |
 | `aurum` | CLI binary |
 
 ## Where to go next
 
 | Goal | Page |
 |------|------|
-| Install a binary or from source | [Installation](getting-started/installation.md) |
-| First successful transcript | [Quickstart](getting-started/quickstart.md) |
-| Embed in another Rust project | [Library integration](library/integration.md) |
-| Release process | [Release](development/release.md) |
+| Install | [Installation](getting-started/installation.md) |
+| First transcript | [Quickstart](getting-started/quickstart.md) |
+| CLI flags | [CLI reference](getting-started/cli.md) |
+| Cleanup / flow | [Cleanup](guide/cleanup.md) |
+| Embed in Rust | [Library integration](library/integration.md) |
+| Partials & cancel | [Partials](library/partials.md) |
 | Contribute | [Contributing](development/contributing.md) |
 
 ## Status
 
-`v0.0.0` is experimental. The CLI is usable; the `aurum-core` API may change before `0.1.0`. No crates.io publish until explicitly approved.
+**v0.0.0** public preview. CLI is usable; `aurum-core` may break until `0.1.0`. Prefer a pinned git `rev` or release tag in dependents.

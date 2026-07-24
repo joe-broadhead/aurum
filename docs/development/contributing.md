@@ -9,5 +9,5 @@ cargo fmt --all
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ./scripts/version_check.sh
-mkdocs build --strict
+.venv/bin/mkdocs build --strict
 ```

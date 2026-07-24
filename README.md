@@ -23,10 +23,14 @@
 
 <div align="center">
 
-**Audio in. Text out. On-device by default.** No API key required.  
-Clean provider trait · Zephyr-style cleanup · reusable **`aurum-core`** for apps like ZephyrFlow.
+**Audio in. Text out. On-device by default.**  
+No API key required · clean providers · Zephyr-style cleanup · reusable **`aurum-core`**
 
-[Docs](https://joe-broadhead.github.io/aurum/) · [Quickstart](docs/getting-started/quickstart.md) · [Library](docs/library/integration.md) · [Cleanup](docs/guide/cleanup.md)
+[Docs](https://joe-broadhead.github.io/aurum/) ·
+[Quickstart](docs/getting-started/quickstart.md) ·
+[Library](docs/library/integration.md) ·
+[Cleanup](docs/guide/cleanup.md) ·
+[Security](SECURITY.md)
 
 </div>
 
@@ -34,38 +38,40 @@ Clean provider trait · Zephyr-style cleanup · reusable **`aurum-core`** for ap
 
 ## What it does
 
-Aurum is an **on-device speech-to-text CLI** and Rust library:
+Aurum is an on-device speech-to-text **CLI** and **Rust library**:
 
-1. Point it at an audio file (mp3, m4a, wav, …)
-2. It runs **whisper.cpp** locally (Metal on macOS)
-3. Optional **cleanup** (clean / bullets / professional / summary) — on-device rules or OpenRouter
-4. Emit `txt`, `srt`, or `json`
+1. Point it at an audio file (mp3, m4a, wav, flac, …)
+2. Transcribe with **whisper.cpp** locally (Metal on macOS)
+3. Optionally **clean** the text (fillers, bullets, professional, summary)
+4. Emit **`txt`**, **`srt`**, or **`json`**
 
-> Status: **v0.0.0** experimental · public · docs live.  
-> No crates.io / GitHub Release **tag** until explicitly approved. Release workflows are ready.
+OpenRouter is available as an **optional** remote path for ASR or cleanup — never the default.
+
+> **v0.0.0** public preview. The CLI is usable; the library API may change before `0.1.0`.
 
 ## Highlights
 
-- **Local by default** — whisper.cpp, no API key  
-- **Quantized models** — e.g. `tiny-q5_1` (~32 MB) for a fast first run  
-- **PCM embedder API** — mic hosts skip files/ffmpeg (`transcribe_pcm`, `PcmBuffer`)  
-- **Cleanup / flow** — Zephyr-style styles; `aurum cleanup` on stdin/text  
-- **OpenRouter optional** — LLM-assisted ASR or cleanup (never default)  
-- **Scriptable** — exit codes, JSON metadata (`backend_kind`, `cleanup_style`, …)
+| | |
+|--|--|
+| **Local by default** | whisper.cpp — no API key |
+| **Fast first run** | Quantized models e.g. `tiny-q5_1` (~32 MB) |
+| **Embeddable** | PCM-first API for mic hosts (`transcribe_pcm`, `PcmBuffer`) |
+| **Cleanup / flow** | On-device rules or OpenRouter LLM (`aurum cleanup`) |
+| **Honest remote** | LLM-assisted OpenRouter; unreliable SRT blocked by default |
+| **Scriptable** | Exit codes · JSON metadata · pinned model integrity |
 
-## 30-second path
+## 30-second install
 
 ```bash
 git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
-./scripts/install.sh
+./scripts/install.sh          # needs Rust 1.89+, cmake, ffmpeg
+
 aurum models
 aurum meeting.m4a --model tiny-q5_1
 aurum meeting.m4a --cleanup clean
 echo "um, hello there" | aurum cleanup -s clean
 ```
-
-Prerequisites: **Rust 1.89+**, **cmake**, C/C++ toolchain, **ffmpeg**.
 
 ## Workspace
 
@@ -74,68 +80,68 @@ Prerequisites: **Rust 1.89+**, **cmake**, C/C++ toolchain, **ffmpeg**.
 | [`aurum-core`](crates/aurum-core) | Reusable library |
 | [`aurum`](crates/aurum) | CLI binary |
 
-### Use `aurum-core` from another project
-
 ```toml
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "PIN_ME" }
-# or path = "../aurum/crates/aurum-core"
+# Depend on the library (pin a commit or tag)
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", rev = "b445fdf" }
 ```
 
-See [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).
+Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).
 
-## CLI
+## CLI cheatsheet
 
 ```bash
-aurum <AUDIO_FILE> [--provider local|openrouter] [--model NAME] [-o txt|srt|json] [--cleanup STYLE]
+aurum <FILE> [--model NAME] [-o txt|srt|json] [--cleanup STYLE]
 aurum models
-aurum cleanup [TEXT_FILE] --style clean   # also: aurum flow
+aurum cleanup [TEXT_FILE] --style clean      # alias: aurum flow
+aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
 ```
 
-| Provider | Notes |
-|----------|--------|
-| `local` | whisper.cpp; Metal on macOS; models under platform cache |
-| `openrouter` | LLM-assisted; `OPENROUTER_API_KEY`; SRT off by default |
+| Flag | Default | Notes |
+|------|---------|--------|
+| `--provider` | `local` | `local` \| `openrouter` |
+| `--model` | `base` (local) | e.g. `tiny-q5_1`, or an OpenRouter id |
+| `-o` / `--output` | `txt` | `txt` \| `srt` \| `json` |
+| `--cleanup` | `raw` (off) | `clean` \| `bullets` \| `professional` \| `summary` |
+| `--cleanup-provider` | `rules` | `rules` (on-device) \| `openrouter` |
 
-## Docs
+## Documentation
+
+| Topic | Link |
+|-------|------|
+| Installation | [docs/getting-started/installation.md](docs/getting-started/installation.md) |
+| Quickstart | [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md) |
+| CLI reference | [docs/getting-started/cli.md](docs/getting-started/cli.md) |
+| Providers | [docs/guide/providers.md](docs/guide/providers.md) |
+| Models | [docs/guide/models.md](docs/guide/models.md) |
+| Cleanup | [docs/guide/cleanup.md](docs/guide/cleanup.md) |
+| Configuration | [docs/guide/configuration.md](docs/guide/configuration.md) |
+| Architecture | [docs/development/architecture.md](docs/development/architecture.md) |
+| Security | [SECURITY.md](SECURITY.md) |
+
+Site: **https://joe-broadhead.github.io/aurum/**
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
 .venv/bin/mkdocs serve
-.venv/bin/mkdocs build --strict
 ```
-
-| | |
-|--|--|
-| Install | [docs/getting-started/installation.md](docs/getting-started/installation.md) |
-| Quickstart | [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md) |
-| Cleanup | [docs/guide/cleanup.md](docs/guide/cleanup.md) |
-| Architecture | [docs/development/architecture.md](docs/development/architecture.md) |
-| Release | [docs/development/release.md](docs/development/release.md) |
-| Security | [SECURITY.md](SECURITY.md) |
 
 ## Development
 
 ```bash
-make ci                 # fmt + clippy + test + version-check
-make build              # release CLI
+make ci                          # fmt + clippy + test + version-check
 cargo test --workspace --locked
+cargo test -p aurum-core --test local_integration -- --ignored
 ```
 
-## Release (maintainer)
+## Release
 
-Do **not** tag without approval. Flow mirrors ZephyrFlow:
-
-1. Bump `VERSION` + workspace version + `CHANGELOG`  
-2. `workflow_dispatch` → **Prepare Release**  
-3. Merge `release/x.y.z` PR  
-4. Tag workflow creates `vX.Y.Z` and dispatches multi-platform binary build  
-
-See [docs/development/release.md](docs/development/release.md).
+Maintainer-only. Prepare → merge `release/x.y.z` → tag → multi-platform binaries.  
+Details: [docs/development/release.md](docs/development/release.md).
 
 ## Non-goals (v0.0.0)
 
-Built-in mic capture, diarization, stable library API guarantees, Swift FFI.
+Built-in microphone capture · speaker diarization · stable library API · Swift FFI.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE)

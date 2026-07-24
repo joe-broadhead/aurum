@@ -4,43 +4,50 @@
 
 | Tool | Why |
 |------|-----|
-| **Rust 1.89+** | Build from source / MSRV |
+| **Rust 1.89+** | MSRV / build from source |
 | **cmake** + C/C++ toolchain | Builds `whisper-rs` → whisper.cpp |
-| **ffmpeg** | Decode mp3/m4a/… (system install, not bundled) |
+| **ffmpeg** | Decode mp3, m4a, and other non-16 kHz mono WAVs (system install, not bundled) |
 
 ```bash
 # macOS
-brew install rustup cmake ffmpeg
+brew install rustup-init cmake ffmpeg
 rustup default stable
 
-# Ubuntu/Debian
+# Ubuntu / Debian
 sudo apt install build-essential cmake pkg-config ffmpeg
 # install rustup from https://rustup.rs
 ```
 
-## From source (recommended while private)
+## From source
 
 ```bash
 git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
 ./scripts/install.sh
-# or: cargo install --path crates/aurum --locked --force
+# equivalent: cargo install --path crates/aurum --locked --force
 aurum --version
 ```
 
-## From GitHub Releases (when published)
+## From GitHub Releases
 
-After a tagged release, download the asset for your platform from
+After a tagged release, download the binary for your platform from
 [Releases](https://github.com/joe-broadhead/aurum/releases), verify `SHA256SUMS`,
-make the binary executable, and place it on your `PATH`.
+and place it on your `PATH`:
 
 ```bash
-# example shape (names match release assets)
 chmod +x aurum-macos-arm64
 sudo mv aurum-macos-arm64 /usr/local/bin/aurum
+aurum --version
 ```
+
+| Asset | Platform |
+|-------|----------|
+| `aurum-macos-arm64` | Apple Silicon |
+| `aurum-macos-x86_64` | Intel Mac |
+| `aurum-linux-x86_64` | Linux GNU |
+| `aurum-windows-x86_64.exe` | Windows |
 
 ## Library only (`aurum-core`)
 
-See [Library integration](../library/integration.md). You do not need the CLI
-binary to depend on the core crate.
+You do not need the CLI binary to use the library. See
+[Library integration](../library/integration.md).

@@ -1,9 +1,9 @@
 # Cleanup (flow)
 
-After transcription, Aurum can optionally **clean** the text — the same product
-idea as ZephyrFlow’s flow styles.
+After transcription, Aurum can optionally **clean** the text — the same idea as
+ZephyrFlow’s flow styles.
 
-Cleanup is **off by default** (`raw`) so ASR output stays verbatim unless you ask.
+Cleanup is **off by default** (`raw`) so ASR stays verbatim unless you ask.
 
 ## Styles
 
@@ -22,56 +22,51 @@ Cleanup is **off by default** (`raw`) so ASR output stays verbatim unless you as
 | `rules` | No | Yes |
 | `openrouter` | Yes (`OPENROUTER_API_KEY`) | No |
 
+## Segment policy
+
+After cleaning full text, ASR segments can be:
+
+| Policy | Behavior |
+|--------|----------|
+| `auto` (default) | **clear** for bullets/summary; **keep** for clean/professional |
+| `keep` | leave segments unchanged |
+| `clear` | drop all segments |
+| `per-segment` | run the same style on each segment text |
+
 ## CLI
 
 ### With transcription
 
 ```bash
-# On-device cleanup only
 aurum talk.m4a --model tiny-q5_1 --cleanup clean
 aurum talk.m4a --cleanup bullets
-aurum talk.m4a --cleanup professional
-aurum talk.m4a --cleanup summary
-
-# Segment policy (default auto: clear for bullets/summary, keep otherwise)
 aurum talk.m4a --cleanup clean --cleanup-segments keep
-aurum talk.m4a --cleanup bullets --cleanup-segments clear
-aurum talk.m4a --cleanup clean --cleanup-segments per-segment
 
-# LLM cleanup (explicit)
 export OPENROUTER_API_KEY=sk-or-...
-aurum talk.m4a --cleanup clean --cleanup-provider openrouter
-aurum talk.m4a --cleanup summary --cleanup-provider openrouter --cleanup-model google/gemini-2.5-flash
+aurum talk.m4a --cleanup summary --cleanup-provider openrouter
 ```
 
 ### Cleanup only (no audio)
 
 ```bash
-# stdin
 echo "um, hello there, you know" | aurum cleanup --style clean
-
-# file
 aurum cleanup notes.txt --style bullets
 aurum cleanup draft.txt --style professional -o json
-
-# alias
-cat notes.txt | aurum flow -s summary
+cat notes.txt | aurum flow -s summary          # alias
 ```
 
 ## Config defaults
 
 ```toml
 [cleanup]
-style = "raw"              # raw | clean | bullets | professional | summary
-provider = "rules"         # rules | openrouter
-# openrouter_model = "google/gemini-2.5-flash"
+style = "raw"
+provider = "rules"
+# openrouter_model = "google/gemini-2.5-flash-lite"
 ```
 
-CLI flags override the file. Precedence: CLI > config > built-in (`raw` / `rules`).
+CLI flags override the file.
 
 ## JSON fields
-
-When `-o json`:
 
 ```json
 {
@@ -84,17 +79,24 @@ When `-o json`:
 }
 ```
 
-- `cleanup_style` is always present (`raw` when cleanup is off).
+- `cleanup_style` is always present (`raw` when off).
 - `cleanup_provider` and `original_text` appear only when a non-raw cleanup ran.
 
 ## Library
 
 ```rust
-use aurum_core::cleanup::{apply_cleanup, CleanupStyle, RulesCleanup, TextCleanup};
+use aurum_core::cleanup::{
+    apply_cleanup_with_segments, CleanupStyle, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
+};
 
 # async fn demo(mut result: aurum_core::TranscriptionResult) -> aurum_core::Result<()> {
 let rules = RulesCleanup::new();
-apply_cleanup(&mut result, &rules as &dyn TextCleanup, CleanupStyle::Clean).await?;
+apply_cleanup_with_segments(
+    &mut result,
+    &rules as &dyn TextCleanup,
+    CleanupStyle::Clean,
+    SegmentCleanupPolicy::Auto,
+).await?;
 # Ok(())
 # }
 ```
@@ -102,7 +104,5 @@ apply_cleanup(&mut result, &rules as &dyn TextCleanup, CleanupStyle::Clean).awai
 ## Design notes
 
 - **Local-first:** default cleanup backend never leaves the machine.
-- **ASR vs flow:** transcription providers produce text; cleanup is a separate stage
-  (same separation as Zephyr’s WhisperEngine vs FlowProcessor).
-- **Segments:** cleanup rewrites `result.text` only; SRT segments stay ASR-aligned.
-  Prefer `-o txt` or `-o json` after summary/bullets.
+- **ASR vs flow:** transcription produces text; cleanup is a separate stage.
+- **Segments:** structural styles clear segments by default so SRT is not misleading.

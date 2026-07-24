@@ -20,7 +20,7 @@ readme = "README.md"
 [workspace.dependencies]
 aurum-core = { path = "crates/aurum-core", version = "0.0.0" }
 async-trait = "0.1"
-base64 = "0.22"
+base64 = "0.23"
 clap = { version = "4", features = ["derive", "env"] }
 directories = "6"
 futures-util = "0.3"

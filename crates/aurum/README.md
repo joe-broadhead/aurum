@@ -1,11 +1,12 @@
-# aurum
+# aurum-stt
 
 CLI for [Aurum](https://github.com/joe-broadhead/aurum).
 
 **Audio in. Text out. On-device by default.**
 
 ```bash
-cargo install --path crates/aurum --locked
+cargo install aurum-stt
+# or from this repo: cargo install --path crates/aurum --locked
 # or install a binary from GitHub Releases
 
 aurum models

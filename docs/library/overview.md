@@ -25,4 +25,4 @@ transcription and cleanup stack without shelling out to the binary.
 
 ## Crates.io
 
-Not published yet. Consume via git or path (see [Integration](integration.md)).
+Published on crates.io as **`aurum-core`**. CLI binary package is **`aurum-stt`** (`cargo install aurum-stt`).

@@ -9,7 +9,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 
-for crate in aurum-core aurum; do
+for crate in aurum-core aurum-stt; do
   echo "==> cargo package -p ${crate} --list"
   cargo package -p "${crate}" --list --allow-dirty 2>/dev/null | head -30 || \
     cargo package -p "${crate}" --list | head -30
@@ -22,4 +22,4 @@ for crate in aurum-core aurum; do
 done
 
 echo "publish dry-run complete (nothing uploaded)"
-echo "Publish order when approved: aurum-core first, then aurum."
+echo "Publish order when approved: aurum-core first, then aurum-stt."

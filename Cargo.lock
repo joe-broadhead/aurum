@@ -89,19 +89,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "aurum"
-version = "0.0.0"
-dependencies = [
- "aurum-core",
- "clap",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "aurum-core"
 version = "0.0.0"
 dependencies = [
@@ -126,6 +113,19 @@ dependencies = [
  "which",
  "whisper-rs",
  "wiremock",
+]
+
+[[package]]
+name = "aurum-stt"
+version = "0.0.0"
+dependencies = [
+ "aurum-core",
+ "clap",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

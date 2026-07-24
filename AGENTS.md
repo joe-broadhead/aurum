@@ -20,9 +20,9 @@ scripts/             # install, version_check, fixtures, publish dry-run
 cargo test --workspace --locked
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo fmt --all -- --check
-cargo build -p aurum --release
-cargo run -p aurum -- tests/fixtures/sample.wav --model tiny-q5_1
-cargo run -p aurum -- models
+cargo build -p aurum-stt --release
+cargo run -p aurum-stt -- tests/fixtures/sample.wav --model tiny-q5_1
+cargo run -p aurum-stt -- models
 cargo test -p aurum-core --test local_integration -- --ignored --nocapture
 
 python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt

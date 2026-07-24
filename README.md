@@ -7,6 +7,9 @@
 [![Docs](https://img.shields.io/badge/docs-mkdocs%20material-blue.svg?logo=materialformkdocs&logoColor=white)](https://joe-broadhead.github.io/aurum/)
 [![CI](https://github.com/joe-broadhead/aurum/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/joe-broadhead/aurum/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/joe-broadhead/aurum?include_prereleases&logo=github)](https://github.com/joe-broadhead/aurum/releases)
+[![crates.io aurum-core](https://img.shields.io/crates/v/aurum-core.svg?logo=rust)](https://crates.io/crates/aurum-core)
+[![crates.io aurum-stt](https://img.shields.io/crates/v/aurum-stt.svg?logo=rust)](https://crates.io/crates/aurum-stt)
+[![docs.rs aurum-core](https://img.shields.io/docsrs/aurum-core?logo=docsdotrs)](https://docs.rs/aurum-core)
 
 </div>
 
@@ -78,7 +81,7 @@ echo "um, hello there" | aurum cleanup -s clean
 | Crate | Role |
 |-------|------|
 | [`aurum-core`](crates/aurum-core) | Reusable library |
-| [`aurum`](crates/aurum) | CLI binary |
+| [`aurum-stt`](crates/aurum) | CLI binary (`aurum`) |
 
 ```toml
 # Depend on the library (pin a commit or tag)

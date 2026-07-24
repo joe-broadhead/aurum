@@ -61,13 +61,13 @@ Not triggered by tags. Prefer GitHub Release binaries for the CLI.
 
 ```bash
 ./scripts/publish_dry_run.sh
-cargo publish -p aurum-core          # first
-cargo publish -p aurum               # only after core is on the index
+cargo publish -p aurum-stt-stt-core          # first
+cargo publish -p aurum-stt-stt               # only after core is on the index
 ```
 
 **CI (manual workflow):** Actions → **Publish crates.io**
 
 1. Repo secret or environment `crates-io` secret: `CARGO_REGISTRY_TOKEN`
-2. Dry-run `aurum-core` → real publish `aurum-core` → optional `aurum`
+2. Dry-run `aurum-core` → real publish `aurum-core` → optional `aurum-stt`
 
 `aurum` dry-run / publish fails until `aurum-core` exists on crates.io — expected.

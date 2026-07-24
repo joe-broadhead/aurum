@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- CLI crates.io package name is **`aurum-stt`** (binary remains `aurum`; the `aurum` crate name is taken)
+
+
 ## [0.0.0] - 2026-07-24
 
 ### Added

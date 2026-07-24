@@ -18,7 +18,7 @@ git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
 # Rust 1.89+, cmake, C/C++ toolchain, ffmpeg
 cargo test --workspace --locked
-cargo run -p aurum -- tests/fixtures/sample.wav --model tiny-q5_1
+cargo run -p aurum-stt -- tests/fixtures/sample.wav --model tiny-q5_1
 ```
 
 ## Docs

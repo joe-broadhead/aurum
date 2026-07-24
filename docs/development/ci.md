@@ -9,7 +9,7 @@ Workflows live under `.github/workflows/`.
 | `release-prepare.yml` | manual | Cut `release/x.y.z` PR |
 | `release-tag.yml` | merge release PR | Create `vX.Y.Z` after version_check + dispatch release |
 | `release.yml` | tag `v*` or manual | Multi-platform CLI binaries + SHA256SUMS + GitHub Release |
-| `crates-publish.yml` | **manual only** | crates.io dry-run or publish (`aurum-core` then `aurum`) |
+| `crates-publish.yml` | **manual only** | crates.io dry-run or publish (`aurum-core` then `aurum-stt`) |
 
 ## Local parity
 

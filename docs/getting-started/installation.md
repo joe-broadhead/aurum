@@ -18,6 +18,21 @@ sudo apt install build-essential cmake pkg-config ffmpeg
 # install rustup from https://rustup.rs
 ```
 
+## From crates.io
+
+```bash
+cargo install aurum-stt
+aurum --version
+```
+
+Package name is `aurum-stt` (the `aurum` crate name is already taken on crates.io). The installed binary is still **`aurum`**.
+
+Library:
+
+```toml
+aurum-core = "0.0.0"
+```
+
 ## From source
 
 ```bash

@@ -1,12 +1,12 @@
 [package]
-name = "aurum"
+name = "aurum-stt"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
 homepage.workspace = true
-documentation.workspace = true
+documentation = "https://docs.rs/aurum-stt"
 rust-version.workspace = true
 description = "Audio in. Text out. On-device by default."
 readme = "README.md"
@@ -18,6 +18,10 @@ include = [
   "README.md",
   "LICENSE",
 ]
+
+[lib]
+name = "aurum"
+path = "src/lib.rs"
 
 [[bin]]
 name = "aurum"

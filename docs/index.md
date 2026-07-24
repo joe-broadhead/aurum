@@ -53,4 +53,4 @@ flowchart LR
 
 ## Status
 
-**v0.0.0** public preview. CLI is usable; `aurum-core` may break until `0.1.0`. Prefer a pinned git `rev` or release tag in dependents.
+**v0.0.0** released (`aurum-core` + `aurum-stt` on crates.io). CLI is usable; `aurum-core` may break until `0.1.0`. Prefer a pinned git `rev` or release tag in dependents.

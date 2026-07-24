@@ -22,9 +22,9 @@ aurum path/to/audio.m4a -o json
 ## Repo fixtures
 
 ```bash
-cargo run -p aurum --release -- tests/fixtures/sample.wav --model tiny-q5_1
-cargo run -p aurum --release -- tests/fixtures/fillers.wav --model tiny-q5_1 --cleanup clean
-cargo run -p aurum --release -- tests/fixtures/multi_sentence.wav --model tiny-q5_1 --cleanup bullets
+cargo run -p aurum-stt --release -- tests/fixtures/sample.wav --model tiny-q5_1
+cargo run -p aurum-stt --release -- tests/fixtures/fillers.wav --model tiny-q5_1 --cleanup clean
+cargo run -p aurum-stt --release -- tests/fixtures/multi_sentence.wav --model tiny-q5_1 --cleanup bullets
 ```
 
 ## Cleanup (optional)

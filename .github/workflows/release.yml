@@ -136,7 +136,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo build -p aurum --release --locked --target "${{ matrix.target }}"
+          cargo build -p aurum-stt --release --locked --target "${{ matrix.target }}"
           mkdir -p dist
           src="target/${{ matrix.target }}/release/${{ matrix.bin }}"
           if [[ "${{ runner.os }}" == "Windows" ]]; then

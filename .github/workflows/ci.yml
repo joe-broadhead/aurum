@@ -93,7 +93,7 @@ jobs:
         run: cargo test --workspace --locked
 
       - name: release build CLI
-        run: cargo build -p aurum --release --locked
+        run: cargo build -p aurum-stt --release --locked
 
   msrv:
     name: msrv (1.89)

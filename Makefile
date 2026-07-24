@@ -3,7 +3,7 @@ SHELL := /bin/bash
 .PHONY: build install test lint fmt docs docs-serve clean ci release-dry-run version-check
 
 build:
-	cargo build -p aurum --release --locked
+	cargo build -p aurum-stt --release --locked
 
 install:
 	cargo install --path crates/aurum --locked --force

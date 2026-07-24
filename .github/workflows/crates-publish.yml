@@ -11,7 +11,7 @@ on:
         type: choice
         options:
           - aurum-core
-          - aurum
+          - aurum-stt
       dry_run:
         description: "Dry run (no upload)"
         required: true
@@ -62,5 +62,5 @@ jobs:
           if [ "${DRY_RUN}" = "true" ]; then
             args+=(--dry-run)
           fi
-          # aurum CLI needs aurum-core already on crates.io
+          # aurum-stt CLI needs aurum-core already on crates.io
           cargo publish "${args[@]}"

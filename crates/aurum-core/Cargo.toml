@@ -1,0 +1,58 @@
+[package]
+name = "aurum-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/aurum-core"
+rust-version.workspace = true
+description = "Reusable on-device speech-to-text core (whisper.cpp + providers + cleanup)"
+readme = "README.md"
+keywords = ["transcription", "whisper", "speech-to-text", "stt", "asr"]
+categories = ["multimedia::audio", "api-bindings"]
+include = [
+  "src/**/*",
+  "examples/**/*",
+  "tests/**/*",
+  "Cargo.toml",
+  "README.md",
+  "LICENSE",
+]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+async-trait = { workspace = true }
+base64 = { workspace = true }
+directories = { workspace = true }
+futures-util = { workspace = true }
+hex = { workspace = true }
+hound = { workspace = true }
+indicatif = { workspace = true }
+once_cell = { workspace = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+tempfile = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+tracing = { workspace = true }
+which = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+whisper-rs = { version = "0.16", features = ["metal"] }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+whisper-rs = { version = "0.16" }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }
+wiremock = { workspace = true }

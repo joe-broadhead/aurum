@@ -1,0 +1,77 @@
+name: Tag Release
+
+on:
+  pull_request:
+    types: [closed]
+    branches:
+      - master
+
+jobs:
+  tag:
+    if: >
+      github.event.pull_request.merged == true &&
+      (startsWith(github.event.pull_request.head.ref, 'release/') ||
+       startsWith(github.event.pull_request.head.ref, 'hotfix/'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Create and push tag
+        id: tag
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          set -euo pipefail
+          version_raw="${BRANCH#*/}"
+          if ! [[ "${version_raw}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Skipping tag: branch is not a release/hotfix semantic version (${BRANCH})."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          version="${version_raw#v}"
+          tag="v${version}"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          if git rev-parse "${tag}" >/dev/null 2>&1; then
+            echo "Tag already exists: ${tag}"
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${MERGE_SHA}" ]; then
+            echo "Missing merge commit SHA."
+            exit 1
+          fi
+          # Ensure VERSION/CHANGELOG match the branch version before tagging
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "${file_version}" != "${version}" ]; then
+            echo "VERSION (${file_version}) != branch version (${version})"
+            exit 1
+          fi
+          chmod +x scripts/version_check.sh
+          ./scripts/version_check.sh
+          git tag -a "${tag}" "${MERGE_SHA}" -m "Release ${tag}"
+          # GITHUB_TOKEN tag push may not trigger release.yml — dispatch below.
+          git push origin "${tag}"
+          echo "skipped=false" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch release workflow
+        if: steps.tag.outputs.skipped == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run release.yml \
+            --repo "${GITHUB_REPOSITORY}" \
+            -f tag="${TAG}"

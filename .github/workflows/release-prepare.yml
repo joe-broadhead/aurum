@@ -1,0 +1,91 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example: 0.0.0)"
+        required: true
+        type: string
+      base_branch:
+        description: "Base branch for the release PR"
+        required: true
+        default: "master"
+        type: choice
+        options:
+          - master
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate release metadata
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Version must be x.y.z"
+            exit 1
+          fi
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "${file_version}" != "${VERSION}" ]; then
+            echo "VERSION file (${file_version}) != requested (${VERSION})"
+            exit 1
+          fi
+          chmod +x scripts/version_check.sh
+          ./scripts/version_check.sh
+
+      - name: Create release branch
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+        run: |
+          set -euo pipefail
+          git fetch origin "${BASE_BRANCH}"
+          git checkout "${BASE_BRANCH}"
+          git pull origin "${BASE_BRANCH}"
+          branch="release/${VERSION}"
+          if git show-ref --verify --quiet "refs/remotes/origin/${branch}"; then
+            echo "Release branch already exists: ${branch}"
+            exit 0
+          fi
+          git checkout -b "${branch}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "release: v${VERSION}"
+          git push origin "${branch}"
+
+      - name: Open release PR
+        env:
+          VERSION: ${{ inputs.version }}
+          BASE_BRANCH: ${{ inputs.base_branch }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          branch="release/${VERSION}"
+          if gh pr list --head "${branch}" --base "${BASE_BRANCH}" --state open --json number --jq 'length' | grep -vq '^0$'; then
+            echo "Release PR already open"
+            exit 0
+          fi
+          gh pr create \
+            --base "${BASE_BRANCH}" \
+            --head "${branch}" \
+            --title "release: v${VERSION}" \
+            --body "Automated release PR for **v${VERSION}**.
+
+          Merging will tag \`v${VERSION}\` (via release-tag workflow) and publish CLI binaries (via release workflow).
+
+          **Does not publish to crates.io.** That remains a manual maintainer step.
+
+          **Do not merge without explicit maintainer approval.**
+          "

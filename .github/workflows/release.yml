@@ -1,0 +1,214 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag (for example: v0.0.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      release_tag: ${{ steps.resolve_tag.outputs.release_tag }}
+      release_version: ${{ steps.resolve_tag.outputs.release_version }}
+    steps:
+      - name: Resolve tag
+        id: resolve_tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          release_tag="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            release_tag="${INPUT_TAG}"
+          fi
+          if ! [[ "${release_tag}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release tag: ${release_tag}"
+            exit 1
+          fi
+          echo "release_tag=${release_tag}" >> "$GITHUB_OUTPUT"
+          echo "release_version=${release_tag#v}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Checkout release tag
+        env:
+          RELEASE_TAG: ${{ steps.resolve_tag.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}" || true
+          git checkout --detach "${RELEASE_TAG}" 2>/dev/null || git checkout --detach "tags/${RELEASE_TAG}" 2>/dev/null || true
+          git rev-parse HEAD
+
+      - name: Ensure metadata matches tag
+        env:
+          RELEASE_VERSION: ${{ steps.resolve_tag.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          if [ "${file_version}" != "${RELEASE_VERSION}" ]; then
+            echo "VERSION (${file_version}) != tag (${RELEASE_VERSION})"
+            exit 1
+          fi
+          chmod +x scripts/version_check.sh
+          ./scripts/version_check.sh
+          grep -qE "^## \\[${RELEASE_VERSION}\\]" CHANGELOG.md
+
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - name: Test gate
+        run: cargo test --workspace --locked
+
+  build:
+    name: Build (${{ matrix.asset }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    needs: validate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: macos-arm64
+            bin: aurum
+          # Cross-compile Intel Mac from Apple Silicon runner (macos-13 is deprecated).
+          - os: macos-14
+            target: x86_64-apple-darwin
+            asset: macos-x86_64
+            bin: aurum
+          - os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            asset: linux-x86_64
+            bin: aurum
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: windows-x86_64
+            bin: aurum.exe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.release_tag }}
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Install deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+
+      - name: Install deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install cmake || true
+
+      - name: Install deps (Windows)
+        if: runner.os == 'Windows'
+        run: choco install cmake -y --no-progress
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: v2-aurum-release
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p aurum --release --locked --target "${{ matrix.target }}"
+          mkdir -p dist
+          src="target/${{ matrix.target }}/release/${{ matrix.bin }}"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            cp "$src" "dist/aurum-${{ matrix.asset }}.exe"
+          else
+            cp "$src" "dist/aurum-${{ matrix.asset }}"
+            chmod +x "dist/aurum-${{ matrix.asset }}"
+          fi
+          ls -la dist
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurum-${{ matrix.asset }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    needs: [validate, build]
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.validate.outputs.release_tag }}
+          persist-credentials: false
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: aurum-*
+          merge-multiple: true
+
+      - name: Checksums + layout
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          find artifacts -type f -print0 | xargs -0 -I{} cp {} release-assets/
+          cd release-assets
+          sha256sum * > SHA256SUMS || shasum -a 256 * > SHA256SUMS
+          ls -la
+          cat SHA256SUMS
+
+      - name: Extract changelog section
+        id: notes
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pathlib, re
+          ver = os.environ["RELEASE_VERSION"]
+          text = pathlib.Path("CHANGELOG.md").read_text()
+          pat = rf"## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=\n## |\Z)"
+          m = re.search(pat, text, re.S)
+          body = m.group(1).strip() if m else f"Release v{ver}"
+          pathlib.Path("release-notes.md").write_text(body + "\n")
+          PY
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.validate.outputs.release_tag }}
+          name: ${{ needs.validate.outputs.release_tag }}
+          body_path: release-notes.md
+          files: release-assets/*
+          fail_on_unmatched_files: true
+          generate_release_notes: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

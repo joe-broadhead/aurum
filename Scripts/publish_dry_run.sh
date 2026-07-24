@@ -9,16 +9,17 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 
-echo "==> cargo package -p aurum-core --list"
-cargo package -p aurum-core --list --allow-dirty 2>/dev/null | head -40 || \
-  cargo package -p aurum-core --list | head -40
-
-echo "==> cargo publish -p aurum-core --dry-run"
-# dry-run still needs network for registry index in some cargo versions
-if cargo publish -p aurum-core --dry-run --locked 2>&1; then
-  echo "aurum-core dry-run OK"
-else
-  echo "NOTE: dry-run may fail offline or if package already exists; package --list above is the main gate"
-fi
+for crate in aurum-core aurum; do
+  echo "==> cargo package -p ${crate} --list"
+  cargo package -p "${crate}" --list --allow-dirty 2>/dev/null | head -30 || \
+    cargo package -p "${crate}" --list | head -30
+  echo "==> cargo publish -p ${crate} --dry-run"
+  if cargo publish -p "${crate}" --dry-run --allow-dirty 2>&1; then
+    echo "${crate} dry-run OK"
+  else
+    echo "NOTE: ${crate} dry-run failed (network / deps); package --list is the local gate"
+  fi
+done
 
 echo "publish dry-run complete (nothing uploaded)"
+echo "Publish order when approved: aurum-core first, then aurum."

@@ -2,7 +2,7 @@
 //!
 //! Precedence (highest wins):
 //! 1. CLI flags
-//! 2. Environment variables
+//! 2. Environment variables for OpenRouter only (`OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`)
 //! 3. Config file (`~/.config/aurum/config.toml` on Linux; platform-appropriate elsewhere)
 //! 4. Built-in defaults
 
@@ -108,7 +108,7 @@ fn default_cleanup_provider() -> String {
 }
 
 /// Fully-resolved runtime configuration after merging all sources.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Config {
     pub provider: String,
     pub model: Option<String>,
@@ -128,6 +128,31 @@ pub struct Config {
     pub cleanup_openrouter_model: Option<String>,
     pub config_path: Option<PathBuf>,
     pub cache_dir: PathBuf,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Config")
+            .field("provider", &self.provider)
+            .field("model", &self.model)
+            .field("language", &self.language)
+            .field("output", &self.output)
+            .field("output_file", &self.output_file)
+            .field("timestamps", &self.timestamps)
+            .field("verbose", &self.verbose)
+            .field(
+                "openrouter_api_key",
+                &self.openrouter_api_key.as_ref().map(|_| "***"),
+            )
+            .field("openrouter_base_url", &self.openrouter_base_url)
+            .field("openrouter_default_model", &self.openrouter_default_model)
+            .field("cleanup_style", &self.cleanup_style)
+            .field("cleanup_provider", &self.cleanup_provider)
+            .field("cleanup_openrouter_model", &self.cleanup_openrouter_model)
+            .field("config_path", &self.config_path)
+            .field("cache_dir", &self.cache_dir)
+            .finish()
+    }
 }
 
 impl Config {

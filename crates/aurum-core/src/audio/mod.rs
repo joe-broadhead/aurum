@@ -370,13 +370,14 @@ async fn load_via_ffmpeg(
         .into();
 
     let duration_secs = samples.len() as f64 / 16_000.0;
-    // If we hit the -t cap exactly, the file may be longer — report as too long.
-    if duration_secs >= max_duration_secs - 0.01 && duration_secs >= max_duration_secs {
-        // only reject if we filled the entire allowed window from a longer source
-        // (heuristic: duration equals cap within 1/16000)
-        if (duration_secs - max_duration_secs).abs() < 1.0 / 16_000.0 + 0.05 {
-            // Could be exactly max_duration of content — allow if under byte cap.
+    // ffmpeg -t stops at the cap; if we filled the full window, the source may be longer.
+    // Reject to match the WAV path (no silent truncation).
+    if duration_secs + 0.05 >= max_duration_secs {
+        return Err(UserError::AudioTooLong {
+            duration_secs: max_duration_secs,
+            max_secs: max_duration_secs,
         }
+        .into());
     }
 
     if samples.is_empty() {
@@ -394,21 +395,13 @@ async fn load_via_ffmpeg(
     })
 }
 
-/// Write samples out as a 16 kHz mono WAV using an exclusive create.
+/// Write samples out as a 16 kHz mono WAV using an exclusive create (O_EXCL).
 pub fn write_temp_wav(samples: &[f32], dest: &Path) -> Result<()> {
-    // Prefer exclusive create when possible to avoid symlink clobber races.
+    // Never follow symlinks: require create_new. Callers that need overwrite must unlink first.
     let file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(dest)
-        .or_else(|_| {
-            // Fallback for overwrite paths used by tests that pre-create files.
-            std::fs::OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(dest)
-        })
         .map_err(|e| EnvironmentError::Other {
             message: format!("failed to create temp wav {}: {e}", dest.display()),
         })?;

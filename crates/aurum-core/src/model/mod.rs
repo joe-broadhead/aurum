@@ -344,13 +344,20 @@ pub fn is_model_cached(cache_dir: &Path, model_name: &str) -> bool {
         return false;
     };
     let path = model_path(cache_dir, info);
-    path.exists()
+    if !(path.exists()
         && path
             .metadata()
             .map(|m| m.len() > 1_000_000)
-            .unwrap_or(false)
-        && verify_model_basic(&path, info).is_ok()
-        && verify_cached_checksum(&path)
+            .unwrap_or(false))
+    {
+        return false;
+    }
+    // Pinned path: one hash inside verify_model_basic. Unpinned: magic + sidecar.
+    if pinned_sha256(info.filename).is_some() {
+        verify_model_basic(&path, info).is_ok()
+    } else {
+        verify_model_basic(&path, info).is_ok() && verify_cached_checksum(&path)
+    }
 }
 
 /// Ensure a model is present locally, downloading if needed. Returns the path.
@@ -385,7 +392,13 @@ pub async fn ensure_model_with_options(
             .map(|m| m.len() > 1_000_000)
             .unwrap_or(false)
     {
-        if verify_model_basic(&path, info).is_ok() && verify_cached_checksum(&path) {
+        // Prefer pinned SHA when available (one full hash). Otherwise magic + optional sidecar.
+        let ok = if pinned_sha256(info.filename).is_some() {
+            verify_model_basic(&path, info).is_ok()
+        } else {
+            verify_model_basic(&path, info).is_ok() && verify_cached_checksum(&path)
+        };
+        if ok {
             tracing::info!(model = info.name, path = %path.display(), "using cached model");
             return Ok(path);
         }
@@ -582,6 +595,21 @@ async fn download_model(
             })?;
         hasher.update(&chunk);
         downloaded += chunk.len() as u64;
+        // Cap stream size (disk-fill protection). Allow 25% slack over Content-Length / approx.
+        let max_allowed = total
+            .saturating_mul(5)
+            .saturating_div(4)
+            .max(info.approx_bytes);
+        if downloaded > max_allowed {
+            let _ = fs::remove_file(&partial);
+            return Err(ProviderError::ModelDownload {
+                model: info.name.to_string(),
+                reason: format!(
+                    "download exceeded size cap ({downloaded} > {max_allowed} bytes) — aborting"
+                ),
+            }
+            .into());
+        }
         if let Some(pb) = &pb {
             pb.set_position(downloaded.min(total));
         }
@@ -667,10 +695,22 @@ fn sweep_stale_partials(dir: &Path) {
     let Ok(entries) = fs::read_dir(dir) else {
         return;
     };
+    let stale_after = std::time::Duration::from_secs(6 * 3600);
+    let now = std::time::SystemTime::now();
     for ent in entries.flatten() {
         let name = ent.file_name();
         let name = name.to_string_lossy();
-        if name.contains(".bin.partial.") {
+        // Only stale leftovers — never touch another live download's unique partial.
+        if !name.contains(".bin.partial.") {
+            continue;
+        }
+        let Ok(meta) = ent.metadata() else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        if now.duration_since(modified).unwrap_or_default() > stale_after {
             let _ = fs::remove_file(ent.path());
         }
     }

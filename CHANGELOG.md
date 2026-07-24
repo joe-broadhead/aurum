@@ -23,7 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded pinned SHA-256 set (tiny/base/small q5 + full base/tiny)
 - `PartialWindowPolicy` / `PartialClock` for host-driven interim decode
 - `CancelFlag` + whisper abort callback for cooperative cancel
-- `Scripts/publish_dry_run.sh` for crates.io readiness
+- `Scripts/publish_dry_run.sh` for crates.io readiness (core + CLI)
+- Public repo, GitHub Pages, main branch protection (CI required checks)
+- Audit hardenings: download size cap, stale-only partial sweep, no silent ffmpeg truncate, redacted Config Debug, O_EXCL wav only
 
 ## [0.0.0] - 2026-07-24
 

@@ -110,8 +110,13 @@ impl PartialClock {
     }
 
     /// Ready for another partial given full buffer samples.
+    /// Energy is evaluated on the same rolling window that would be decoded.
     pub fn ready(&self, samples: &[f32]) -> bool {
-        self.interval_elapsed() && self.policy.should_run_partial(samples)
+        if !self.interval_elapsed() || !self.policy.can_run_partial(samples.len()) {
+            return false;
+        }
+        let window = self.policy.slice_for_partial(samples);
+        self.policy.passes_energy_gate(window)
     }
 
     /// Slice + mark if ready; returns `None` if not ready.

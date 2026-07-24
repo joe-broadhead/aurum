@@ -1,10 +1,10 @@
 # AGENTS.md
 
-On-device speech-to-text CLI + reusable core.  
+Audio in. Text out. On-device by default.  
 Stack: **Rust 1.89+**, Cargo workspace (`aurum-core` + `aurum` binary).  
 Version source of truth: `VERSION` (must match workspace `version` and CHANGELOG).
 
-Aurum. Soft fallback name if needed: `aurum-stt`.
+Soft fallback name if needed: `aurum-stt`.
 
 ## Layout
 

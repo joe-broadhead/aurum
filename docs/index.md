@@ -1,8 +1,8 @@
 # Aurum
 
-**On-device speech-to-text CLI and reusable Rust core.**
+**Audio in. Text out. On-device by default.**
 
-Aurum ** converts audio files to text using **whisper.cpp on-device by default**, with an optional OpenRouter remote path. The same core powers the `aurum` binary and can be embedded in apps like ZephyrFlow.
+Aurum turns audio files into text with **whisper.cpp on-device by default**, optional OpenRouter, and Zephyr-style cleanup. The same core powers the `aurum` CLI and embeds in apps like ZephyrFlow.
 
 !!! tip "Local by default"
     No API key required for the default path. Models download once into the platform cache, then inference stays local.

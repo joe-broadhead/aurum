@@ -138,8 +138,17 @@ pub async fn ensure_model(
             .map(|m| m.len() > 1_000_000)
             .unwrap_or(false)
     {
-        tracing::info!(model = info.name, path = %path.display(), "using cached model");
-        return Ok(path);
+        // Re-verify basic integrity (and checksum when we previously wrote one).
+        if verify_model_basic(&path, info).is_ok() && verify_cached_checksum(&path) {
+            tracing::info!(model = info.name, path = %path.display(), "using cached model");
+            return Ok(path);
+        }
+        tracing::warn!(
+            model = info.name,
+            path = %path.display(),
+            "cached model failed integrity check; re-downloading"
+        );
+        let _ = fs::remove_file(&path);
     }
 
     fs::create_dir_all(models_dir(cache_dir)).map_err(|e| EnvironmentError::DirectoryAccess {
@@ -152,11 +161,50 @@ pub async fn ensure_model(
     Ok(path)
 }
 
+/// If a `.sha256` sidecar exists, ensure it matches the file contents.
+/// Missing sidecar → treat as ok (older caches / first run before checksum feature).
+fn verify_cached_checksum(path: &Path) -> bool {
+    let checksum_path = path.with_extension("bin.sha256");
+    let Ok(contents) = fs::read_to_string(&checksum_path) else {
+        return true;
+    };
+    let Some(expected) = contents.split_whitespace().next() else {
+        return true;
+    };
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    use std::io::Read;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 1024 * 64];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => return false,
+        }
+    }
+    let actual = hex::encode(hasher.finalize());
+    if actual != expected {
+        tracing::warn!(%expected, %actual, "model checksum mismatch");
+        return false;
+    }
+    true
+}
+
 async fn download_model(info: &ModelInfo, dest: &Path, show_progress: bool) -> Result<()> {
     let url = format!("{HF_BASE}/{}?download=true", info.filename);
     tracing::info!(model = info.name, %url, "downloading model");
 
-    let partial = dest.with_extension("bin.partial");
+    // Unique partial name avoids two concurrent downloads clobbering each other.
+    let partial = dest.with_extension(format!(
+        "bin.partial.{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
     if partial.exists() {
         let _ = fs::remove_file(&partial);
     }

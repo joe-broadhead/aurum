@@ -4,11 +4,12 @@
 //! - Prefer system `ffmpeg` for decoding any common format to 16 kHz mono f32 PCM
 //! - Fail fast with install instructions if ffmpeg is missing
 //! - WAV files that are already 16 kHz mono PCM can be read directly via `hound`
-//!   as a fast path (still requires ffmpeg for other formats / conversions)
+//! - Enforce duration / decoded-size bounds so we fail before OOM
 
 use crate::error::{EnvironmentError, Result, UserError};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use tokio::process::Command;
 use which::which;
 
@@ -17,13 +18,22 @@ pub const SUPPORTED_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "wav", "flac", "ogg", "opus", "webm", "mp4", "aac", "wma", "mkv",
 ];
 
+/// Default maximum audio duration accepted for transcription (3 hours).
+pub const DEFAULT_MAX_DURATION_SECS: f64 = 3.0 * 3600.0;
+
+/// Approximate decoded PCM budget (f32 mono 16 kHz) — ~500 MB.
+pub const DEFAULT_MAX_DECODED_BYTES: usize = 500 * 1024 * 1024;
+
+/// Max compressed upload size for remote providers (~24 MB keeps base64 JSON manageable).
+pub const DEFAULT_MAX_UPLOAD_BYTES: usize = 24 * 1024 * 1024;
+
 /// In-memory audio ready for a transcription provider.
 #[derive(Debug, Clone)]
 pub struct AudioInput {
     /// Original file path (for display / remote upload).
     pub source_path: PathBuf,
-    /// 16 kHz mono f32 samples in [-1.0, 1.0].
-    pub samples: Vec<f32>,
+    /// 16 kHz mono f32 samples in [-1.0, 1.0], shared to avoid extra copies.
+    pub samples: Arc<[f32]>,
     /// Sample rate — always 16_000 after conversion.
     pub sample_rate: u32,
     /// Duration in seconds.
@@ -31,7 +41,6 @@ pub struct AudioInput {
 }
 
 impl AudioInput {
-    /// Number of samples.
     pub fn len(&self) -> usize {
         self.samples.len()
     }
@@ -53,9 +62,24 @@ pub fn ffmpeg_available() -> bool {
 
 /// Load an audio file, converting to 16 kHz mono f32 PCM as needed.
 pub async fn load_audio(path: &Path) -> Result<AudioInput> {
+    load_audio_with_limits(path, DEFAULT_MAX_DURATION_SECS, DEFAULT_MAX_DECODED_BYTES).await
+}
+
+/// Load audio with explicit safety limits (used by tests and future flags).
+pub async fn load_audio_with_limits(
+    path: &Path,
+    max_duration_secs: f64,
+    max_decoded_bytes: usize,
+) -> Result<AudioInput> {
     if !path.exists() {
         return Err(UserError::FileNotFound {
             path: path.display().to_string(),
+        }
+        .into());
+    }
+    if !path.is_file() {
+        return Err(UserError::InvalidAudio {
+            reason: format!("{} is not a regular file", path.display()),
         }
         .into());
     }
@@ -67,13 +91,45 @@ pub async fn load_audio(path: &Path) -> Result<AudioInput> {
         .is_some_and(|e| e.eq_ignore_ascii_case("wav"))
     {
         if let Ok(audio) = try_load_wav_direct(path) {
-            return Ok(audio);
+            return enforce_limits(audio, max_duration_secs, max_decoded_bytes);
         }
-        // Fall through to ffmpeg if the WAV isn't in the expected format.
         tracing::debug!("WAV direct-load failed; falling back to ffmpeg");
     }
 
-    load_via_ffmpeg(path).await
+    let audio = load_via_ffmpeg(path).await?;
+    enforce_limits(audio, max_duration_secs, max_decoded_bytes)
+}
+
+fn enforce_limits(
+    audio: AudioInput,
+    max_duration_secs: f64,
+    max_decoded_bytes: usize,
+) -> Result<AudioInput> {
+    let decoded_bytes = audio
+        .samples
+        .len()
+        .saturating_mul(std::mem::size_of::<f32>());
+    if audio.duration_secs > max_duration_secs {
+        return Err(UserError::AudioTooLong {
+            duration_secs: audio.duration_secs,
+            max_secs: max_duration_secs,
+        }
+        .into());
+    }
+    if decoded_bytes > max_decoded_bytes {
+        return Err(UserError::AudioTooLarge {
+            decoded_bytes,
+            max_bytes: max_decoded_bytes,
+        }
+        .into());
+    }
+    if audio.samples.is_empty() {
+        return Err(UserError::InvalidAudio {
+            reason: "audio contains no samples".into(),
+        }
+        .into());
+    }
+    Ok(audio)
 }
 
 /// Attempt to read a 16 kHz mono PCM WAV directly.
@@ -99,7 +155,6 @@ fn try_load_wav_direct(path: &Path) -> Result<AudioInput> {
     let samples_i16: std::result::Result<Vec<i16>, _> = match spec.sample_format {
         hound::SampleFormat::Int => reader.into_samples::<i16>().collect(),
         hound::SampleFormat::Float => {
-            // Convert f32 WAV to i16 range then back — simpler to reject and use ffmpeg.
             return Err(UserError::InvalidAudio {
                 reason: "float WAV; use ffmpeg path".into(),
             }
@@ -111,10 +166,12 @@ fn try_load_wav_direct(path: &Path) -> Result<AudioInput> {
         reason: format!("failed reading samples: {e}"),
     })?;
 
-    let samples: Vec<f32> = samples_i16
+    // Conventional PCM scale uses 32768.0 so -32768 maps to -1.0 exactly.
+    let samples: Arc<[f32]> = samples_i16
         .iter()
-        .map(|s| *s as f32 / i16::MAX as f32)
-        .collect();
+        .map(|s| *s as f32 / 32768.0)
+        .collect::<Vec<_>>()
+        .into();
 
     let duration_secs = samples.len() as f64 / 16_000.0;
 
@@ -154,22 +211,9 @@ async fn load_via_ffmpeg(path: &Path) -> Result<AudioInput> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(
-            if stderr.to_lowercase().contains("invalid data")
-                || stderr.to_lowercase().contains("could not find codec")
-                || stderr.to_lowercase().contains("error opening")
-            {
-                UserError::InvalidAudio {
-                    reason: stderr.trim().to_string(),
-                }
-                .into()
-            } else {
-                EnvironmentError::FfmpegFailed {
-                    reason: stderr.trim().to_string(),
-                }
-                .into()
-            },
-        );
+        let reason = stderr.trim().to_string();
+        let short = reason.lines().last().unwrap_or(&reason).to_string();
+        return Err(UserError::InvalidAudio { reason: short }.into());
     }
 
     if output.stdout.is_empty() {
@@ -186,14 +230,15 @@ async fn load_via_ffmpeg(path: &Path) -> Result<AudioInput> {
         .into());
     }
 
-    let samples: Vec<f32> = output
+    let samples: Arc<[f32]> = output
         .stdout
         .chunks_exact(2)
         .map(|c| {
             let s = i16::from_le_bytes([c[0], c[1]]);
-            s as f32 / i16::MAX as f32
+            s as f32 / 32768.0
         })
-        .collect();
+        .collect::<Vec<_>>()
+        .into();
 
     let duration_secs = samples.len() as f64 / 16_000.0;
 
@@ -205,7 +250,7 @@ async fn load_via_ffmpeg(path: &Path) -> Result<AudioInput> {
     })
 }
 
-/// Write samples back out as a temporary 16 kHz mono WAV (used by remote providers).
+/// Write samples out as a 16 kHz mono WAV.
 pub fn write_temp_wav(samples: &[f32], dest: &Path) -> Result<()> {
     let spec = hound::WavSpec {
         channels: 1,
@@ -219,7 +264,7 @@ pub fn write_temp_wav(samples: &[f32], dest: &Path) -> Result<()> {
 
     for &s in samples {
         let clamped = s.clamp(-1.0, 1.0);
-        let i = (clamped * i16::MAX as f32) as i16;
+        let i = (clamped * 32767.0).round() as i16;
         writer
             .write_sample(i)
             .map_err(|e| EnvironmentError::Other {
@@ -230,6 +275,66 @@ pub fn write_temp_wav(samples: &[f32], dest: &Path) -> Result<()> {
         message: format!("failed finalizing wav: {e}"),
     })?;
     Ok(())
+}
+
+/// Encode samples to a compressed temp file for remote upload.
+///
+/// Returns `(path, format)` where format is `"mp3"` or `"wav"`.
+/// Caller must delete `path` when done.
+pub async fn encode_for_upload(
+    samples: &[f32],
+    max_bytes: usize,
+) -> Result<(PathBuf, &'static str)> {
+    let id = unique_id();
+    let tmp = std::env::temp_dir();
+    let wav_path = tmp.join(format!("aurum-upload-{id}.wav"));
+    write_temp_wav(samples, &wav_path)?;
+
+    // Prefer compact mp3 for upload when ffmpeg can encode it.
+    if let Ok(ffmpeg) = require_ffmpeg() {
+        let mp3_path = tmp.join(format!("aurum-upload-{id}.mp3"));
+        let output = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+            .arg(&wav_path)
+            .args(["-codec:a", "libmp3lame", "-b:a", "64k"])
+            .arg(&mp3_path)
+            .output()
+            .await;
+
+        if let Ok(output) = output {
+            if output.status.success() {
+                if let Ok(meta) = std::fs::metadata(&mp3_path) {
+                    if meta.len() > 0 && meta.len() as usize <= max_bytes {
+                        let _ = std::fs::remove_file(&wav_path);
+                        return Ok((mp3_path, "mp3"));
+                    }
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&mp3_path);
+    }
+
+    let meta = std::fs::metadata(&wav_path).map_err(|e| EnvironmentError::Other {
+        message: format!("stat upload wav: {e}"),
+    })?;
+    if meta.len() as usize > max_bytes {
+        let _ = std::fs::remove_file(&wav_path);
+        return Err(UserError::AudioTooLarge {
+            decoded_bytes: meta.len() as usize,
+            max_bytes,
+        }
+        .into());
+    }
+    Ok((wav_path, "wav"))
+}
+
+fn unique_id() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("{}-{}", std::process::id(), t)
 }
 
 /// Infer a reasonable audio format label from a path extension.
@@ -269,8 +374,7 @@ mod tests {
         for i in 0..n {
             let t = i as f32 / 16_000.0;
             let sample = (2.0 * std::f32::consts::PI * freq * t).sin();
-            w.write_sample((sample * i16::MAX as f32 * 0.2) as i16)
-                .unwrap();
+            w.write_sample((sample * 32767.0 * 0.2) as i16).unwrap();
         }
         w.finalize().unwrap();
     }
@@ -293,6 +397,12 @@ mod tests {
         assert!(err.is_err());
     }
 
+    #[test]
+    fn rejects_directory() {
+        let err = load_audio_blocking(Path::new("/tmp"));
+        assert!(err.is_err());
+    }
+
     fn load_audio_blocking(path: &Path) -> Result<AudioInput> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -309,5 +419,27 @@ mod tests {
         write_temp_wav(&samples, &path).unwrap();
         let audio = try_load_wav_direct(&path).unwrap();
         assert_eq!(audio.samples.len(), samples.len());
+    }
+
+    #[test]
+    fn enforces_duration_limit() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("long.wav");
+        synthesize_sine_wav(&path, 1.0, 440.0);
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let err = rt.block_on(load_audio_with_limits(
+            &path,
+            0.1,
+            DEFAULT_MAX_DECODED_BYTES,
+        ));
+        assert!(matches!(
+            err,
+            Err(crate::error::TranscriptionError::User(
+                UserError::AudioTooLong { .. }
+            ))
+        ));
     }
 }

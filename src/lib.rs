@@ -40,6 +40,7 @@ pub mod config;
 pub mod error;
 pub mod model;
 pub mod output;
+pub mod postprocess;
 pub mod providers;
 
 pub use audio::{load_audio, AudioInput};

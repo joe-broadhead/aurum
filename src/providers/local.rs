@@ -4,9 +4,14 @@ use super::{Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionR
 use crate::audio::AudioInput;
 use crate::error::{ProviderError, Result};
 use crate::model;
+use crate::postprocess;
 use async_trait::async_trait;
+use once_cell::sync::OnceCell;
 use std::path::PathBuf;
+use std::sync::Arc;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
+
+static LOGGING_HOOKS: OnceCell<()> = OnceCell::new();
 
 /// Local whisper.cpp provider.
 ///
@@ -44,15 +49,14 @@ impl TranscriptionProvider for LocalWhisperProvider {
         let model_name = options.model.clone();
         let language = options.language.clone();
         let timestamps = options.timestamps;
-        let samples = input.samples.clone();
+        // Arc clone is cheap — avoid duplicating the PCM buffer.
+        let samples: Arc<[f32]> = Arc::clone(&input.samples);
         let duration_secs = input.duration_secs;
         let cache_dir = self.cache_dir.clone();
         let show_progress = self.show_progress;
 
-        // Ensure model on async side (download may need runtime).
         let model_path = model::ensure_model(&cache_dir, &model_name, show_progress).await?;
 
-        // whisper-rs is synchronous and CPU/GPU heavy — run on a blocking thread.
         let result = tokio::task::spawn_blocking(move || {
             run_whisper(
                 &model_path,
@@ -68,7 +72,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
             reason: format!("worker thread panicked: {e}"),
         })??;
 
-        Ok(result)
+        Ok(postprocess::normalize_result(result))
     }
 }
 
@@ -80,9 +84,10 @@ fn run_whisper(
     language: &str,
     timestamps: bool,
 ) -> Result<TranscriptionResult> {
-    // Redirect whisper.cpp / ggml chatter away from stderr (no-op sinks unless
-    // whisper-rs log/tracing backend features are enabled).
-    whisper_rs::install_logging_hooks();
+    // Install once per process — hooks are process-global.
+    LOGGING_HOOKS.get_or_init(|| {
+        whisper_rs::install_logging_hooks();
+    });
 
     let ctx_params = WhisperContextParameters::default();
     let ctx = WhisperContext::new_with_params(model_path.to_string_lossy().as_ref(), ctx_params)
@@ -99,13 +104,16 @@ fn run_whisper(
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
 
-    // Silence whisper.cpp's own stdout chatter; we own the UX.
     params.set_print_special(false);
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
     params.set_suppress_blank(true);
+    // Suppress non-speech tokens like [BLANK_AUDIO] at the decoder.
+    params.set_suppress_nst(true);
     params.set_token_timestamps(timestamps);
+    // Raise no-speech threshold slightly to reduce blank-audio hallucinations.
+    params.set_no_speech_thold(0.6);
 
     let n_threads = std::thread::available_parallelism()
         .map(|n| n.get() as i32)
@@ -118,7 +126,7 @@ fn run_whisper(
     //
     // NOTE: do NOT call `set_detect_language(true)`. On current whisper.cpp / whisper-rs
     // that flag returns zero segments even though language id is detected. Auto-detect is
-    // achieved by passing language = None (or "auto") with detect_language left false.
+    // achieved by passing language = None with detect_language left false.
     let lang = language.trim().to_ascii_lowercase();
     let auto = lang.is_empty() || lang == "auto";
     if auto {
@@ -136,7 +144,6 @@ fn run_whisper(
     let mut segments = Vec::new();
     let mut full_text = String::new();
 
-    // Iterate segments via the high-level iterator API.
     for segment in state.as_iter() {
         // Timestamps from whisper.cpp are in centiseconds.
         let start = segment.start_timestamp() as f64 / 100.0;
@@ -157,7 +164,6 @@ fn run_whisper(
         });
     }
 
-    // Best-effort language detection readout (returns -1 if unknown).
     let lang_id = state.full_lang_id_from_state();
     let detected = if lang_id >= 0 {
         whisper_rs::get_lang_str(lang_id).map(|s| s.to_string())

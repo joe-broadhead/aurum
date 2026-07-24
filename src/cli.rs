@@ -1,7 +1,7 @@
 //! CLI definition and orchestration.
 
 use crate::audio;
-use crate::config::{self, Config, DEFAULT_LOCAL_MODEL, DEFAULT_OPENROUTER_MODEL};
+use crate::config::{Config, DEFAULT_LOCAL_MODEL, DEFAULT_OPENROUTER_MODEL};
 use crate::error::{Result, TranscriptionError, UserError};
 use crate::output::{self, OutputFormat};
 use crate::providers::{
@@ -94,10 +94,16 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         .into());
     }
+    if !cli.audio_file.is_file() {
+        return Err(UserError::InvalidAudio {
+            reason: format!("{} is not a regular file", cli.audio_file.display()),
+        }
+        .into());
+    }
 
     // Load / convert audio.
-    if cli.verbose {
-        eprintln!("aurum: loading audio {} …", cli.audio_file.display());
+    if cli.verbose || atty_stderr() {
+        eprintln!("aurum: loading audio …");
     }
     let audio = audio::load_audio(&cli.audio_file).await?;
     if cli.verbose {
@@ -106,6 +112,14 @@ pub async fn run(cli: Cli) -> Result<()> {
             audio.duration_secs,
             audio.samples.len(),
             audio.sample_rate
+        );
+    }
+
+    // Long jobs look hung without feedback — emit a single status line.
+    if atty_stderr() {
+        eprintln!(
+            "aurum: transcribing with {provider_name}/{model} ({:.1}s audio) …",
+            audio.duration_secs
         );
     }
 
@@ -227,10 +241,11 @@ fn atty_stderr() -> bool {
 /// Map a library error to a process exit code and print it.
 pub fn report_error(err: &TranscriptionError) {
     eprintln!("error: {err}");
-    if let Some(path) = Config::default_config_path() {
-        if matches!(err, TranscriptionError::User(UserError::MissingApiKey)) {
+    // Do not create files as a side-effect of an error — only hint the path.
+    if matches!(err, TranscriptionError::User(UserError::MissingApiKey)) {
+        if let Some(path) = Config::default_config_path() {
             eprintln!("  Config file location: {}", path.display());
-            let _ = config::write_example_config(&path);
+            eprintln!("  Create it with a [openrouter] api_key, or export OPENROUTER_API_KEY.");
         }
     }
 }

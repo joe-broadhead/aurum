@@ -2,12 +2,16 @@
 //!
 //! OpenRouter does not currently expose an OpenAI-compatible
 //! `/audio/transcriptions` endpoint. Instead, audio is sent via the
-//! multimodal chat completions API (`input_audio`). This provider wraps that
-//! flow and normalizes the response into [`TranscriptionResult`].
+//! multimodal chat completions API (`input_audio`).
+//!
+//! **Important product semantics:** this is LLM-assisted transcription, not a
+//! dedicated ASR model. Output may paraphrase, omit filler, or invent
+//! timestamps. Prefer the local provider when verbatim accuracy matters.
 
 use super::{Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult};
-use crate::audio::{self, AudioInput};
+use crate::audio::{self, AudioInput, DEFAULT_MAX_UPLOAD_BYTES};
 use crate::error::{ProviderError, Result, UserError};
+use crate::postprocess::{self, truncate_chars};
 use async_trait::async_trait;
 use base64::Engine;
 use serde::{Deserialize, Serialize};
@@ -23,6 +27,7 @@ pub struct OpenRouterProvider {
     api_key: String,
     base_url: String,
     http: reqwest::Client,
+    max_upload_bytes: usize,
 }
 
 impl std::fmt::Debug for OpenRouterProvider {
@@ -30,6 +35,7 @@ impl std::fmt::Debug for OpenRouterProvider {
         f.debug_struct("OpenRouterProvider")
             .field("base_url", &self.base_url)
             .field("api_key", &"***")
+            .field("max_upload_bytes", &self.max_upload_bytes)
             .finish()
     }
 }
@@ -60,6 +66,7 @@ impl OpenRouterProvider {
             api_key,
             base_url,
             http,
+            max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
         })
     }
 
@@ -79,17 +86,21 @@ impl TranscriptionProvider for OpenRouterProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
-        // Build a temp WAV so we have a well-defined format for base64 upload.
-        let tmp_dir = std::env::temp_dir().join(format!("aurum-{}", std::process::id()));
-        std::fs::create_dir_all(&tmp_dir).ok();
-        let wav_path: PathBuf = tmp_dir.join("upload.wav");
-        audio::write_temp_wav(&input.samples, &wav_path)?;
+        // Compress before base64 — raw WAV in JSON OOMs on long audio.
+        let (upload_path, format) =
+            audio::encode_for_upload(&input.samples, self.max_upload_bytes).await?;
+        let cleanup = scopeguard_path(upload_path.clone());
 
-        let wav_bytes = tokio::fs::read(&wav_path).await?;
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&wav_bytes);
-
-        // Best-effort cleanup.
-        let _ = std::fs::remove_file(&wav_path);
+        let file_bytes = tokio::fs::read(&upload_path).await?;
+        if file_bytes.len() > self.max_upload_bytes {
+            return Err(UserError::AudioTooLarge {
+                decoded_bytes: file_bytes.len(),
+                max_bytes: self.max_upload_bytes,
+            }
+            .into());
+        }
+        let b64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
+        drop(cleanup); // remove temp file as soon as encoded
 
         let mut prompt =
             String::from("Transcribe the audio verbatim. Reply with ONLY the transcript text");
@@ -97,7 +108,8 @@ impl TranscriptionProvider for OpenRouterProvider {
             prompt.push_str(
                 ", as a JSON object with keys \"text\" (string) and \"segments\" \
                  (array of {\"start\": number, \"end\": number, \"text\": string}) \
-                 where times are in seconds. Do not wrap in markdown.",
+                 where times are in seconds. Do not wrap in markdown. \
+                 If you cannot produce reliable timestamps, return text only as plain string.",
             );
         } else {
             prompt.push_str(". Do not add commentary, labels, or markdown.");
@@ -118,7 +130,7 @@ impl TranscriptionProvider for OpenRouterProvider {
                         "type": "input_audio",
                         "input_audio": {
                             "data": b64,
-                            "format": "wav"
+                            "format": format
                         }
                     }
                 ]
@@ -126,7 +138,13 @@ impl TranscriptionProvider for OpenRouterProvider {
             "temperature": 0,
         });
 
-        tracing::debug!(model = %options.model, url = %self.chat_url(), "openrouter request");
+        tracing::debug!(
+            model = %options.model,
+            url = %self.chat_url(),
+            upload_format = format,
+            upload_bytes = file_bytes.len(),
+            "openrouter request"
+        );
 
         let response = self
             .http
@@ -152,7 +170,7 @@ impl TranscriptionProvider for OpenRouterProvider {
         if status.as_u16() == 401 || status.as_u16() == 403 {
             return Err(ProviderError::Auth {
                 provider: PROVIDER_NAME.into(),
-                reason: truncate(&body_text, 300),
+                reason: truncate_chars(&body_text, 300),
             }
             .into());
         }
@@ -165,14 +183,14 @@ impl TranscriptionProvider for OpenRouterProvider {
         if status.as_u16() == 402 {
             return Err(ProviderError::QuotaExceeded {
                 provider: PROVIDER_NAME.into(),
-                reason: truncate(&body_text, 300),
+                reason: truncate_chars(&body_text, 300),
             }
             .into());
         }
         if !status.is_success() {
             return Err(ProviderError::Remote {
                 provider: PROVIDER_NAME.into(),
-                reason: format!("HTTP {status}: {}", truncate(&body_text, 500)),
+                reason: format!("HTTP {status}: {}", truncate_chars(&body_text, 500)),
             }
             .into());
         }
@@ -182,7 +200,7 @@ impl TranscriptionProvider for OpenRouterProvider {
                 provider: PROVIDER_NAME.into(),
                 reason: format!(
                     "invalid JSON response: {e}; body={}",
-                    truncate(&body_text, 300)
+                    truncate_chars(&body_text, 300)
                 ),
             })?;
 
@@ -203,7 +221,7 @@ impl TranscriptionProvider for OpenRouterProvider {
 
         let (text, segments) = parse_content(&content, options.timestamps, input.duration_secs);
 
-        Ok(TranscriptionResult {
+        let result = TranscriptionResult {
             text,
             segments,
             language: if lang != "auto" && !lang.is_empty() {
@@ -214,8 +232,21 @@ impl TranscriptionProvider for OpenRouterProvider {
             model: options.model.clone(),
             provider: PROVIDER_NAME.to_string(),
             duration_secs: input.duration_secs,
-        })
+        };
+
+        Ok(postprocess::normalize_result(result))
     }
+}
+
+/// Tiny RAII helper so temp upload files are removed even on early return.
+struct PathGuard(PathBuf);
+impl Drop for PathGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+fn scopeguard_path(path: PathBuf) -> PathGuard {
+    PathGuard(path)
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,7 +273,6 @@ struct TimestampPayload {
 
 fn parse_content(content: &str, want_timestamps: bool, duration: f64) -> (String, Vec<Segment>) {
     if want_timestamps {
-        // Strip optional markdown fences.
         let cleaned = content
             .trim()
             .trim_start_matches("```json")
@@ -254,7 +284,6 @@ fn parse_content(content: &str, want_timestamps: bool, duration: f64) -> (String
         }
     }
 
-    // Plain text fallback — single segment spanning the full duration.
     let text = content.to_string();
     let segments = vec![Segment {
         start: 0.0,
@@ -264,17 +293,10 @@ fn parse_content(content: &str, want_timestamps: bool, duration: f64) -> (String
     (text, segments)
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max])
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -303,8 +325,7 @@ mod tests {
         let provider =
             OpenRouterProvider::new(Some("test-key".into()), Some(server.uri())).unwrap();
 
-        // 0.1s of silence
-        let samples = vec![0.0f32; 1600];
+        let samples: Arc<[f32]> = vec![0.0f32; 1600].into();
         let input = AudioInput {
             source_path: PathBuf::from("silent.wav"),
             samples,
@@ -335,7 +356,7 @@ mod tests {
             OpenRouterProvider::new(Some("test-key".into()), Some(server.uri())).unwrap();
         let input = AudioInput {
             source_path: PathBuf::from("x.wav"),
-            samples: vec![0.0; 1600],
+            samples: vec![0.0; 1600].into(),
             sample_rate: 16_000,
             duration_secs: 0.1,
         };

@@ -79,10 +79,14 @@ Options:
 
 OpenRouter does **not** currently expose `/api/v1/audio/transcriptions`. Aurum sends audio through the multimodal **chat completions** API (`input_audio`), which is the supported path for audio-capable models.
 
+> **Semantics:** this is **LLM-assisted** transcription, not a dedicated ASR backend.  
+> It may paraphrase, drop filler, or invent timestamps. Prefer `--provider local` when verbatim accuracy matters.
+
 | Detail | Value |
 |--------|--------|
-| Auth | `OPENROUTER_API_KEY` (preferred) or `~/.config/aurum/config.toml` |
+| Auth | `OPENROUTER_API_KEY` (preferred) or config file |
 | Default model | `google/gemini-2.5-flash` |
+| Upload | Compressed (mp3 when ffmpeg allows), capped ~24 MB |
 | Failures | Missing key, 401/403, 429 rate limit, and 402 quota errors surface with actionable messages |
 
 ```bash
@@ -129,6 +133,16 @@ macOS:   brew install ffmpeg
 Ubuntu:  sudo apt install ffmpeg
 Windows: winget install ffmpeg
 ```
+
+### Safety limits (v0.0.0)
+
+| Limit | Default | Why |
+|-------|---------|-----|
+| Max duration | 3 hours | Bound RAM before decode finishes |
+| Max decoded PCM | ~500 MB | Fail before OOM on pathological input |
+| Max remote upload | ~24 MB compressed | Keep base64 JSON payloads workable |
+
+Whisper special tokens such as `[BLANK_AUDIO]` are stripped from output. Segment timestamps are clamped to the audio duration.
 
 ## Library use (experimental)
 

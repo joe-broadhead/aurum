@@ -86,18 +86,22 @@ fn format_srt(result: &TranscriptionResult) -> String {
     }
 
     let mut out = String::new();
-    for (idx, seg) in result.segments.iter().enumerate() {
+    let mut cue = 1usize;
+    for seg in &result.segments {
         let text = seg.text.trim();
         if text.is_empty() {
             continue;
         }
+        // SRT forbids unescaped newlines inside cue text — flatten.
+        let text = text.replace('\r', " ").replace('\n', " ");
         out.push_str(&format!(
             "{}\n{} --> {}\n{}\n\n",
-            idx + 1,
+            cue,
             format_ts(seg.start),
             format_ts(seg.end),
             text
         ));
+        cue += 1;
     }
     out
 }

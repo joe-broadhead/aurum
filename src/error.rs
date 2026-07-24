@@ -32,6 +32,21 @@ pub enum UserError {
     #[error("invalid audio file: {reason}\n  Hint: ensure the file is a supported audio format (mp3, m4a, wav, flac, ogg, …).")]
     InvalidAudio { reason: String },
 
+    #[error(
+        "audio is too long ({duration_secs:.1}s); maximum accepted is {max_secs:.0}s.\n  \
+         Hint: split the file, or raise the limit once longer-form support lands."
+    )]
+    AudioTooLong { duration_secs: f64, max_secs: f64 },
+
+    #[error(
+        "decoded audio is too large ({decoded_bytes} bytes); maximum is {max_bytes} bytes.\n  \
+         Hint: split the file into shorter clips."
+    )]
+    AudioTooLarge {
+        decoded_bytes: usize,
+        max_bytes: usize,
+    },
+
     #[error("unsupported output format: {format}\n  Hint: use one of: txt, srt, json.")]
     InvalidOutputFormat { format: String },
 

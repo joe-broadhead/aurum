@@ -24,7 +24,6 @@ pub struct AurumEngine {
 /// Owned transcript for C accessors.
 pub struct AurumTranscript {
     inner: Transcript,
-    /// Cached CString pointers so accessors can return `*const c_char`.
     text: CString,
     language: Option<CString>,
     model: CString,
@@ -70,6 +69,15 @@ fn cstr_opt<'a>(p: *const c_char) -> Result<Option<&'a str>, FfiError> {
     cstr(p).map(Some)
 }
 
+fn require_reserved_zero(bytes: &[u8]) -> Result<(), FfiError> {
+    if bytes.iter().any(|&b| b != 0) {
+        return Err(FfiError::invalid_arg(
+            "reserved struct fields must be zero (memset the config/opts to 0 before use)",
+        ));
+    }
+    Ok(())
+}
+
 fn status_ok() -> i32 {
     FfiStatus::Ok.as_i32()
 }
@@ -86,7 +94,32 @@ fn catch_status(f: impl FnOnce() -> Result<(), FfiError>) -> i32 {
     }
 }
 
-fn transcript_to_c(t: Transcript) -> Result<Box<AurumTranscript>, FfiError> {
+/// Like [`catch_status`], but records panic / error on the engine's last_error.
+fn catch_status_engine(
+    engine: *mut AurumEngine,
+    f: impl FnOnce(&Engine) -> Result<(), FfiError>,
+) -> i32 {
+    if engine.is_null() {
+        return FfiStatus::InvalidArg.as_i32();
+    }
+    let eng = unsafe { &*engine };
+    match catch_unwind(AssertUnwindSafe(|| f(&eng.inner))) {
+        Ok(Ok(())) => status_ok(),
+        Ok(Err(e)) => {
+            // façade methods usually already store; ensure message is set
+            eng.inner.set_last_error_message(e.message.clone());
+            status_err(&e)
+        }
+        Err(_) => {
+            eng.inner.set_last_error_message(
+                "internal panic in aurum-ffi (see host logs); engine busy state was released if held",
+            );
+            FfiStatus::Internal.as_i32()
+        }
+    }
+}
+
+pub(crate) fn transcript_to_c(t: Transcript) -> Result<Box<AurumTranscript>, FfiError> {
     let text = CString::new(t.text.as_str())
         .map_err(|_| FfiError::internal("transcript text contains NUL"))?;
     let language = match &t.language {
@@ -116,19 +149,16 @@ fn transcript_to_c(t: Transcript) -> Result<Box<AurumTranscript>, FfiError> {
 
 /* ---------- version / process ---------- */
 
-/// ABI integer (`AURUM_ABI_VERSION`).
 #[no_mangle]
 pub extern "C" fn aurum_abi_version() -> c_uint {
     AURUM_ABI_VERSION
 }
 
-/// Required PCM sample rate (Hz).
 #[no_mangle]
 pub extern "C" fn aurum_sample_rate() -> c_uint {
     AURUM_SAMPLE_RATE
 }
 
-/// Crate SemVer string (static).
 #[no_mangle]
 pub extern "C" fn aurum_version() -> *const c_char {
     static VER: once_cell::sync::Lazy<CString> = once_cell::sync::Lazy::new(|| {
@@ -137,7 +167,8 @@ pub extern "C" fn aurum_version() -> *const c_char {
     VER.as_ptr()
 }
 
-/// Clear whisper context cache and drop the FFI Tokio runtime.
+/// Wait for in-flight ops, clear whisper context cache, reject new work.
+/// Must not be called while the host still intends to use engines.
 #[no_mangle]
 pub extern "C" fn aurum_shutdown() {
     let _ = catch_unwind(|| {
@@ -147,7 +178,6 @@ pub extern "C" fn aurum_shutdown() {
 
 /* ---------- engine lifecycle ---------- */
 
-/// Create an engine. On success writes `*out` and returns `AURUM_OK`.
 #[no_mangle]
 pub unsafe extern "C" fn aurum_engine_create(
     cfg: *const AurumEngineConfigC,
@@ -158,6 +188,7 @@ pub unsafe extern "C" fn aurum_engine_create(
             return Err(FfiError::invalid_arg("cfg and out must be non-null"));
         }
         let cfg = unsafe { &*cfg };
+        require_reserved_zero(&cfg.reserved)?;
         let cache_dir = cstr(cfg.cache_dir)?.to_string();
         let engine = Engine::new(EngineConfig {
             cache_dir,
@@ -172,7 +203,6 @@ pub unsafe extern "C" fn aurum_engine_create(
     })
 }
 
-/// Destroy an engine (no-op on null).
 #[no_mangle]
 pub unsafe extern "C" fn aurum_engine_destroy(engine: *mut AurumEngine) {
     if engine.is_null() {
@@ -183,17 +213,18 @@ pub unsafe extern "C" fn aurum_engine_destroy(engine: *mut AurumEngine) {
     }));
 }
 
-/// Last error message for this engine (empty string if none). Never null if engine non-null.
+/// Last error message for this engine.
+///
+/// **Lifetime:** pointer is valid only until the next `aurum_engine_last_error`
+/// call **on the same thread**. Copy immediately if you need to keep it.
 #[no_mangle]
 pub unsafe extern "C" fn aurum_engine_last_error(engine: *const AurumEngine) -> *const c_char {
     if engine.is_null() {
         return ptr::null();
     }
-    // Leak-free: store in thread-local for pointer stability for this call pattern is hard;
-    // use a per-call CString leaked into a slot on the engine via last_error rebuild.
-    // We return a pointer into a thread-local buffer updated each call.
     thread_local! {
-        static BUF: std::cell::RefCell<CString> = std::cell::RefCell::new(CString::new("").unwrap());
+        static BUF: std::cell::RefCell<CString> =
+            std::cell::RefCell::new(CString::new("").unwrap());
     }
     let msg = unsafe { &*engine }.inner.last_error();
     BUF.with(|b| {
@@ -210,18 +241,16 @@ pub unsafe extern "C" fn aurum_engine_preload(
     engine: *mut AurumEngine,
     model: *const c_char,
 ) -> i32 {
-    catch_status(|| {
-        if engine.is_null() {
-            return Err(FfiError::invalid_arg("engine is null"));
-        }
+    catch_status_engine(engine, |inner| {
         let model = cstr(model)?;
-        unsafe { &*engine }.inner.preload(model)
+        inner.preload(model)
     })
 }
 
+/// Read-only model cache probe (does not download or load).
 #[no_mangle]
 pub unsafe extern "C" fn aurum_engine_is_model_ready(
-    engine: *mut AurumEngine,
+    engine: *const AurumEngine,
     model: *const c_char,
 ) -> u8 {
     if engine.is_null() || model.is_null() {
@@ -247,11 +276,9 @@ pub unsafe extern "C" fn aurum_engine_transcribe_pcm(
     opts: *const AurumTranscribeOptsC,
     out_transcript: *mut *mut AurumTranscript,
 ) -> i32 {
-    catch_status(|| {
-        if engine.is_null() || out_transcript.is_null() {
-            return Err(FfiError::invalid_arg(
-                "engine and out_transcript must be non-null",
-            ));
+    catch_status_engine(engine, |inner| {
+        if out_transcript.is_null() {
+            return Err(FfiError::invalid_arg("out_transcript must be non-null"));
         }
         if opts.is_null() {
             return Err(FfiError::invalid_arg("opts must be non-null"));
@@ -260,6 +287,7 @@ pub unsafe extern "C" fn aurum_engine_transcribe_pcm(
             return Err(FfiError::invalid_arg("samples is null"));
         }
         let opts_c = unsafe { &*opts };
+        require_reserved_zero(&opts_c.reserved)?;
         let model = cstr(opts_c.model)?.to_string();
         let language = cstr_opt(opts_c.language)?.unwrap_or("auto").to_string();
         let slice = if n_samples == 0 {
@@ -267,7 +295,7 @@ pub unsafe extern "C" fn aurum_engine_transcribe_pcm(
         } else {
             unsafe { std::slice::from_raw_parts(samples, n_samples) }
         };
-        let t = unsafe { &*engine }.inner.transcribe_pcm(
+        let t = inner.transcribe_pcm(
             slice,
             &TranscribeOpts {
                 model,
@@ -421,4 +449,82 @@ pub unsafe extern "C" fn aurum_string_free(s: *mut c_char) {
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
         drop(CString::from_raw(s));
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::{CleanupStyle, Segment};
+    use std::ffi::CStr;
+
+    #[test]
+    fn transcript_accessors_and_segments() {
+        let t = Transcript {
+            text: "hello world".into(),
+            language: Some("en".into()),
+            model: "tiny-q5_1".into(),
+            duration_secs: 1.5,
+            timestamps_reliable: true,
+            segments: vec![
+                Segment {
+                    start_s: 0.0,
+                    end_s: 0.8,
+                    text: "hello".into(),
+                },
+                Segment {
+                    start_s: 0.8,
+                    end_s: 1.5,
+                    text: "world".into(),
+                },
+            ],
+            cleanup_style: CleanupStyle::Raw,
+        };
+        let boxed = transcript_to_c(t).unwrap();
+        let ptr = Box::into_raw(boxed);
+
+        unsafe {
+            let text = CStr::from_ptr(aurum_transcript_text(ptr)).to_str().unwrap();
+            assert_eq!(text, "hello world");
+            let lang = CStr::from_ptr(aurum_transcript_language(ptr))
+                .to_str()
+                .unwrap();
+            assert_eq!(lang, "en");
+            let model = CStr::from_ptr(aurum_transcript_model(ptr))
+                .to_str()
+                .unwrap();
+            assert_eq!(model, "tiny-q5_1");
+            assert!((aurum_transcript_duration_secs(ptr) - 1.5).abs() < 1e-9);
+            assert_eq!(aurum_transcript_timestamps_reliable(ptr), 1);
+            assert_eq!(aurum_transcript_segment_count(ptr), 2);
+
+            let mut seg = AurumSegmentC {
+                start_s: 0.0,
+                end_s: 0.0,
+                text: ptr::null(),
+            };
+            assert_eq!(aurum_transcript_segment(ptr, 0, &mut seg), 0);
+            assert!((seg.start_s - 0.0).abs() < 1e-9);
+            assert_eq!(CStr::from_ptr(seg.text).to_str().unwrap(), "hello");
+            assert_eq!(aurum_transcript_segment(ptr, 2, &mut seg), 1); // INVALID_ARG
+            aurum_transcript_free(ptr);
+        }
+    }
+
+    #[test]
+    fn reserved_nonzero_rejected() {
+        use std::ffi::CString;
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let cache = CString::new(dir.path().to_str().unwrap()).unwrap();
+        let mut cfg = AurumEngineConfigC {
+            cache_dir: cache.as_ptr(),
+            local_only: 1,
+            progress_logging: 0,
+            reserved: [0; 6],
+        };
+        cfg.reserved[0] = 1;
+        let mut out = ptr::null_mut();
+        let st = unsafe { aurum_engine_create(&cfg, &mut out) };
+        assert_eq!(st, FfiStatus::InvalidArg.as_i32());
+    }
 }

@@ -46,7 +46,10 @@ cargo build -p aurum-ffi --release
 
 - Partials / mic capture stay in the host.
 - No OpenRouter in this crate (on-device path only).
-- One in-flight `transcribe_pcm` per engine; concurrent calls return `AURUM_ERR_STATE`.
+- One exclusive op (`preload` or `transcribe_pcm`) per engine; concurrent calls return `AURUM_ERR_STATE`.
+- Distinct engines may run concurrently (shared multi-thread Tokio runtime, no process-wide call mutex).
+- Zero-init C structs (`reserved` must be 0). Copy `aurum_engine_last_error` immediately (thread-local).
+- Call `aurum_shutdown` only after destroy; waits briefly for in-flight ops before clearing the whisper cache.
 
 ## License
 

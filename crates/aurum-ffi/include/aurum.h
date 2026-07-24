@@ -4,9 +4,18 @@
  * Audio in. Text out. On-device by default.
  *
  * PCM must be mono float32 at AURUM_SAMPLE_RATE Hz.
- * Threading: at most one aurum_engine_transcribe_pcm per engine at a time;
- * aurum_engine_cancel is safe from another thread during transcribe.
- * Call aurum_shutdown() before process exit (Metal/ggml teardown).
+ *
+ * Threading:
+ *   - At most one exclusive op (preload or transcribe_pcm) per engine at a time.
+ *   - Distinct engines may run concurrently (process-wide Tokio runtime).
+ *   - aurum_engine_cancel is safe from another thread during transcribe.
+ *
+ * Lifecycle:
+ *   - Zero-initialize config/opts structs (reserved fields must be 0).
+ *   - Call aurum_engine_destroy on every engine, then aurum_shutdown() before
+ *     process exit (Metal/ggml teardown). Do not start new work after shutdown.
+ *   - aurum_engine_last_error: returned pointer is valid only until the next
+ *     aurum_engine_last_error call on the SAME thread — copy immediately.
  */
 #pragma once
 
@@ -52,14 +61,14 @@ typedef struct AurumEngineConfig {
   const char *cache_dir;    /* required, UTF-8 */
   uint8_t local_only;       /* 1 = never download */
   uint8_t progress_logging; /* 0 default */
-  uint8_t reserved[6];
+  uint8_t reserved[6];      /* must be zero */
 } AurumEngineConfig;
 
 typedef struct AurumTranscribeOpts {
   const char *model;    /* required */
   const char *language; /* nullable → "auto" */
   uint8_t timestamps;   /* 0/1 */
-  uint8_t reserved[7];
+  uint8_t reserved[7];  /* must be zero */
 } AurumTranscribeOpts;
 
 typedef struct AurumSegment {
@@ -77,11 +86,16 @@ void aurum_shutdown(void);
 /* engine lifecycle */
 AurumStatus aurum_engine_create(const AurumEngineConfig *cfg, AurumEngine **out);
 void aurum_engine_destroy(AurumEngine *engine);
+/**
+ * Last error for this engine.
+ * Lifetime: valid until the next aurum_engine_last_error call on this thread.
+ */
 const char *aurum_engine_last_error(const AurumEngine *engine);
 
 /* models */
 AurumStatus aurum_engine_preload(AurumEngine *engine, const char *model);
-uint8_t aurum_engine_is_model_ready(AurumEngine *engine, const char *model);
+/** Read-only; does not download or load. */
+uint8_t aurum_engine_is_model_ready(const AurumEngine *engine, const char *model);
 
 /* decode */
 AurumStatus aurum_engine_transcribe_pcm(AurumEngine *engine,

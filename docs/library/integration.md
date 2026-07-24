@@ -123,7 +123,8 @@ async fn main() -> aurum_core::Result<()> {
 | Offline / Local Only | `with_local_only(true)` + never construct OpenRouter |
 | Models | Prefer quantized (`tiny-q5_1` / `base-q5_1`) for first download |
 | Threading | Inference runs on `spawn_blocking` |
-| Partials | Not in-core yet — host can call `transcribe_pcm` on a window |
+| Partials | Use `PartialClock` + `transcribe_pcm` on a rolling slice — see [Partials](partials.md) |
+| Cancel | Pass `CancelFlag` in `TranscriptionOptions` |
 
 ## System deps for consumers
 

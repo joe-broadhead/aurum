@@ -639,11 +639,25 @@ async fn download_model(
 
 /// Independently pinned SHA-256 digests for models we have verified.
 /// Unlisted models still get magic + size checks and a self-written sidecar.
+/// Independently verified SHA-256 digests (HuggingFace ggerganov/whisper.cpp main).
 fn pinned_sha256(filename: &str) -> Option<&'static str> {
     match filename {
         "ggml-tiny.bin" => Some("be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"),
         "ggml-tiny-q5_1.bin" => {
             Some("818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7")
+        }
+        "ggml-tiny.en-q5_1.bin" => {
+            Some("c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b")
+        }
+        "ggml-base.bin" => Some("60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe"),
+        "ggml-base-q5_1.bin" => {
+            Some("422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898")
+        }
+        "ggml-base.en-q5_1.bin" => {
+            Some("4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f")
+        }
+        "ggml-small-q5_1.bin" => {
+            Some("ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb")
         }
         _ => None,
     }

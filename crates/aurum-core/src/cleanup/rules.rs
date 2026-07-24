@@ -55,19 +55,13 @@ static RE_WS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("rege
 static RE_WS2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").expect("regex"));
 static RE_SPACE_PUNCT: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\s+([,.!?;:])").expect("regex"));
-static RE_SENT_SPLIT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"[.!?]+\s+").expect("regex"));
+static RE_SENT_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[.!?]+\s+").expect("regex"));
 
 fn clean(text: &str) -> String {
     let mut result = RE_WS.replace_all(text, " ").into_owned();
 
     let multi = [
-        "you know",
-        "i mean",
-        "sort of",
-        "kind of",
-        "okay so",
-        "so yeah",
+        "you know", "i mean", "sort of", "kind of", "okay so", "so yeah",
     ];
     for filler in multi {
         let pat = format!(r"(?i)\b{}\b[,.]?", regex::escape(filler));

@@ -292,10 +292,7 @@ mod tests {
     #[tokio::test]
     async fn raw_trims_only() {
         let c = RulesCleanup::new();
-        let out = c
-            .cleanup("  keep this  ", CleanupStyle::Raw)
-            .await
-            .unwrap();
+        let out = c.cleanup("  keep this  ", CleanupStyle::Raw).await.unwrap();
         assert_eq!(out.text, "keep this");
     }
 
@@ -331,10 +328,7 @@ mod tests {
         assert!(result.segments.is_empty());
         assert!(result.text.contains('•'));
         assert_eq!(result.cleanup_style, CleanupStyle::Bullets);
-        assert_eq!(
-            result.cleanup_provider,
-            Some(CleanupProviderKind::Rules)
-        );
+        assert_eq!(result.cleanup_provider, Some(CleanupProviderKind::Rules));
     }
 
     #[tokio::test]

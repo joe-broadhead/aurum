@@ -2,8 +2,8 @@
 
 use aurum_core::audio;
 use aurum_core::cleanup::{
-    apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupStyle, OpenRouterCleanup,
-    RulesCleanup, SegmentCleanupPolicy, TextCleanup,
+    apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupStyle,
+    OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
 };
 use aurum_core::config::Config;
 use aurum_core::error::{Result, TranscriptionError, UserError};
@@ -93,7 +93,10 @@ pub struct TranscribeArgs {
     pub allow_unreliable_timestamps: bool,
 
     /// Post-transcript cleanup style (default: raw = off).
-    #[arg(long = "cleanup", value_name = "raw|clean|bullets|professional|summary")]
+    #[arg(
+        long = "cleanup",
+        value_name = "raw|clean|bullets|professional|summary"
+    )]
     pub cleanup: Option<String>,
 
     /// Cleanup backend: on-device rules (default) or OpenRouter LLM.
@@ -121,7 +124,11 @@ pub struct CleanupArgs {
     pub input: Option<PathBuf>,
 
     /// Cleanup style (default: clean for this subcommand, or config).
-    #[arg(long = "style", short = 's', value_name = "raw|clean|bullets|professional|summary")]
+    #[arg(
+        long = "style",
+        short = 's',
+        value_name = "raw|clean|bullets|professional|summary"
+    )]
     pub style: Option<String>,
 
     /// Alias for --style (matches transcribe flag naming).
@@ -301,6 +308,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         model: model.clone(),
         language: cfg.language.clone(),
         timestamps: want_timestamps,
+        cancel: None,
     };
 
     let mut result = match provider_name.as_str() {
@@ -384,15 +392,15 @@ async fn run_cleanup_cmd(cli: CleanupArgs) -> Result<()> {
 
     // Prefer explicit cleanup flags; style defaults to `clean` for this subcommand
     // when neither CLI nor non-raw config is set — operators expect cleanup to do something.
-    let style_raw = cli
-        .style
-        .as_deref()
-        .or(cli.cleanup.as_deref())
-        .unwrap_or(if cfg.cleanup_style == "raw" {
-            "clean"
-        } else {
-            cfg.cleanup_style.as_str()
-        });
+    let style_raw =
+        cli.style
+            .as_deref()
+            .or(cli.cleanup.as_deref())
+            .unwrap_or(if cfg.cleanup_style == "raw" {
+                "clean"
+            } else {
+                cfg.cleanup_style.as_str()
+            });
     let provider_raw = cli
         .provider
         .as_deref()
@@ -485,10 +493,7 @@ async fn read_cleanup_input(path: Option<&std::path::Path>) -> Result<String> {
     }
 }
 
-fn build_cleanup_backend(
-    cfg: &Config,
-    kind: CleanupProviderKind,
-) -> Result<Box<dyn TextCleanup>> {
+fn build_cleanup_backend(cfg: &Config, kind: CleanupProviderKind) -> Result<Box<dyn TextCleanup>> {
     match kind {
         CleanupProviderKind::Rules => Ok(Box::new(RulesCleanup::new())),
         CleanupProviderKind::OpenRouter => Ok(Box::new(OpenRouterCleanup::new(

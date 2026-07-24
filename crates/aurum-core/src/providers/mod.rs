@@ -27,6 +27,8 @@ pub struct TranscriptionOptions {
     pub language: String,
     /// Request segment-level timestamps when the provider supports them.
     pub timestamps: bool,
+    /// Optional cooperative cancel flag (honoured by local whisper decode).
+    pub cancel: Option<crate::cancel::CancelFlag>,
 }
 
 impl Default for TranscriptionOptions {
@@ -35,7 +37,15 @@ impl Default for TranscriptionOptions {
             model: crate::config::DEFAULT_LOCAL_MODEL.to_string(),
             language: crate::config::DEFAULT_LANGUAGE.to_string(),
             timestamps: false,
+            cancel: None,
         }
+    }
+}
+
+impl TranscriptionOptions {
+    pub fn with_cancel(mut self, flag: crate::cancel::CancelFlag) -> Self {
+        self.cancel = Some(flag);
+        self
     }
 }
 

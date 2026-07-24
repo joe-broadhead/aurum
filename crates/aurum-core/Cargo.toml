@@ -15,6 +15,7 @@ categories = ["multimedia::audio", "api-bindings"]
 include = [
   "src/**/*",
   "examples/**/*",
+  "tests/**/*",
   "Cargo.toml",
   "README.md",
   "LICENSE",

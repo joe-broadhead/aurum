@@ -111,6 +111,7 @@ nav:
   - Library (aurum-core):
       - Overview: library/overview.md
       - Integration: library/integration.md
+      - Partials & cancel: library/partials.md
   - Operations:
       - Troubleshooting: operations/troubleshooting.md
       - Security: operations/security.md

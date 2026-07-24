@@ -22,6 +22,7 @@ async fn main() -> aurum_core::Result<()> {
                 model: "tiny-q5_1".into(),
                 language: "auto".into(),
                 timestamps: false,
+                cancel: None,
             },
         )
         .await?;

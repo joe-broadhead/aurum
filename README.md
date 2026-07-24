@@ -12,7 +12,8 @@
 - **Scriptable output** — `txt` / `srt` / `json`  
 - **Library + CLI** — `aurum-core` + `aurum` binary  
 
-> Status: **v0.0.0** experimental. No crates.io publish until approved. Releases are tagged via the same prepare → merge → tag → assets flow as ZephyrFlow / dbt-nova.
+> Status: **v0.0.0** experimental · **public** · docs: <https://joe-broadhead.github.io/aurum/>  
+> No crates.io / GitHub Release tag until explicitly approved. Release workflows are ready (prepare → merge → tag → binaries).
 
 ## 30-second path
 

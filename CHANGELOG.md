@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - JSON: `cleanup_style`, optional `cleanup_provider` + `original_text`
 - `aurum cleanup` / `aurum flow` subcommand (stdin or text file)
 - `--cleanup-segments auto|keep|clear|per-segment` (auto clears on bullets/summary)
+- Expanded pinned SHA-256 set (tiny/base/small q5 + full base/tiny)
+- `PartialWindowPolicy` / `PartialClock` for host-driven interim decode
+- `CancelFlag` + whisper abort callback for cooperative cancel
+- `Scripts/publish_dry_run.sh` for crates.io readiness
 
 ## [0.0.0] - 2026-07-24
 

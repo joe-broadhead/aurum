@@ -342,6 +342,7 @@ mod tests {
             model: "google/gemini-2.5-flash".into(),
             language: "en".into(),
             timestamps: false,
+            cancel: None,
         };
         let result = provider.transcribe(&input, &opts).await.unwrap();
         assert_eq!(result.text, "Hello from the cloud.");
@@ -370,6 +371,7 @@ mod tests {
             model: "google/gemini-2.5-flash".into(),
             language: "auto".into(),
             timestamps: false,
+            cancel: None,
         };
         let err = provider.transcribe(&input, &opts).await.unwrap_err();
         match err {

@@ -17,7 +17,7 @@ See also root [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/main/SEC
 ## Integrity
 
 - Model magic verified (fail closed)  
-- Pinned SHA-256 for selected models (`tiny`, `tiny-q5_1`)  
+- Pinned SHA-256 for common models (`tiny`, `tiny-q5_1`, `tiny.en-q5_1`, `base`, `base-q5_1`, `base.en-q5_1`, `small-q5_1`)  
 - Cross-process download lock  
 
 ## Reporting

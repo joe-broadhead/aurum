@@ -31,6 +31,7 @@
 //!             model: "tiny-q5_1".into(),
 //!             language: "en".into(),
 //!             timestamps: false,
+//!             cancel: None,
 //!         },
 //!     )
 //!     .await?;
@@ -42,6 +43,7 @@
 //! ```
 
 pub mod audio;
+pub mod cancel;
 pub mod cleanup;
 pub mod config;
 pub mod error;
@@ -50,8 +52,10 @@ pub mod output;
 pub mod pcm;
 pub mod postprocess;
 pub mod providers;
+pub mod window;
 
 pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
+pub use cancel::CancelFlag;
 pub use cleanup::{
     apply_cleanup, apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupResult,
     CleanupStyle, OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
@@ -65,3 +69,4 @@ pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, Segment, TranscriptionOptions, TranscriptionProvider,
     TranscriptionResult,
 };
+pub use window::{PartialClock, PartialWindowPolicy};

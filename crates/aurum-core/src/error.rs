@@ -121,6 +121,9 @@ pub enum ProviderError {
     #[error("transcription failed: {reason}")]
     TranscriptionFailed { reason: String },
 
+    #[error("transcription cancelled")]
+    Cancelled,
+
     #[error("network error talking to {provider}: {reason}")]
     Network { provider: String, reason: String },
 

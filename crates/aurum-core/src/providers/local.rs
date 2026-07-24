@@ -13,9 +13,7 @@ use super::{
 };
 use crate::audio::{AudioInput, WHISPER_SAMPLE_RATE};
 use crate::error::{ProviderError, Result};
-use crate::model::{
-    self, DownloadProgressCallback, EnsureModelOptions,
-};
+use crate::model::{self, DownloadProgressCallback, EnsureModelOptions};
 use crate::postprocess;
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
@@ -219,16 +217,24 @@ impl TranscriptionProvider for LocalWhisperProvider {
             .into());
         }
 
+        if options.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
+            return Err(ProviderError::Cancelled.into());
+        }
+
         let model_name = options.model.clone();
         let language = options.language.clone();
         let timestamps = options.timestamps;
+        let cancel = options.cancel.clone();
         let samples: Arc<[f32]> = Arc::clone(&input.samples);
         let duration_secs = input.duration_secs;
         let cache_dir = self.cache_dir.clone();
         let opts = self.ensure_opts();
 
-        let model_path =
-            model::ensure_model_with_options(&cache_dir, &model_name, opts).await?;
+        let model_path = model::ensure_model_with_options(&cache_dir, &model_name, opts).await?;
+
+        if cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
+            return Err(ProviderError::Cancelled.into());
+        }
 
         let result = tokio::task::spawn_blocking(move || {
             run_whisper(
@@ -238,6 +244,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 duration_secs,
                 &language,
                 timestamps,
+                cancel.as_ref(),
             )
         })
         .await
@@ -249,6 +256,14 @@ impl TranscriptionProvider for LocalWhisperProvider {
     }
 }
 
+unsafe extern "C" fn abort_callback_atomic(user_data: *mut std::ffi::c_void) -> bool {
+    if user_data.is_null() {
+        return false;
+    }
+    let flag = &*(user_data as *const std::sync::atomic::AtomicBool);
+    flag.load(std::sync::atomic::Ordering::SeqCst)
+}
+
 fn run_whisper(
     model_path: &Path,
     model_name: &str,
@@ -256,7 +271,12 @@ fn run_whisper(
     duration_secs: f64,
     language: &str,
     timestamps: bool,
+    cancel: Option<&crate::cancel::CancelFlag>,
 ) -> Result<TranscriptionResult> {
+    if cancel.is_some_and(|c| c.is_cancelled()) {
+        return Err(ProviderError::Cancelled.into());
+    }
+
     let ctx = CONTEXT_CACHE.get_or_load(model_path, model_name)?;
 
     let mut state = ctx
@@ -276,6 +296,17 @@ fn run_whisper(
     params.set_token_timestamps(timestamps);
     params.set_no_speech_thold(0.6);
 
+    // Keep Arc alive across full() so the C abort callback's pointer stays valid.
+    let _cancel_keep: Option<std::sync::Arc<std::sync::atomic::AtomicBool>> =
+        cancel.map(|f| f.clone_arc());
+    if let Some(ref arc) = _cancel_keep {
+        let ptr = std::sync::Arc::as_ptr(arc) as *mut std::ffi::c_void;
+        unsafe {
+            params.set_abort_callback(Some(abort_callback_atomic));
+            params.set_abort_callback_user_data(ptr);
+        }
+    }
+
     let n_threads = std::thread::available_parallelism()
         .map(|n| n.get() as i32)
         .unwrap_or(4)
@@ -290,11 +321,13 @@ fn run_whisper(
         params.set_language(Some(lang.as_str()));
     }
 
-    state
-        .full(params, samples)
-        .map_err(|e| ProviderError::TranscriptionFailed {
-            reason: e.to_string(),
-        })?;
+    let full_res = state.full(params, samples);
+    if cancel.is_some_and(|c| c.is_cancelled()) {
+        return Err(ProviderError::Cancelled.into());
+    }
+    full_res.map_err(|e| ProviderError::TranscriptionFailed {
+        reason: e.to_string(),
+    })?;
 
     let mut segments = Vec::new();
     let mut full_text = String::new();

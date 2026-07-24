@@ -46,6 +46,7 @@ async fn local_tiny_q5_real_speech() {
         model: "tiny-q5_1".into(),
         language: "en".into(),
         timestamps: true,
+        cancel: None,
     };
 
     let result = provider

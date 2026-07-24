@@ -1,7 +1,7 @@
 name: Publish crates.io
 
 # Manual only. Does not run on tag/push.
-# Order: aurum-core first, then optional aurum CLI crate.
+# Order: aurum-core first, then aurum-stt, then optional aurum-ffi.
 on:
   workflow_dispatch:
     inputs:
@@ -12,6 +12,7 @@ on:
         options:
           - aurum-core
           - aurum-stt
+          - aurum-ffi
       dry_run:
         description: "Dry run (no upload)"
         required: true

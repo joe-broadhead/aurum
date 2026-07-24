@@ -108,9 +108,10 @@ nav:
       - Cleanup: guide/cleanup.md
       - Configuration: guide/configuration.md
       - Output formats: guide/output.md
-  - Library (aurum-core):
+  - Library:
       - Overview: library/overview.md
       - Integration: library/integration.md
+      - Native embeds (FFI): library/ffi.md
       - Partials & cancel: library/partials.md
   - Operations:
       - Troubleshooting: operations/troubleshooting.md
@@ -118,6 +119,5 @@ nav:
   - Development:
       - Contributing: development/contributing.md
       - Architecture: development/architecture.md
-      - FFI design (aurum-ffi): development/aurum-ffi.md
       - CI & Quality: development/ci.md
       - Release: development/release.md

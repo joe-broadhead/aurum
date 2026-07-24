@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `aurum-ffi` crate: C ABI façade (`include/aurum.h`) for embedders — PCM transcribe, preload, cancel, rules cleanup
+- Docs: native embeds guide (`docs/library/ffi.md`); workspace/architecture updated for three crates
+
+
 ### Changed
 
 - CLI crates.io package name is **`aurum-stt`** (binary remains `aurum`; the `aurum` crate name is taken)

@@ -10,6 +10,8 @@ Thanks for helping build on-device speech-to-text that stays honest and embeddab
 4. **Actionable errors** — user / environment / provider taxonomy; no panics on expected failures.
 5. **No silent network** — remote only when explicitly selected.
 6. **Library consumers matter** — keep `aurum-core` minimal and documented.
+7. **FFI stays narrow** — `aurum-ffi` is on-device PCM/preload/cancel/rules only; no cloud in the C ABI.
+8. **No audit/spec dumps in git** — product docs under `docs/` only; long design specs stay out of the repo.
 
 ## Setup
 

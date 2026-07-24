@@ -82,6 +82,7 @@ echo "um, hello there" | aurum cleanup -s clean
 |-------|------|
 | [`aurum-core`](crates/aurum-core) | Reusable library |
 | [`aurum-stt`](crates/aurum) | CLI binary (`aurum`) |
+| [`aurum-ffi`](crates/aurum-ffi) | C ABI for native embeds ([`aurum.h`](crates/aurum-ffi/include/aurum.h)) |
 
 ```toml
 # Depend on the library (pin a commit or tag)
@@ -118,6 +119,7 @@ aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
 | Models | [docs/guide/models.md](docs/guide/models.md) |
 | Cleanup | [docs/guide/cleanup.md](docs/guide/cleanup.md) |
 | Configuration | [docs/guide/configuration.md](docs/guide/configuration.md) |
+| Native embeds (FFI) | [docs/library/ffi.md](docs/library/ffi.md) |
 | Architecture | [docs/development/architecture.md](docs/development/architecture.md) |
 | Security | [SECURITY.md](SECURITY.md) |
 

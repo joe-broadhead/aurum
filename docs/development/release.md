@@ -11,7 +11,7 @@ Must match:
 
 - workspace `version` in root `Cargo.toml`
 - `## [x.y.z]` in `CHANGELOG.md`
-- crate versions via `version.workspace = true`
+- crate versions via `version.workspace = true` (`aurum-core`, `aurum-stt`, `aurum-ffi`)
 
 ```bash
 ./scripts/version_check.sh
@@ -30,10 +30,10 @@ Must match:
 ## Flow
 
 ```text
-1. workflow_dispatch → Prepare Release (version=0.0.0)
-2. Merge release/0.0.0 PR into master
-3. release-tag creates v0.0.0 (after version_check)
-4. release.yml builds platform binaries + SHA256SUMS + GitHub Release
+1. workflow_dispatch → Prepare Release (version=x.y.z)
+2. Merge release/x.y.z PR into master
+3. release-tag creates vX.Y.Z (after version_check)
+4. release.yml builds platform CLI binaries + SHA256SUMS + GitHub Release
 ```
 
 ## Manual tag (fallback)
@@ -43,7 +43,7 @@ git tag -a v0.0.0 -m "Release v0.0.0"
 git push origin v0.0.0
 ```
 
-## Assets
+## Assets (CLI)
 
 | Asset | Platform |
 |-------|----------|
@@ -53,21 +53,26 @@ git push origin v0.0.0
 | `aurum-windows-x86_64.exe` | Windows |
 | `SHA256SUMS` | Checksums |
 
+`aurum-ffi` is **not** attached as a prebuilt dylib in v0.0.0 — consumers build from source (`cargo build -p aurum-ffi --release`).
+
 ## crates.io (optional, separate from GitHub Release)
 
-Not triggered by tags. Prefer GitHub Release binaries for the CLI.
+Not triggered by tags. Prefer GitHub Release binaries for end-user CLI installs.
 
 **Local:**
 
 ```bash
 ./scripts/publish_dry_run.sh
-cargo publish -p aurum-stt-stt-core          # first
-cargo publish -p aurum-stt-stt               # only after core is on the index
+cargo publish -p aurum-core --locked   # first
+cargo publish -p aurum-stt --locked    # after core is on the index
+# aurum-ffi: publish when you want the crate on crates.io (optional)
+cargo publish -p aurum-ffi --locked
 ```
 
 **CI (manual workflow):** Actions → **Publish crates.io**
 
-1. Repo secret or environment `crates-io` secret: `CARGO_REGISTRY_TOKEN`
-2. Dry-run `aurum-core` → real publish `aurum-core` → optional `aurum-stt`
+1. Secret `CARGO_REGISTRY_TOKEN` (repo or `crates-io` environment)
+2. Dry-run then publish: **`aurum-core` → `aurum-stt`** (order matters)
+3. `aurum-ffi` only if intentionally publishing the FFI crate
 
-`aurum` dry-run / publish fails until `aurum-core` exists on crates.io — expected.
+The bare name `aurum` is taken on crates.io (unrelated AUR helper) — CLI package is **`aurum-stt`**.

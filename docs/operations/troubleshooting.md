@@ -42,6 +42,8 @@ Expected. LLM timestamps are unreliable. Prefer `-o txt` or `-o json`.
 
 ```rust
 aurum_core::providers::local::clear_context_cache();
+// or from C / aurum-ffi:
+// aurum_shutdown();
 ```
 
 Call before process exit on macOS.

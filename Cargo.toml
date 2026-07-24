@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/aurum-core",
     "crates/aurum",
+    "crates/aurum-ffi",
 ]
 default-members = ["crates/aurum"]
 

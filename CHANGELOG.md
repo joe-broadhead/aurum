@@ -7,23 +7,27 @@ All notable changes to Aurum will be documented here.
 Initial experimental release foundation.
 
 ### Added
-- Local transcription via whisper.cpp (`whisper-rs`, Metal-enabled on macOS)
+- Workspace split: `aurum-core` (library) + `aurum` (CLI)
+- Local transcription via whisper.cpp (`whisper-rs`, Metal on macOS)
+- Process-level `WhisperContext` cache with clean shutdown
 - OpenRouter remote provider via multimodal chat completions (`input_audio`)
-- CLI: `aurum <file> [--provider] [--model] [--language] [-o txt|srt|json] [--output-file] [--timestamps] [-v]`
-- Automatic ggml model download + cache under the platform cache dir
-- Config file support (`config.toml`) with env override (`OPENROUTER_API_KEY`)
-- Actionable error taxonomy (user / environment / provider)
-- Output formatters: plain text, SRT, JSON
-- Unit tests, mocked OpenRouter tests, ignored local integration test
-- CI workflow for macOS, Linux, Windows
-- Post-processing: strip whisper special tokens, clamp segment timestamps
-- Audio safety limits (duration / decoded size / remote upload size)
-- Compressed remote uploads (mp3 when available)
-- Shared PCM buffers (`Arc<[f32]>`) to avoid extra clones into worker threads
-- Model cache integrity re-check (size + magic + optional sha256 sidecar)
+- Quantized local models (`tiny-q5_1`, `base-q5_1`, `small-q5_1`, turbo/large q5, …)
+- `aurum models` — list models and cache status
+- Cross-process model download lock (`std::fs::File::lock`)
+- JSON fields `backend_kind` + `timestamps_reliable`
+- OpenRouter SRT refused unless `--allow-unreliable-timestamps`
+- CLI: `aurum <file>`, `aurum transcribe`, `aurum models`
+- Automatic ggml model download + cache
+- Config file + `OPENROUTER_API_KEY`
+- Actionable error taxonomy
+- Output: txt / srt / json
+- Post-process: strip special tokens, clamp timestamps
+- Audio safety limits (duration / decoded size / upload size)
+- Unit tests, mocked OpenRouter tests, speech integration test
+- CI on macOS / Linux / Windows + macOS integration job
 
 ### Notes
-- Library API is experimental and may change without notice
+- `aurum-core` API is experimental
 - ffmpeg is a required system dependency (not bundled)
 - OpenRouter path is LLM-assisted, not dedicated ASR
 - No GitHub Release published yet

@@ -36,8 +36,7 @@ jobs:
 
       - name: Install build deps (macOS)
         if: runner.os == 'macOS'
-        run: |
-          brew install cmake ffmpeg || true
+        run: brew install cmake ffmpeg || true
 
       - name: Install build deps (Windows)
         if: runner.os == 'Windows'
@@ -53,19 +52,17 @@ jobs:
       - name: cargo clippy
         run: |
           rustup component add clippy
-          cargo clippy --all-targets -- -D warnings
+          cargo clippy --workspace --all-targets -- -D warnings
         continue-on-error: true
 
       - name: cargo test
-        run: cargo test --all
+        run: cargo test --workspace
 
       - name: cargo build --release
-        run: cargo build --release
+        run: cargo build -p aurum --release
 
-  # Integration test with tiny model — macOS only to keep CI time/cost reasonable.
-  # Downloads ~75MB model; skipped if network is restricted.
   integration-local:
-    name: integration (local tiny, macOS)
+    name: integration (local tiny-q5_1, macOS)
     runs-on: macos-latest
     needs: test
     steps:
@@ -75,9 +72,9 @@ jobs:
       - name: Install deps
         run: brew install cmake ffmpeg || true
       - name: Build
-        run: cargo build --release
-      - name: Generate sample wav + transcribe
+        run: cargo build -p aurum --release
+      - name: Local speech integration
         env:
           AURUM_INTEGRATION: "1"
         run: |
-          cargo test --test local_integration -- --ignored --nocapture
+          cargo test -p aurum-core --test local_integration -- --ignored --nocapture

@@ -117,36 +117,34 @@ mod tests {
 
     #[test]
     fn strips_blank_audio() {
-        let r = normalize_result(TranscriptionResult {
-            text: "[BLANK_AUDIO]".into(),
-            segments: vec![Segment {
+        let r = normalize_result(TranscriptionResult::local(
+            "[BLANK_AUDIO]".into(),
+            vec![Segment {
                 start: 0.0,
                 end: 10.0,
                 text: "[BLANK_AUDIO]".into(),
             }],
-            language: Some("en".into()),
-            model: "tiny".into(),
-            provider: "local".into(),
-            duration_secs: 3.0,
-        });
+            Some("en".into()),
+            "tiny".into(),
+            3.0,
+        ));
         assert!(r.text.is_empty(), "got {:?}", r.text);
         assert!(r.segments.is_empty());
     }
 
     #[test]
     fn clamps_timestamps() {
-        let r = normalize_result(TranscriptionResult {
-            text: "Hello".into(),
-            segments: vec![Segment {
+        let r = normalize_result(TranscriptionResult::local(
+            "Hello".into(),
+            vec![Segment {
                 start: -1.0,
                 end: 99.0,
                 text: "Hello".into(),
             }],
-            language: None,
-            model: "tiny".into(),
-            provider: "local".into(),
-            duration_secs: 5.0,
-        });
+            None,
+            "tiny".into(),
+            5.0,
+        ));
         assert_eq!(r.segments[0].start, 0.0);
         assert_eq!(r.segments[0].end, 5.0);
     }

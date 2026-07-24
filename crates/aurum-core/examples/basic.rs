@@ -1,15 +1,16 @@
 //! Minimal library usage example.
 //!
-//!   cargo run --example basic -- path/to/audio.wav
+//!   cargo run -p aurum-core --example basic -- path/to/audio.wav
+//!
+//! (example lives at workspace root; prefer depending on aurum-core directly)
 
-use aurum::audio::load_audio;
-use aurum::config::Config;
-use aurum::providers::{LocalWhisperProvider, TranscriptionOptions, TranscriptionProvider};
+use aurum_core::audio::load_audio;
+use aurum_core::config::Config;
+use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions, TranscriptionProvider};
 use std::env;
-use std::path::PathBuf;
 
 #[tokio::main]
-async fn main() -> aurum::Result<()> {
+async fn main() -> aurum_core::Result<()> {
     let path = env::args().nth(1).expect("usage: basic <audio-file>");
     let cfg = Config::load()?;
     let audio = load_audio(std::path::Path::new(&path)).await?;
@@ -18,13 +19,12 @@ async fn main() -> aurum::Result<()> {
         .transcribe(
             &audio,
             &TranscriptionOptions {
-                model: "tiny".into(),
+                model: "tiny-q5_1".into(),
                 language: "auto".into(),
                 timestamps: false,
             },
         )
         .await?;
     println!("{}", result.text);
-    let _ = PathBuf::new();
     Ok(())
 }

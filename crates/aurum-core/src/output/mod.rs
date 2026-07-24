@@ -125,6 +125,9 @@ struct JsonOutput<'a> {
     model: &'a str,
     provider: &'a str,
     duration_secs: f64,
+    backend_kind: crate::providers::BackendKind,
+    /// False for LLM-assisted backends — segment times are best-effort only.
+    timestamps_reliable: bool,
     segments: &'a [Segment],
 }
 
@@ -135,6 +138,8 @@ fn format_json(result: &TranscriptionResult) -> Result<String> {
         model: &result.model,
         provider: &result.provider,
         duration_secs: result.duration_secs,
+        backend_kind: result.backend_kind,
+        timestamps_reliable: result.timestamps_reliable,
         segments: &result.segments,
     };
     Ok(serde_json::to_string_pretty(&payload).map_err(|e| {
@@ -147,13 +152,9 @@ mod tests {
     use super::*;
 
     fn sample_result() -> TranscriptionResult {
-        TranscriptionResult {
-            text: "Hello world. This is a test.".into(),
-            language: Some("en".into()),
-            model: "base".into(),
-            provider: "local".into(),
-            duration_secs: 3.5,
-            segments: vec![
+        TranscriptionResult::local(
+            "Hello world. This is a test.".into(),
+            vec![
                 Segment {
                     start: 0.0,
                     end: 1.2,
@@ -165,7 +166,10 @@ mod tests {
                     text: "This is a test.".into(),
                 },
             ],
-        }
+            Some("en".into()),
+            "base".into(),
+            3.5,
+        )
     }
 
     #[test]
@@ -192,6 +196,8 @@ mod tests {
         assert_eq!(v["model"], "base");
         assert_eq!(v["provider"], "local");
         assert_eq!(v["language"], "en");
+        assert_eq!(v["timestamps_reliable"], true);
+        assert_eq!(v["backend_kind"], "asr");
         assert!(v["segments"].as_array().unwrap().len() == 2);
     }
 

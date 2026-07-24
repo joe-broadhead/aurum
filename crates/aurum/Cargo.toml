@@ -1,0 +1,27 @@
+[package]
+name = "aurum"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Local-first, cross-platform transcription CLI (Latin: gold)"
+readme = "../../README.md"
+keywords = ["transcription", "whisper", "speech-to-text", "cli", "stt"]
+categories = ["command-line-utilities", "multimedia::audio"]
+
+[[bin]]
+name = "aurum"
+path = "src/main.rs"
+
+[dependencies]
+aurum-core = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true }

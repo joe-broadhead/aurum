@@ -1,21 +1,91 @@
 //! Local transcription via whisper.cpp (through the `whisper-rs` bindings).
+//!
+//! Maintains a process-level cache of loaded `WhisperContext` values keyed by
+//! model path so repeated calls (library batch use, tests) do not reload ggml.
 
-use super::{Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult};
+use super::{
+    BackendKind, Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
+};
 use crate::audio::AudioInput;
 use crate::error::{ProviderError, Result};
 use crate::model;
 use crate::postprocess;
 use async_trait::async_trait;
-use once_cell::sync::OnceCell;
-use std::path::PathBuf;
-use std::sync::Arc;
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-static LOGGING_HOOKS: OnceCell<()> = OnceCell::new();
+static LOGGING_HOOKS: once_cell::sync::OnceCell<()> = once_cell::sync::OnceCell::new();
+
+/// Process-global cache of loaded whisper contexts.
+static CONTEXT_CACHE: Lazy<ContextCache> = Lazy::new(ContextCache::new);
+
+struct ContextCache {
+    inner: Mutex<HashMap<PathBuf, Arc<WhisperContext>>>,
+}
+
+impl ContextCache {
+    fn new() -> Self {
+        Self {
+            inner: Mutex::new(HashMap::new()),
+        }
+    }
+
+    fn get_or_load(&self, model_path: &Path, model_name: &str) -> Result<Arc<WhisperContext>> {
+        let key = model_path.to_path_buf();
+        {
+            let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(ctx) = guard.get(&key) {
+                tracing::debug!(path = %key.display(), "reusing cached whisper context");
+                return Ok(Arc::clone(ctx));
+            }
+        }
+
+        LOGGING_HOOKS.get_or_init(|| {
+            whisper_rs::install_logging_hooks();
+        });
+
+        let params = WhisperContextParameters::default();
+        let ctx = WhisperContext::new_with_params(model_path.to_string_lossy().as_ref(), params)
+            .map_err(|e| ProviderError::ModelLoad {
+                model: model_name.to_string(),
+                reason: e.to_string(),
+            })?;
+        let ctx = Arc::new(ctx);
+
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        // Another thread may have inserted while we loaded — prefer existing.
+        let entry = guard.entry(key).or_insert_with(|| Arc::clone(&ctx));
+        Ok(Arc::clone(entry))
+    }
+
+    /// Drop all cached contexts now, while Metal/GPU is still valid.
+    ///
+    /// Must be called before process exit. If contexts are still alive when the
+    /// Metal device singleton is torn down (static destructors), ggml asserts.
+    fn clear(&self) {
+        if let Ok(mut guard) = self.inner.lock() {
+            guard.clear();
+        }
+    }
+}
+
+impl Drop for ContextCache {
+    fn drop(&mut self) {
+        // Best-effort: if the CLI forgot to clear, try dropping here. On some
+        // platforms Metal may already be gone; prefer explicit clear in main.
+        self.clear();
+    }
+}
+
+/// Drop all cached whisper contexts (call before process exit).
+pub fn clear_context_cache() {
+    CONTEXT_CACHE.clear();
+}
 
 /// Local whisper.cpp provider.
-///
-/// Models are resolved from `cache_dir/models/` and downloaded on demand.
 pub struct LocalWhisperProvider {
     cache_dir: PathBuf,
     show_progress: bool,
@@ -41,6 +111,10 @@ impl TranscriptionProvider for LocalWhisperProvider {
         "local"
     }
 
+    fn backend_kind(&self) -> BackendKind {
+        BackendKind::Asr
+    }
+
     async fn transcribe(
         &self,
         input: &AudioInput,
@@ -49,7 +123,6 @@ impl TranscriptionProvider for LocalWhisperProvider {
         let model_name = options.model.clone();
         let language = options.language.clone();
         let timestamps = options.timestamps;
-        // Arc clone is cheap — avoid duplicating the PCM buffer.
         let samples: Arc<[f32]> = Arc::clone(&input.samples);
         let duration_secs = input.duration_secs;
         let cache_dir = self.cache_dir.clone();
@@ -77,24 +150,14 @@ impl TranscriptionProvider for LocalWhisperProvider {
 }
 
 fn run_whisper(
-    model_path: &std::path::Path,
+    model_path: &Path,
     model_name: &str,
     samples: &[f32],
     duration_secs: f64,
     language: &str,
     timestamps: bool,
 ) -> Result<TranscriptionResult> {
-    // Install once per process — hooks are process-global.
-    LOGGING_HOOKS.get_or_init(|| {
-        whisper_rs::install_logging_hooks();
-    });
-
-    let ctx_params = WhisperContextParameters::default();
-    let ctx = WhisperContext::new_with_params(model_path.to_string_lossy().as_ref(), ctx_params)
-        .map_err(|e| ProviderError::ModelLoad {
-            model: model_name.to_string(),
-            reason: e.to_string(),
-        })?;
+    let ctx = CONTEXT_CACHE.get_or_load(model_path, model_name)?;
 
     let mut state = ctx
         .create_state()
@@ -109,10 +172,8 @@ fn run_whisper(
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
     params.set_suppress_blank(true);
-    // Suppress non-speech tokens like [BLANK_AUDIO] at the decoder.
     params.set_suppress_nst(true);
     params.set_token_timestamps(timestamps);
-    // Raise no-speech threshold slightly to reduce blank-audio hallucinations.
     params.set_no_speech_thold(0.6);
 
     let n_threads = std::thread::available_parallelism()
@@ -121,12 +182,8 @@ fn run_whisper(
         .clamp(1, 8);
     params.set_n_threads(n_threads);
 
-    // Keep `lang` alive for the duration of `full()` — FullParams stores a raw pointer
-    // into this string when a concrete language is set.
-    //
-    // NOTE: do NOT call `set_detect_language(true)`. On current whisper.cpp / whisper-rs
-    // that flag returns zero segments even though language id is detected. Auto-detect is
-    // achieved by passing language = None with detect_language left false.
+    // Keep `lang` alive for the duration of `full()`.
+    // Do NOT call set_detect_language(true) — empty segments on current whisper-rs.
     let lang = language.trim().to_ascii_lowercase();
     let auto = lang.is_empty() || lang == "auto";
     if auto {
@@ -145,7 +202,6 @@ fn run_whisper(
     let mut full_text = String::new();
 
     for segment in state.as_iter() {
-        // Timestamps from whisper.cpp are in centiseconds.
         let start = segment.start_timestamp() as f64 / 100.0;
         let end = segment.end_timestamp() as f64 / 100.0;
         let text = segment.to_string();
@@ -171,18 +227,17 @@ fn run_whisper(
         None
     };
 
-    Ok(TranscriptionResult {
-        text: full_text,
+    Ok(TranscriptionResult::local(
+        full_text,
         segments,
-        language: detected.or_else(|| {
+        detected.or_else(|| {
             if lang != "auto" && !lang.is_empty() {
                 Some(lang)
             } else {
                 None
             }
         }),
-        model: model_name.to_string(),
-        provider: "local".to_string(),
+        model_name.to_string(),
         duration_secs,
-    })
+    ))
 }

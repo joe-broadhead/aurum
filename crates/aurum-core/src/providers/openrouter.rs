@@ -8,7 +8,9 @@
 //! dedicated ASR model. Output may paraphrase, omit filler, or invent
 //! timestamps. Prefer the local provider when verbatim accuracy matters.
 
-use super::{Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult};
+use super::{
+    BackendKind, Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
+};
 use crate::audio::{self, AudioInput, DEFAULT_MAX_UPLOAD_BYTES};
 use crate::error::{ProviderError, Result, UserError};
 use crate::postprocess::{self, truncate_chars};
@@ -79,6 +81,10 @@ impl OpenRouterProvider {
 impl TranscriptionProvider for OpenRouterProvider {
     fn name(&self) -> &'static str {
         PROVIDER_NAME
+    }
+
+    fn backend_kind(&self) -> BackendKind {
+        BackendKind::LlmAssisted
     }
 
     async fn transcribe(
@@ -221,18 +227,18 @@ impl TranscriptionProvider for OpenRouterProvider {
 
         let (text, segments) = parse_content(&content, options.timestamps, input.duration_secs);
 
-        let result = TranscriptionResult {
+        let result = TranscriptionResult::openrouter(
             text,
             segments,
-            language: if lang != "auto" && !lang.is_empty() {
+            if lang != "auto" && !lang.is_empty() {
                 Some(lang)
             } else {
                 None
             },
-            model: options.model.clone(),
-            provider: PROVIDER_NAME.to_string(),
-            duration_secs: input.duration_secs,
-        };
+            options.model.clone(),
+            input.duration_secs,
+            options.timestamps,
+        );
 
         Ok(postprocess::normalize_result(result))
     }

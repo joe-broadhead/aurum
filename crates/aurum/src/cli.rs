@@ -1,14 +1,16 @@
 //! CLI definition and orchestration.
 
-use crate::audio;
-use crate::config::{Config, DEFAULT_LOCAL_MODEL, DEFAULT_OPENROUTER_MODEL};
-use crate::error::{Result, TranscriptionError, UserError};
-use crate::output::{self, OutputFormat};
-use crate::providers::{
-    LocalWhisperProvider, OpenRouterProvider, TranscriptionOptions, TranscriptionProvider,
+use aurum_core::audio;
+use aurum_core::config::{Config, DEFAULT_LOCAL_MODEL, DEFAULT_OPENROUTER_MODEL};
+use aurum_core::error::{Result, TranscriptionError, UserError};
+use aurum_core::model;
+use aurum_core::output::{self, OutputFormat};
+use aurum_core::providers::{
+    BackendKind, LocalWhisperProvider, OpenRouterProvider, TranscriptionOptions,
+    TranscriptionProvider,
 };
-use clap::Parser;
-use std::io::{self, Write};
+use clap::{Parser, Subcommand};
+use std::io::{self, IsTerminal, Write};
 use std::path::{Path, PathBuf};
 
 /// Aurum — local-first transcription CLI (Latin: gold).
@@ -19,18 +21,44 @@ use std::path::{Path, PathBuf};
     about = "Local-first, cross-platform transcription CLI (Latin: gold)",
     long_about = "Aurum converts audio files to text using local whisper.cpp models by default, \
                   with optional OpenRouter remote transcription.\n\n\
-                  Aurum is Latin for gold."
+                  Aurum is Latin for gold.\n\n\
+                  Quick start:\n  \
+                    aurum meeting.m4a\n  \
+                    aurum meeting.m4a --model tiny-q5_1\n  \
+                    aurum models\n  \
+                    aurum --help"
 )]
+#[command(args_conflicts_with_subcommands = true)]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+
+    #[command(flatten)]
+    pub transcribe: TranscribeArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum Commands {
+    /// List local whisper models and cache status.
+    #[command(visible_alias = "list-models")]
+    Models,
+
+    /// Transcribe an audio file (default when AUDIO_FILE is given positionally).
+    #[command(visible_alias = "t")]
+    Transcribe(TranscribeArgs),
+}
+
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct TranscribeArgs {
     /// Audio file to transcribe.
     #[arg(value_name = "AUDIO_FILE")]
-    pub audio_file: PathBuf,
+    pub audio_file: Option<PathBuf>,
 
     /// Transcription provider.
     #[arg(long, value_name = "local|openrouter", value_parser = ["local", "openrouter"])]
     pub provider: Option<String>,
 
-    /// Local model name (tiny, base, small, …) or OpenRouter model id.
+    /// Local model name (tiny-q5_1, base, …) or OpenRouter model id.
     #[arg(long, value_name = "NAME")]
     pub model: Option<String>,
 
@@ -42,13 +70,17 @@ pub struct Cli {
     #[arg(short = 'o', long = "output", value_name = "txt|srt|json", value_parser = ["txt", "srt", "json"])]
     pub output: Option<String>,
 
-    /// Write output to this path instead of stdout (extension does not change format).
+    /// Write output to this path instead of stdout.
     #[arg(long = "output-file", value_name = "PATH")]
     pub output_file: Option<PathBuf>,
 
     /// Include timestamps where available (implied by srt).
     #[arg(long)]
     pub timestamps: bool,
+
+    /// Allow SRT/timestamp output from OpenRouter despite unreliable timings.
+    #[arg(long = "allow-unreliable-timestamps")]
+    pub allow_unreliable_timestamps: bool,
 
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
@@ -57,7 +89,41 @@ pub struct Cli {
 
 /// Entry point used by `main`.
 pub async fn run(cli: Cli) -> Result<()> {
+    match cli.command {
+        Some(Commands::Models) => {
+            init_tracing(false);
+            let cfg = Config::load()?;
+            print!("{}", model::format_model_list(&cfg.cache_dir));
+            Ok(())
+        }
+        Some(Commands::Transcribe(args)) => run_transcribe(args).await,
+        None => {
+            if cli.transcribe.audio_file.is_none() {
+                // No args at all — show a short nudge rather than clap's missing-arg only.
+                eprintln!(
+                    "aurum: missing AUDIO_FILE\n\n  \
+                     Examples:\n    \
+                     aurum meeting.m4a\n    \
+                     aurum meeting.m4a --model tiny-q5_1 -o srt\n    \
+                     aurum models\n\n  \
+                     Run `aurum --help` for full options."
+                );
+                return Err(UserError::Other {
+                    message: "AUDIO_FILE is required (or use `aurum models`)".into(),
+                }
+                .into());
+            }
+            run_transcribe(cli.transcribe).await
+        }
+    }
+}
+
+async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
     init_tracing(cli.verbose);
+
+    let audio_file = cli.audio_file.clone().ok_or_else(|| UserError::Other {
+        message: "AUDIO_FILE is required".into(),
+    })?;
 
     let mut cfg = Config::load()?;
     cfg.apply_cli(
@@ -70,15 +136,36 @@ pub async fn run(cli: Cli) -> Result<()> {
         cli.verbose,
     );
 
-    // If the user selected openrouter but left the default local model name in place
-    // (from config defaults) and did not pass --model, prefer the openrouter default.
     let model = resolve_model(&cfg, cli.model.is_some());
-
     let provider_name = cfg.provider.to_ascii_lowercase();
     let format = OutputFormat::parse(&cfg.output)?;
 
     // SRT always needs timestamps.
     let want_timestamps = cfg.timestamps || matches!(format, OutputFormat::Srt);
+
+    // OpenRouter timestamps are unreliable — refuse SRT unless explicitly overridden.
+    if provider_name == "openrouter"
+        && matches!(format, OutputFormat::Srt)
+        && !cli.allow_unreliable_timestamps
+    {
+        return Err(UserError::Other {
+            message:
+                "OpenRouter is LLM-assisted and does not produce reliable media timestamps.\n  \
+                      Use `-o txt` or `-o json` (json sets timestamps_reliable=false), or pass \
+                      `--allow-unreliable-timestamps` to force SRT."
+                    .into(),
+        }
+        .into());
+    }
+
+    if provider_name == "openrouter" && want_timestamps && !cli.allow_unreliable_timestamps {
+        if atty_stderr() {
+            eprintln!(
+                "aurum: warning: OpenRouter timestamps are best-effort only \
+                 (timestamps_reliable=false in JSON)"
+            );
+        }
+    }
 
     tracing::info!(
         provider = %provider_name,
@@ -88,24 +175,23 @@ pub async fn run(cli: Cli) -> Result<()> {
         "starting transcription"
     );
 
-    if !cli.audio_file.exists() {
+    if !audio_file.exists() {
         return Err(UserError::FileNotFound {
-            path: cli.audio_file.display().to_string(),
+            path: audio_file.display().to_string(),
         }
         .into());
     }
-    if !cli.audio_file.is_file() {
+    if !audio_file.is_file() {
         return Err(UserError::InvalidAudio {
-            reason: format!("{} is not a regular file", cli.audio_file.display()),
+            reason: format!("{} is not a regular file", audio_file.display()),
         }
         .into());
     }
 
-    // Load / convert audio.
     if cli.verbose || atty_stderr() {
         eprintln!("aurum: loading audio …");
     }
-    let audio = audio::load_audio(&cli.audio_file).await?;
+    let audio = audio::load_audio(&audio_file).await?;
     if cli.verbose {
         eprintln!(
             "aurum: loaded {:.2}s of audio ({} samples @ {} Hz)",
@@ -115,12 +201,26 @@ pub async fn run(cli: Cli) -> Result<()> {
         );
     }
 
-    // Long jobs look hung without feedback — emit a single status line.
     if atty_stderr() {
         eprintln!(
             "aurum: transcribing with {provider_name}/{model} ({:.1}s audio) …",
             audio.duration_secs
         );
+    }
+
+    // First-run tip when local model is not cached yet.
+    if provider_name == "local" {
+        if let Ok(info) = model::lookup_model(&model) {
+            let path = model::model_path(&cfg.cache_dir, info);
+            if !path.exists() && atty_stderr() {
+                eprintln!(
+                    "aurum: note: model `{model}` is not cached yet (~{}). \
+                     For a quicker trial next time, try `--model tiny-q5_1` (~32 MB). \
+                     Run `aurum models` to list options.",
+                    format_approx(info.approx_bytes)
+                );
+            }
+        }
     }
 
     let options = TranscriptionOptions {
@@ -133,7 +233,10 @@ pub async fn run(cli: Cli) -> Result<()> {
         "local" => {
             let provider = LocalWhisperProvider::new(cfg.cache_dir.clone()).with_progress(true);
             if cli.verbose {
-                eprintln!("aurum: provider=local model={model}");
+                eprintln!(
+                    "aurum: provider=local model={model} backend={:?}",
+                    BackendKind::Asr
+                );
             }
             provider.transcribe(&audio, &options).await?
         }
@@ -143,7 +246,10 @@ pub async fn run(cli: Cli) -> Result<()> {
                 Some(cfg.openrouter_base_url.clone()),
             )?;
             if cli.verbose {
-                eprintln!("aurum: provider=openrouter model={model}");
+                eprintln!(
+                    "aurum: provider=openrouter model={model} backend={:?}",
+                    BackendKind::LlmAssisted
+                );
             }
             provider.transcribe(&audio, &options).await?
         }
@@ -155,7 +261,6 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
     };
 
-    // Emit output.
     if let Some(path) = &cfg.output_file {
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
@@ -173,7 +278,20 @@ pub async fn run(cli: Cli) -> Result<()> {
         stdout.flush().ok();
     }
 
+    if result.text.trim().is_empty() && atty_stderr() {
+        eprintln!("aurum: note: transcript is empty (silence or no speech detected)");
+    }
+
     Ok(())
+}
+
+fn format_approx(n: u64) -> String {
+    let mb = n as f64 / (1024.0 * 1024.0);
+    if mb >= 1000.0 {
+        format!("{:.1} GB", mb / 1024.0)
+    } else {
+        format!("{mb:.0} MB")
+    }
 }
 
 fn resolve_model(cfg: &Config, model_explicitly_set: bool) -> String {
@@ -184,9 +302,6 @@ fn resolve_model(cfg: &Config, model_explicitly_set: bool) -> String {
             .unwrap_or_else(|| default_for(&cfg.provider));
     }
 
-    // Config file may have set a model under [default]; use it for local.
-    // For openrouter, if the configured model looks like a local short name
-    // (no '/'), swap to the openrouter default.
     match cfg.provider.as_str() {
         "openrouter" => {
             let m = cfg
@@ -195,8 +310,7 @@ fn resolve_model(cfg: &Config, model_explicitly_set: bool) -> String {
                 .unwrap_or_else(|| DEFAULT_OPENROUTER_MODEL.to_string());
             if m.contains('/') {
                 m
-            } else if m == DEFAULT_LOCAL_MODEL || crate::model::lookup_model(&m).is_ok() {
-                // Config still has a local whisper name — use openrouter default.
+            } else if m == DEFAULT_LOCAL_MODEL || model::lookup_model(&m).is_ok() {
                 cfg.openrouter_default_model.clone()
             } else {
                 m
@@ -218,9 +332,9 @@ fn default_for(provider: &str) -> String {
 
 fn init_tracing(verbose: bool) {
     let filter = if verbose {
-        "aurum=debug,info"
+        "aurum=debug,aurum_core=debug,info"
     } else {
-        "aurum=warn,error"
+        "aurum=warn,aurum_core=warn,error"
     };
     let _ = tracing_subscriber::fmt()
         .with_env_filter(
@@ -233,15 +347,12 @@ fn init_tracing(verbose: bool) {
 }
 
 fn atty_stderr() -> bool {
-    // Avoid extra dependency; crude check via is_terminal.
-    use std::io::IsTerminal;
     io::stderr().is_terminal()
 }
 
-/// Map a library error to a process exit code and print it.
+/// Print a library error.
 pub fn report_error(err: &TranscriptionError) {
     eprintln!("error: {err}");
-    // Do not create files as a side-effect of an error — only hint the path.
     if matches!(err, TranscriptionError::User(UserError::MissingApiKey)) {
         if let Some(path) = Config::default_config_path() {
             eprintln!("  Config file location: {}", path.display());
@@ -250,7 +361,6 @@ pub fn report_error(err: &TranscriptionError) {
     }
 }
 
-/// Compute default output path next to the input (unused helper for future --output-file auto).
 #[allow(dead_code)]
 pub fn default_output_path(input: &Path, format: OutputFormat) -> PathBuf {
     let mut out = input.to_path_buf();

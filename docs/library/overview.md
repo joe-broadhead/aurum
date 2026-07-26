@@ -4,7 +4,7 @@ Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 
 | Crate | Role |
 |-------|------|
-| **`aurum-core`** | Engine: providers, PCM, models, cleanup, output |
+| **`aurum-core`** | Engine: STT providers, PCM, models, cleanup, output, TTS |
 | **`aurum-stt`** | CLI package (`cargo install aurum-stt` → binary `aurum`) |
 | **`aurum-ffi`** | C ABI façade for native hosts ([FFI guide](ffi.md)) |
 
@@ -21,6 +21,7 @@ Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 | Cleanup | `RulesCleanup`, `OpenRouterCleanup`, `apply_cleanup*` |
 | Output | `format_result` — txt / srt / json |
 | Post-ASR | special-token strip, timestamp clamp |
+| TTS | `LocalTtsProvider`, catalogue, WAV write (feature `tts`, default on) |
 
 ```toml
 aurum-core = "0.0.0"
@@ -41,6 +42,6 @@ narrow; see [Native embeds](ffi.md).
 
 | Package | Install / depend |
 |---------|------------------|
-| `aurum-core` | `aurum-core = "0.0.0"` |
+| `aurum-core` | `aurum-core = "0.0.0"` (default features include TTS; use `default-features = false` for STT-only) |
 | `aurum-stt` | `cargo install aurum-stt` → runs `aurum` |
-| `aurum-ffi` | Build from the workspace (link `libaurum_ffi` + `aurum.h`) |
+| `aurum-ffi` | `aurum-ffi = "0.0.0"` or build from source (`libaurum_ffi` + `aurum.h`) |

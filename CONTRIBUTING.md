@@ -21,6 +21,8 @@ cd aurum
 # Rust 1.89+, cmake, C/C++ toolchain, ffmpeg
 cargo test --workspace --locked
 cargo run -p aurum-stt -- tests/fixtures/sample.wav --model tiny-q5_1
+cargo run -p aurum-stt -- tts "Hello" -O /tmp/a.wav --force
+# optional: ./scripts/generate_tts_demos.sh
 ```
 
 ## Docs

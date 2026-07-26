@@ -20,6 +20,9 @@ make ci
 ./scripts/version_check.sh
 ./scripts/publish_dry_run.sh
 cargo test -p aurum-ffi --locked
+# optional network/cache integration:
+cargo test -p aurum-core --test local_integration -- --ignored
+cargo test -p aurum-core --test tts_synth -- --ignored
 .venv/bin/mkdocs build --strict
 ```
 

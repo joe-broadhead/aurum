@@ -11,13 +11,14 @@ public issues or pull requests.
 
 ## Scope notes
 
-Aurum is an on-device speech-to-text CLI and library. Reports are especially welcome for:
+Aurum is an on-device speech-to-text and text-to-speech CLI/library. Reports are especially welcome for:
 
-- Unexpected network access on the default (`local`) provider path
+- Unexpected network access on the default (`local`) STT or TTS path
 - API key leakage in logs, debug output, or error messages
-- Model download integrity / supply-chain issues
-- Temp-file or path handling races
-- Memory / resource exhaustion via crafted audio inputs
+- Model / voice-pack download integrity / supply-chain issues (SHA-256 pins)
+- Temp-file or path handling races (including TTS atomic WAV writes)
+- Path traversal via `--input-file` / `--output-file` on TTS or cleanup
+- Memory / resource exhaustion via crafted audio inputs or very large TTS text
 
 ## Supported versions
 
@@ -26,6 +27,8 @@ published release and the default branch.
 
 ## Dependencies
 
-- Local inference uses whisper.cpp via `whisper-rs` (native code)
-- Remote provider uses HTTPS to OpenRouter only when explicitly selected
-- ffmpeg is a **system** dependency (not bundled in v0.0.0)
+- Local STT inference uses whisper.cpp via `whisper-rs` (native code)
+- Local TTS inference uses ONNX Runtime (`ort`, including vendor prebuilt binaries via `download-binaries`) + KittenTTS weights; G2P via MIT `misaki-rs` (no GPL espeak on the default path). TTS is a default cargo feature and increases binary size; disable with `default-features = false` on `aurum-core` if unused.
+- Remote STT provider uses HTTPS to OpenRouter only when explicitly selected
+- TTS never calls OpenRouter; network on the TTS path is only for explicit voice/model pack download
+- ffmpeg is a **system** dependency for STT file decode (not bundled; not used for TTS WAV)

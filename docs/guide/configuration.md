@@ -3,7 +3,7 @@
 ## Precedence
 
 1. **CLI flags**
-2. **Environment** (OpenRouter only): `OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`
+2. **Environment**: OpenRouter (`OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`) and TTS (`AURUM_TTS_*`)
 3. **Config file**
 4. **Built-in defaults**
 
@@ -13,6 +13,9 @@
 |----------|---------|
 | `OPENROUTER_API_KEY` | Remote ASR / cleanup auth (preferred over file) |
 | `OPENROUTER_BASE_URL` | Override API base (tests / proxies) |
+| `AURUM_TTS_MODEL` | Override `[tts].model` |
+| `AURUM_TTS_VOICE` | Override `[tts].voice` |
+| `AURUM_TTS_LANGUAGE` | Override `[tts].language` |
 | `RUST_LOG` | Tracing filters |
 
 ## Config file
@@ -37,6 +40,14 @@ style = "raw"              # raw | clean | bullets | professional | summary
 provider = "rules"         # rules | openrouter
 # openrouter_model = "google/gemini-2.5-flash-lite"
 
+[tts]
+provider = "local"
+model = "kitten-nano-int8"
+voice = "Luna"
+language = "en"
+max_chars = 5000
+timeout_ms = 120000
+
 [openrouter]
 # api_key = "sk-or-..."    # prefer env var
 # model = "google/gemini-2.5-flash-lite"
@@ -47,9 +58,11 @@ provider = "rules"         # rules | openrouter
 
 | Limit | Default |
 |-------|---------|
-| Max duration | ~2.25 hours |
-| Max decoded PCM | ~500 MB (enforced during decode) |
-| Max remote upload | ~24 MB compressed |
+| Max duration (STT) | ~2.25 hours |
+| Max decoded PCM (STT) | ~500 MB (enforced during decode) |
+| Max remote upload (STT) | ~24 MB compressed |
+| Max TTS characters | 5000 (`[tts].max_chars`) |
+| TTS timeout | 120000 ms (`[tts].timeout_ms`) |
 
 Whisper special tokens such as `[BLANK_AUDIO]` are stripped. Segment timestamps
 are clamped to audio duration.

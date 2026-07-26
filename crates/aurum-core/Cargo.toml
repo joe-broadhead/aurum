@@ -8,9 +8,9 @@ repository.workspace = true
 homepage.workspace = true
 documentation = "https://docs.rs/aurum-core"
 rust-version.workspace = true
-description = "Reusable on-device speech-to-text core (whisper.cpp + providers + cleanup)"
+description = "Reusable on-device speech core (STT whisper.cpp + TTS ONNX + providers + cleanup)"
 readme = "README.md"
-keywords = ["transcription", "whisper", "speech-to-text", "stt", "asr"]
+keywords = ["transcription", "whisper", "speech-to-text", "stt", "asr", "tts"]
 categories = ["multimedia::audio", "api-bindings"]
 include = [
   "src/**/*",
@@ -24,6 +24,10 @@ include = [
 [package.metadata.docs.rs]
 all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
+
+[features]
+default = ["tts"]
+tts = ["dep:ort", "dep:misaki-rs", "dep:zip"]
 
 [dependencies]
 async-trait = { workspace = true }
@@ -45,6 +49,11 @@ tokio = { workspace = true }
 toml = { workspace = true }
 tracing = { workspace = true }
 which = { workspace = true }
+
+# TTS (feature `tts`)
+ort = { workspace = true, optional = true }
+misaki-rs = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }

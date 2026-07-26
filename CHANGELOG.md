@@ -9,8 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **TTS MVP:** `aurum tts` local-default text→mono WAV (ONNX KittenTTS nano int8 + MIT G2P)
+  - Nested `aurum tts models` / `aurum tts voices` catalogue + cache status
+  - Config `[tts]` + `AURUM_TTS_MODEL` / `AURUM_TTS_VOICE` / `AURUM_TTS_LANGUAGE`
+  - Pinned SHA-256 voice pack download under `…/aurum/tts/`, atomic WAV write, `--emit-json` honesty schema
+  - `aurum-core` module `tts/` behind cargo feature `tts` (default on for CLI; ORT increases binary size)
+  - `LocalTtsProvider::clear_sessions` drops loaded ONNX graphs; wall-clock TTS timeout is best-effort
+  - `scripts/generate_tts_demos.sh` — regenerate per-voice demo WAVs locally (not committed)
+  - TTS full synth integration test is `#[ignore]` (network/cache); empty-text unit always runs
 - `aurum-ffi` crate: C ABI façade (`include/aurum.h`) for embedders — PCM transcribe, preload, cancel, rules cleanup
-- Docs: native embeds guide (`docs/library/ffi.md`); workspace/architecture updated for three crates
+- Docs: TTS guide (`docs/guide/tts.md`); native embeds guide (`docs/library/ffi.md`); workspace/architecture updated
 
 
 ### Changed

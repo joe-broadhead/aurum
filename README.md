@@ -41,14 +41,14 @@ No API key required · clean providers · optional cleanup styles · reusable **
 
 ## What it does
 
-Aurum is an on-device speech-to-text **CLI** and **Rust library**:
+Aurum is an on-device **speech CLI** and **Rust library**:
 
-1. Point it at an audio file (mp3, m4a, wav, flac, …)
-2. Transcribe with **whisper.cpp** locally (Metal on macOS)
-3. Optionally **clean** the text (fillers, bullets, professional, summary)
-4. Emit **`txt`**, **`srt`**, or **`json`**
+1. **STT** — audio file → text with **whisper.cpp** (Metal on macOS)
+2. Optionally **clean** the text (fillers, bullets, professional, summary)
+3. Emit **`txt`**, **`srt`**, or **`json`**
+4. **TTS** — `aurum tts "…"` → mono **WAV** on-device (KittenTTS ONNX; no API key)
 
-OpenRouter is available as an **optional** remote path for ASR or cleanup — never the default.
+OpenRouter is an **optional** remote path for ASR or cleanup — never the default. TTS has no cloud path in this release.
 
 > **v0.0.0** released. Binaries on [GitHub Releases](https://github.com/joe-broadhead/aurum/releases/tag/v0.0.0). Library API may change before `0.1.0`.
 
@@ -56,11 +56,12 @@ OpenRouter is available as an **optional** remote path for ASR or cleanup — ne
 
 | | |
 |--|--|
-| **Local by default** | whisper.cpp — no API key |
-| **Fast first run** | Quantized models e.g. `tiny-q5_1` (~32 MB) |
-| **Embeddable** | PCM-first API for mic hosts (`transcribe_pcm`, `PcmBuffer`) |
+| **Local by default** | whisper.cpp STT + ONNX TTS — no API key |
+| **Fast first run** | Quantized STT e.g. `tiny-q5_1` (~32 MB); TTS pack ~26 MB |
+| **Embeddable** | PCM STT API · `aurum-ffi` · library TTS provider |
 | **Cleanup / flow** | On-device rules or OpenRouter LLM (`aurum cleanup`) |
-| **Honest remote** | LLM-assisted OpenRouter; unreliable SRT blocked by default |
+| **Local TTS** | `aurum tts` · 8 English voices · pinned SHA-256 pack |
+| **Honest remote** | LLM-assisted OpenRouter ASR; unreliable SRT blocked by default |
 | **Scriptable** | Exit codes · JSON metadata · pinned model integrity |
 
 ## 30-second install
@@ -74,6 +75,7 @@ aurum models
 aurum meeting.m4a --model tiny-q5_1
 aurum meeting.m4a --cleanup clean
 echo "um, hello there" | aurum cleanup -s clean
+aurum tts "Hello from aurum" -O /tmp/hello.wav
 ```
 
 ## Workspace
@@ -96,7 +98,9 @@ Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/
 ```bash
 aurum <FILE> [--model NAME] [-o txt|srt|json] [--cleanup STYLE]
 aurum models
-aurum cleanup [TEXT_FILE] --style clean # alias: aurum flow
+aurum cleanup [TEXT_FILE] --style clean   # alias: aurum flow
+aurum tts "Hello" -O out.wav [--voice Luna]
+aurum tts models && aurum tts voices
 aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
 ```
 
@@ -118,6 +122,7 @@ aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
 | Providers | [docs/guide/providers.md](docs/guide/providers.md) |
 | Models | [docs/guide/models.md](docs/guide/models.md) |
 | Cleanup | [docs/guide/cleanup.md](docs/guide/cleanup.md) |
+| TTS | [docs/guide/tts.md](docs/guide/tts.md) |
 | Configuration | [docs/guide/configuration.md](docs/guide/configuration.md) |
 | Native embeds (FFI) | [docs/library/ffi.md](docs/library/ffi.md) |
 | Architecture | [docs/development/architecture.md](docs/development/architecture.md) |

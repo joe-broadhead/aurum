@@ -20,6 +20,10 @@ pub const DEFAULT_LANGUAGE: &str = "auto";
 pub const DEFAULT_OUTPUT: &str = "txt";
 pub const DEFAULT_CLEANUP: &str = "raw";
 pub const DEFAULT_CLEANUP_PROVIDER: &str = "rules";
+pub const DEFAULT_TTS_PROVIDER: &str = "local";
+pub const DEFAULT_TTS_LANGUAGE: &str = "en";
+pub const DEFAULT_TTS_MAX_CHARS: usize = 5_000;
+pub const DEFAULT_TTS_TIMEOUT_MS: u64 = 120_000;
 
 /// On-disk configuration file schema.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -30,6 +34,8 @@ pub struct ConfigFile {
     pub openrouter: OpenRouterSection,
     #[serde(default)]
     pub cleanup: CleanupSection,
+    #[serde(default)]
+    pub tts: TtsSection,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -88,6 +94,37 @@ impl Default for CleanupSection {
     }
 }
 
+/// Local TTS defaults (`[tts]`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsSection {
+    /// Only `local` in MVP.
+    #[serde(default = "default_tts_provider")]
+    pub provider: String,
+    #[serde(default = "default_tts_model")]
+    pub model: String,
+    #[serde(default = "default_tts_voice")]
+    pub voice: String,
+    #[serde(default = "default_tts_language")]
+    pub language: String,
+    #[serde(default = "default_tts_max_chars")]
+    pub max_chars: usize,
+    #[serde(default = "default_tts_timeout_ms")]
+    pub timeout_ms: u64,
+}
+
+impl Default for TtsSection {
+    fn default() -> Self {
+        Self {
+            provider: default_tts_provider(),
+            model: default_tts_model(),
+            voice: default_tts_voice(),
+            language: default_tts_language(),
+            max_chars: default_tts_max_chars(),
+            timeout_ms: default_tts_timeout_ms(),
+        }
+    }
+}
+
 fn default_provider() -> String {
     DEFAULT_PROVIDER.to_string()
 }
@@ -105,6 +142,38 @@ fn default_cleanup() -> String {
 }
 fn default_cleanup_provider() -> String {
     DEFAULT_CLEANUP_PROVIDER.to_string()
+}
+fn default_tts_provider() -> String {
+    DEFAULT_TTS_PROVIDER.to_string()
+}
+fn default_tts_model() -> String {
+    #[cfg(feature = "tts")]
+    {
+        crate::tts::DEFAULT_TTS_MODEL.to_string()
+    }
+    #[cfg(not(feature = "tts"))]
+    {
+        "kitten-nano-int8".to_string()
+    }
+}
+fn default_tts_voice() -> String {
+    #[cfg(feature = "tts")]
+    {
+        crate::tts::DEFAULT_TTS_VOICE.to_string()
+    }
+    #[cfg(not(feature = "tts"))]
+    {
+        "Luna".to_string()
+    }
+}
+fn default_tts_language() -> String {
+    DEFAULT_TTS_LANGUAGE.to_string()
+}
+fn default_tts_max_chars() -> usize {
+    DEFAULT_TTS_MAX_CHARS
+}
+fn default_tts_timeout_ms() -> u64 {
+    DEFAULT_TTS_TIMEOUT_MS
 }
 
 /// Fully-resolved runtime configuration after merging all sources.
@@ -126,6 +195,13 @@ pub struct Config {
     pub cleanup_provider: String,
     /// Optional dedicated model for OpenRouter cleanup.
     pub cleanup_openrouter_model: Option<String>,
+    /// TTS provider name (`local` only in MVP).
+    pub tts_provider: String,
+    pub tts_model: String,
+    pub tts_voice: String,
+    pub tts_language: String,
+    pub tts_max_chars: usize,
+    pub tts_timeout_ms: u64,
     pub config_path: Option<PathBuf>,
     pub cache_dir: PathBuf,
 }
@@ -149,6 +225,12 @@ impl std::fmt::Debug for Config {
             .field("cleanup_style", &self.cleanup_style)
             .field("cleanup_provider", &self.cleanup_provider)
             .field("cleanup_openrouter_model", &self.cleanup_openrouter_model)
+            .field("tts_provider", &self.tts_provider)
+            .field("tts_model", &self.tts_model)
+            .field("tts_voice", &self.tts_voice)
+            .field("tts_language", &self.tts_language)
+            .field("tts_max_chars", &self.tts_max_chars)
+            .field("tts_timeout_ms", &self.tts_timeout_ms)
             .field("config_path", &self.config_path)
             .field("cache_dir", &self.cache_dir)
             .finish()
@@ -215,6 +297,20 @@ impl Config {
         let cache_dir =
             Self::default_cache_dir().unwrap_or_else(|_| std::env::temp_dir().join("aurum-cache"));
 
+        // Env overrides for TTS (no secrets).
+        let tts_model = std::env::var("AURUM_TTS_MODEL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(file.tts.model);
+        let tts_voice = std::env::var("AURUM_TTS_VOICE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(file.tts.voice);
+        let tts_language = std::env::var("AURUM_TTS_LANGUAGE")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or(file.tts.language);
+
         Self {
             provider: file.default.provider,
             model: Some(file.default.model),
@@ -229,6 +325,16 @@ impl Config {
             cleanup_style: file.cleanup.style,
             cleanup_provider: file.cleanup.provider,
             cleanup_openrouter_model: file.cleanup.openrouter_model,
+            tts_provider: file.tts.provider,
+            tts_model,
+            tts_voice,
+            tts_language,
+            tts_max_chars: file.tts.max_chars.max(1),
+            tts_timeout_ms: if file.tts.timeout_ms == 0 {
+                DEFAULT_TTS_TIMEOUT_MS
+            } else {
+                file.tts.timeout_ms
+            },
             config_path,
             cache_dir,
         }
@@ -376,6 +482,7 @@ pub fn write_example_config(path: &Path) -> Result<()> {
     let example = r#"# Aurum configuration
 # Environment variables take precedence over values in this file.
 # OPENROUTER_API_KEY is preferred over openrouter.api_key below.
+# TTS: AURUM_TTS_MODEL, AURUM_TTS_VOICE, AURUM_TTS_LANGUAGE override [tts].
 
 [default]
 provider = "local"
@@ -387,6 +494,14 @@ output = "txt"
 # style = "raw" # raw | clean | bullets | professional | summary
 # provider = "rules" # rules (on-device) | openrouter
 # openrouter_model = "google/gemini-2.5-flash"
+
+[tts]
+# provider = "local"
+# model = "kitten-nano-int8"
+# voice = "Luna"
+# language = "en"
+# max_chars = 5000
+# timeout_ms = 120000
 
 [openrouter]
 # api_key = "sk-or-..."

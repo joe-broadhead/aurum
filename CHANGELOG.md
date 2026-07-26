@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.1] - 2026-07-26
+
 ### Added
 
 - **TTS MVP:** `aurum tts` local-default text→mono WAV (ONNX KittenTTS nano int8 + MIT G2P)
@@ -17,14 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `LocalTtsProvider::clear_sessions` drops loaded ONNX graphs; wall-clock TTS timeout is best-effort
   - `scripts/generate_tts_demos.sh` — regenerate per-voice demo WAVs locally (not committed)
   - TTS full synth integration test is `#[ignore]` (network/cache); empty-text unit always runs
-- `aurum-ffi` crate: C ABI façade (`include/aurum.h`) for embedders — PCM transcribe, preload, cancel, rules cleanup
-- Docs: TTS guide (`docs/guide/tts.md`); native embeds guide (`docs/library/ffi.md`); workspace/architecture updated
-
+- **`aurum-ffi`** crate: C ABI façade (`include/aurum.h`) for embedders — PCM transcribe, preload, cancel, rules cleanup
+- Docs: TTS guide (`docs/guide/tts.md`); native embeds guide (`docs/library/ffi.md`); workspace/architecture updated for three crates + TTS
 
 ### Changed
 
-- CLI crates.io package name is **`aurum-stt`** (binary remains `aurum`; the `aurum` crate name is taken)
-
+- CLI crates.io package remains **`aurum-stt`** (binary `aurum`); crates and binaries now include local TTS
 
 ## [0.0.0] - 2026-07-24
 
@@ -68,5 +68,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.0...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.1...HEAD
+[0.0.1]: https://github.com/joe-broadhead/aurum/compare/v0.0.0...v0.0.1
 [0.0.0]: https://github.com/joe-broadhead/aurum/releases/tag/v0.0.0

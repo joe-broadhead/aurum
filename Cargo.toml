@@ -8,7 +8,7 @@ members = [
 default-members = ["crates/aurum"]
 
 [workspace.package]
-version = "0.0.0"
+version = "0.0.1"
 edition = "2021"
 license = "MIT"
 authors = ["Joe Broadhead"]
@@ -19,7 +19,7 @@ rust-version = "1.89"
 readme = "README.md"
 
 [workspace.dependencies]
-aurum-core = { path = "crates/aurum-core", version = "0.0.0" }
+aurum-core = { path = "crates/aurum-core", version = "0.0.1" }
 async-trait = "0.1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }

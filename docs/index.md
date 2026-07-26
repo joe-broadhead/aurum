@@ -72,5 +72,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.0** — GitHub Release binaries + crates.io (`aurum-core`, `aurum-stt`, `aurum-ffi`).  
+**v0.0.1** — GitHub Release binaries + crates.io (`aurum-core`, `aurum-stt`, `aurum-ffi`) with local TTS + FFI.  
 TTS ships as `aurum tts` (local WAV MVP). Library APIs may change before `0.1.0`; pin a release tag when depending from other projects.

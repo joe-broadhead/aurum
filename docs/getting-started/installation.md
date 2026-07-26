@@ -43,6 +43,18 @@ cd aurum
 aurum --version
 ```
 
+## Intel Mac (x86_64)
+
+Prebuilt **Intel Mac** binaries are not published (ONNX Runtime has no cross-compile
+prebuilts for `x86_64-apple-darwin` from CI Apple Silicon runners). On Intel Mac:
+
+```bash
+cargo install aurum-stt --locked
+# or: cargo install --path crates/aurum --locked
+```
+
+Apple Silicon uses the `aurum-macos-arm64` release asset.
+
 ## From GitHub Releases
 
 After a tagged release, download the binary for your platform from
@@ -58,7 +70,7 @@ aurum --version
 | Asset | Platform |
 |-------|----------|
 | `aurum-macos-arm64` | Apple Silicon |
-| `aurum-macos-x86_64` | Intel Mac |
+| `aurum-macos-x86_64` | *(not shipped — build from source; see note)* |
 | `aurum-linux-x86_64` | Linux GNU |
 | `aurum-windows-x86_64.exe` | Windows |
 

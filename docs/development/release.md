@@ -48,7 +48,7 @@ git push origin v0.0.0
 | Asset | Platform |
 |-------|----------|
 | `aurum-macos-arm64` | Apple Silicon |
-| `aurum-macos-x86_64` | Intel Mac |
+| *(Intel Mac)* | Build from source (`cargo install aurum-stt`) — no CI prebuilt |
 | `aurum-linux-x86_64` | Linux GNU |
 | `aurum-windows-x86_64.exe` | Windows |
 | `SHA256SUMS` | Checksums |

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.0.1] - 2026-07-26
 
+### Notes
+
+- GitHub Release binaries: **macos-arm64**, **linux-x86_64**, **windows-x86_64** (Intel Mac: build from source — `ort` has no x86_64-apple-darwin cross prebuilts)
+
 ### Added
 
 - **TTS MVP:** `aurum tts` local-default text→mono WAV (ONNX KittenTTS nano int8 + MIT G2P)

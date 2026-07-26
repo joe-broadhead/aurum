@@ -43,6 +43,14 @@ TEXT='Custom line.' ./scripts/generate_tts_demos.sh
 
 Do **not** commit the generated WAVs; they are rebuildable artifacts of the pinned model pack.
 
+### Integration test
+
+```bash
+cargo test -p aurum-core --test tts_synth -- --ignored --nocapture
+```
+
+The full synth test is `#[ignore]` by default (may download the voice pack). Empty-text validation always runs in `cargo test`.
+
 ## CLI
 
 | Flag | Required | Notes |

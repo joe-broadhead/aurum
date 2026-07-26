@@ -27,6 +27,17 @@ cargo run -p aurum-stt --release -- tests/fixtures/fillers.wav --model tiny-q5_1
 cargo run -p aurum-stt --release -- tests/fixtures/multi_sentence.wav --model tiny-q5_1 --cleanup bullets
 ```
 
+## Text-to-speech
+
+```bash
+aurum tts "Hello from aurum" --output-file /tmp/hello.wav
+aurum tts voices
+# regenerate all voice demos locally (not committed):
+# ./scripts/generate_tts_demos.sh --play
+```
+
+See [TTS](../guide/tts.md).
+
 ## Cleanup (optional)
 
 ```bash

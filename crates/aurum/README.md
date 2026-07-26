@@ -13,11 +13,14 @@ aurum models
 aurum meeting.m4a --model tiny-q5_1
 aurum meeting.m4a --cleanup clean
 echo "um hello" | aurum cleanup -s clean
+
+aurum tts "Hello from aurum" -O /tmp/hello.wav
+aurum tts voices
 ```
 
-Library consumers should depend on **[`aurum-core`](../aurum-core)**, not this crate.
+Library consumers should depend on **[`aurum-core`](../aurum-core)** (STT + optional TTS), not this crate.
 
-Docs: <https://joe-broadhead.github.io/aurum/>
+Docs: <https://joe-broadhead.github.io/aurum/> · TTS: <https://joe-broadhead.github.io/aurum/guide/tts/>
 
 ## License
 

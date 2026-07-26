@@ -37,4 +37,4 @@ pub use validate::{
     SPEAKING_RATE_MAX, SPEAKING_RATE_MIN,
 };
 #[cfg(feature = "tts")]
-pub use wav::{peak_guard_f32_to_i16, write_wav_i16_mono, write_wav_i16_mono_atomic};
+pub use wav::write_wav_i16_mono_atomic;

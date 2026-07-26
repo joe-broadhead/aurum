@@ -51,3 +51,21 @@ Call before process exit on macOS.
 ## Build fails on whisper-rs
 
 Need **cmake** and a C++ compiler. On macOS: Xcode CLT + `brew install cmake`.
+
+## TTS: pack missing / offline
+
+```bash
+aurum tts models          # cache status
+# First run needs network once to download the pinned pack (~26 MB), or:
+aurum tts "Hello" -O /tmp/a.wav --local-only   # fails closed if not cached
+```
+
+## TTS: timeout
+
+`--timeout` is a **wait** bound on the synthesis worker. ONNX work may continue briefly after the error returns (best-effort cancel). Raise `[tts].timeout_ms` for long passages.
+
+## TTS: overwrite refused
+
+```bash
+aurum tts "Hi" -O out.wav --force
+```

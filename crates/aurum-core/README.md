@@ -12,6 +12,8 @@ Reusable **on-device speech-to-text** library for [Aurum](https://github.com/joe
 
 **API status:** experimental until `0.1.0`. Pin a git `rev` or tag.
 
+Optional **TTS** (default feature `tts`): `LocalTtsProvider` → mono PCM/WAV. Disable with `default-features = false` if you only need STT.
+
 ## Depend
 
 ```toml

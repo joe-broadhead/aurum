@@ -18,20 +18,23 @@ use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
 
-/// Aurum — on-device speech-to-text CLI.
+/// Aurum — on-device speech CLI (STT + TTS).
 #[derive(Debug, Parser)]
 #[command(
     name = "aurum",
     version,
     about = "Audio in. Text out. On-device by default.",
-    long_about = "Aurum turns audio files into text with whisper.cpp on-device by default, \
- optional OpenRouter, and optional cleanup styles.\n\n\
+    long_about = "Aurum is private speech I/O on your machine:\n\
+  • STT — audio → text (whisper.cpp local by default; optional OpenRouter)\n\
+  • cleanup — post-transcript flow styles\n\
+  • TTS — text → mono WAV (local ONNX; no cloud)\n\n\
  Quick start:\n \
  aurum meeting.m4a\n \
  aurum meeting.m4a --cleanup clean\n \
  aurum tts \"Hello from aurum\" --output-file /tmp/a.wav\n \
  aurum cleanup --style bullets < notes.txt\n \
  aurum models\n \
+ aurum tts voices\n \
  aurum --help"
 )]
 #[command(args_conflicts_with_subcommands = true)]

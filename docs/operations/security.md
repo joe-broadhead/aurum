@@ -25,3 +25,5 @@ See also root [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/S
 ## Reporting
 
 Use GitHub Security Advisories.
+
+TTS downloads voice packs only when missing (pinned SHA-256). Local synthesis does not use OpenRouter.

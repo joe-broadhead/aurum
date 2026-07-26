@@ -8,7 +8,7 @@ use std::path::Path;
 /// Scale/clip f32 PCM into i16, never producing NaN.
 ///
 /// If peak exceeds `peak_limit` (e.g. 0.95), the whole buffer is scaled down.
-pub fn peak_guard_f32_to_i16(samples: &[f32], peak_limit: f32) -> Vec<i16> {
+pub(crate) fn peak_guard_f32_to_i16(samples: &[f32], peak_limit: f32) -> Vec<i16> {
     let peak = samples
         .iter()
         .map(|s| if s.is_finite() { s.abs() } else { 0.0 })
@@ -29,7 +29,7 @@ pub fn peak_guard_f32_to_i16(samples: &[f32], peak_limit: f32) -> Vec<i16> {
 }
 
 /// Write mono i16 PCM to a WAV file (overwrite destination).
-pub fn write_wav_i16_mono(path: &Path, samples: &[i16], sample_rate_hz: u32) -> Result<()> {
+pub(crate) fn write_wav_i16_mono(path: &Path, samples: &[i16], sample_rate_hz: u32) -> Result<()> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
             fs::create_dir_all(parent).map_err(|e| EnvironmentError::DirectoryAccess {

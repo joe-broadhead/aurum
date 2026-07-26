@@ -23,7 +23,7 @@ use std::path::PathBuf;
 #[command(
     name = "aurum",
     version,
-    about = "Audio in. Text out. On-device by default.",
+    about = "Speech both ways. On-device by default.",
     long_about = "Aurum is private speech I/O on your machine:\n\
   • STT — audio → text (whisper.cpp local by default; optional OpenRouter)\n\
   • cleanup — post-transcript flow styles\n\

@@ -174,7 +174,7 @@ Source: `https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8`
 Enabling TTS (the CLI default) pulls in **ONNX Runtime** via the `ort` crate (`download-binaries`). That increases build artifacts and release binary size versus an STT-only build. Library consumers who only need STT can disable it:
 
 ```toml
-aurum-core = { version = "0.0.0", default-features = false }
+aurum-core = { version = "0.0.2", default-features = false }
 # or: default-features = false, features = []  — STT only
 ```
 

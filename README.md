@@ -20,13 +20,13 @@
  / ___ \ |_| | |  | |_| | | | | | |
 /_/   \_\__,_|_|   \__,_|_| |_| |_|
                                    
-   Audio in. Text out.
+   Speech both ways.
    On-device by default.
 ```
 
 <div align="center">
 
-**Audio in. Text out. On-device by default.**
+**Speech both ways. On-device by default.**
 No API key required · clean providers · optional cleanup styles · reusable **`aurum-core`**
 
 [Docs](https://joe-broadhead.github.io/aurum/) ·
@@ -50,7 +50,7 @@ Aurum is an on-device **speech CLI** and **Rust library**:
 
 OpenRouter is an **optional** remote path for ASR or cleanup — never the default. TTS has no cloud path in this release.
 
-> **v0.0.1** released. Binaries on [GitHub Releases](https://github.com/joe-broadhead/aurum/releases/tag/v0.0.1). Includes local TTS + `aurum-ffi`. Library API may change before `0.1.0`.
+> **v0.0.2** released. Binaries on [GitHub Releases](https://github.com/joe-broadhead/aurum/releases/tag/v0.0.2). Includes local TTS + `aurum-ffi`. Library API may change before `0.1.0`.
 
 ## Highlights
 
@@ -88,7 +88,7 @@ aurum tts "Hello from aurum" -O /tmp/hello.wav
 
 ```toml
 # Depend on the library (pin a commit or tag)
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.1" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.2" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).
@@ -148,7 +148,7 @@ cargo test -p aurum-core --test local_integration -- --ignored
 Maintainer-only. Prepare → merge `release/x.y.z` → tag → multi-platform binaries. 
 Details: [docs/development/release.md](docs/development/release.md).
 
-## Non-goals (v0.0.0)
+## Non-goals (v0.x)
 
 Built-in microphone capture · speaker diarization · stable library API · Swift FFI.
 

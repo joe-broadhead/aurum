@@ -7,7 +7,7 @@
 aurum-core = { path = "../aurum/crates/aurum-core" }
 
 # Git — always pin a rev or tag
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.1" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.2" }
 ```
 
 Also need a Tokio runtime for async APIs:

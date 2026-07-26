@@ -1,13 +1,16 @@
 //! # aurum-core
 //!
-//! Reusable on-device speech-to-text library (experimental API).
+//! Reusable **on-device speech I/O** library (experimental API).
 //!
-//! Aurum converts audio to text using local whisper.cpp models
-//! by default, with an optional OpenRouter remote provider.
+//! - **STT** — local whisper.cpp by default; optional OpenRouter
+//! - **TTS** — local ONNX KittenTTS (cargo feature `tts`, default on)
+//! - **Cleanup** — rules or optional LLM post-edit
+//!
+//! Tagline: *Speech both ways. On-device by default.*
 //!
 //! The API may change without notice until a stable `0.1.0`.
 //!
-//! ## Example
+//! ## STT example
 //!
 //! ```rust,no_run
 //! use aurum_core::audio::{AudioInput, WHISPER_SAMPLE_RATE};
@@ -21,7 +24,6 @@
 //!     .with_local_only(false);
 //! provider.preload("tiny-q5_1").await?;
 //!
-//! // Mic host: push PCM, then finalize (no files / ffmpeg).
 //! let mut buf = PcmBuffer::dictation();
 //! buf.push(&[0.0f32; 1600])?;
 //! let result = provider

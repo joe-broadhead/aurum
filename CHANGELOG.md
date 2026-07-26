@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-07-26
+
+### Changed
+
+- **Tagline:** *Speech both ways. On-device by default.* (STT + TTS product honesty)
+- Docs and crate metadata refreshed for speech I/O (CLI, core, FFI, site, GitHub description)
+- `aurum-core` crate docs describe STT + TTS; STT-only via `default-features = false`
+
+### Fixed
+
+- Stale version pins in docs (`0.0.0` / `v0.0.1` → current)
+- Crate keyword limits already enforced for crates.io
+
 ## [0.0.1] - 2026-07-26
 
 ### Notes
@@ -72,6 +85,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.2...HEAD
+[0.0.2]: https://github.com/joe-broadhead/aurum/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/joe-broadhead/aurum/compare/v0.0.0...v0.0.1
 [0.0.0]: https://github.com/joe-broadhead/aurum/releases/tag/v0.0.0

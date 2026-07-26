@@ -2,12 +2,11 @@
 
 CLI for [Aurum](https://github.com/joe-broadhead/aurum).
 
-**Audio in. Text out. On-device by default.**
+**Speech both ways. On-device by default.**
 
 ```bash
 cargo install aurum-stt
-# or from this repo: cargo install --path crates/aurum --locked
-# or install a binary from GitHub Releases
+# or: cargo install --path crates/aurum --locked
 
 aurum models
 aurum meeting.m4a --model tiny-q5_1
@@ -18,9 +17,9 @@ aurum tts "Hello from aurum" -O /tmp/hello.wav
 aurum tts voices
 ```
 
-Library consumers should depend on **[`aurum-core`](../aurum-core)** (STT + optional TTS), not this crate.
+Library: **[`aurum-core`](../aurum-core)**. Native STT embeds: **[`aurum-ffi`](../aurum-ffi)**.
 
-Docs: <https://joe-broadhead.github.io/aurum/> · TTS: <https://joe-broadhead.github.io/aurum/guide/tts/>
+Docs: <https://joe-broadhead.github.io/aurum/>
 
 ## License
 

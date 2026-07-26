@@ -39,8 +39,8 @@ Must match:
 ## Manual tag (fallback)
 
 ```bash
-git tag -a v0.0.0 -m "Release v0.0.0"
-git push origin v0.0.0
+git tag -a v0.0.2 -m "Release v0.0.2"
+git push origin v0.0.2
 ```
 
 ## Assets (CLI)
@@ -53,7 +53,7 @@ git push origin v0.0.0
 | `aurum-windows-x86_64.exe` | Windows |
 | `SHA256SUMS` | Checksums |
 
-`aurum-ffi` is **not** attached as a prebuilt dylib in v0.0.0 — consumers build from source (`cargo build -p aurum-ffi --release`).
+`aurum-ffi` is **not** attached as a prebuilt dylib in v0.0.x — consumers build from source (`cargo build -p aurum-ffi --release`).
 
 ## crates.io (optional, separate from GitHub Release)
 

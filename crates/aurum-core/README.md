@@ -1,28 +1,28 @@
 # aurum-core
 
-Reusable **on-device speech-to-text** library for [Aurum](https://github.com/joe-broadhead/aurum).
+Reusable **on-device speech I/O** library for [Aurum](https://github.com/joe-broadhead/aurum).
 
-**Audio in. Text out. On-device by default.**
+**Speech both ways. On-device by default.**
 
-- Local whisper.cpp (`whisper-rs`, Metal on macOS)
-- Optional OpenRouter (LLM-assisted ASR)
+- Local whisper.cpp STT (`whisper-rs`, Metal on macOS)
+- Local ONNX TTS (KittenTTS; feature `tts`, default on)
+- Optional OpenRouter (LLM-assisted ASR / cleanup)
 - PCM-first mic host API · partial-window helpers · cancel
 - Cleanup / flow (rules or OpenRouter)
 - Model download, pins, txt/srt/json
 
 **API status:** experimental until `0.1.0`. Pin a git `rev` or tag.
 
-Optional **TTS** (default feature `tts`): `LocalTtsProvider` → mono PCM/WAV. Disable with `default-features = false` if you only need STT.
-
 ## Depend
 
 ```toml
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.0" }
-# or: path = "../aurum/crates/aurum-core"
+aurum-core = "0.0.2"
+# STT only (smaller): default-features = false
+# git: tag = "v0.0.2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
-## Quick example
+## Quick STT example
 
 ```rust
 use aurum_core::audio::load_audio;
@@ -54,7 +54,8 @@ Docs: <https://joe-broadhead.github.io/aurum/library/integration/>
 ## Build requirements
 
 - **Build:** cmake + C/C++ toolchain  
-- **Runtime (files):** ffmpeg for non-16 kHz mono WAV  
+- **Runtime (STT files):** ffmpeg for non-16 kHz mono WAV  
+- **TTS:** ONNX Runtime via `ort` (feature `tts`)
 
 ## License
 

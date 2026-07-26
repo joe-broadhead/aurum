@@ -1,10 +1,10 @@
 # Contributing to Aurum
 
-Thanks for helping build on-device speech-to-text that stays honest and embeddable.
+Thanks for helping build on-device speech I/O that stays honest and embeddable.
 
 ## Ground rules
 
-1. **On-device by default** — default path must work without an API key.
+1. **On-device by default** — STT and TTS default paths work without an API key.
 2. **Provider trait stays clean** — new backends implement `TranscriptionProvider`; do not special-case the CLI.
 3. **Cleanup is separate** — ASR ≠ flow; implement `TextCleanup` for new cleanup backends.
 4. **Actionable errors** — user / environment / provider taxonomy; no panics on expected failures.

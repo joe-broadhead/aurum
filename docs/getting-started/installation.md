@@ -30,7 +30,7 @@ Package name is `aurum-stt` (the `aurum` crate name is already taken on crates.i
 Library:
 
 ```toml
-aurum-core = "0.0.0"
+aurum-core = "0.0.2"
 ```
 
 ## From source

@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Audio in. Text out. On-device by default.  
+Speech both ways. On-device by default.  
 Stack: **Rust 1.89+**, Cargo workspace (`aurum-core`, `aurum-stt` CLI, `aurum-ffi`).  
 Version source of truth: `VERSION` (must match workspace `version` and CHANGELOG).
 

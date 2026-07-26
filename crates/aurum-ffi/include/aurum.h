@@ -1,7 +1,7 @@
 /**
  * aurum-ffi — C ABI for on-device speech-to-text (aurum-core).
  *
- * Audio in. Text out. On-device by default.
+ * Speech both ways. On-device by default.
  *
  * PCM must be mono float32 at AURUM_SAMPLE_RATE Hz.
  *

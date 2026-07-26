@@ -66,6 +66,16 @@ impl LocalTtsProvider {
         self
     }
 
+    /// Drop loaded ONNX sessions for this provider (frees ORT graphs held in RAM).
+    ///
+    /// Safe to call anytime; the next synthesize/preload reloads from the on-disk pack.
+    /// Does not delete cached files under the TTS cache directory.
+    pub fn clear_sessions(&self) {
+        if let Ok(mut guard) = self.sessions.lock() {
+            guard.clear();
+        }
+    }
+
     async fn ensure_loaded(&self, model: &str, local_only: bool) -> Result<Arc<LoadedPack>> {
         {
             let guard = self.sessions.lock().map_err(|_| {
@@ -348,9 +358,6 @@ impl SynthesisProvider for LocalTtsProvider {
     }
 }
 
-/// Drop helper reserved for future process-global caches.
-pub fn clear_tts_session_cache() {}
-
 /// Convenience: synthesize with a one-shot provider.
 pub async fn synthesize_local(
     cache_dir: impl Into<PathBuf>,
@@ -398,5 +405,13 @@ mod tests {
         let err = p.synthesize("Hello", &opts).await.unwrap_err();
         assert_eq!(err.exit_code(), 2);
         assert!(err.to_string().contains("unsupported TTS language"));
+    }
+
+    #[test]
+    fn clear_sessions_is_safe_when_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = LocalTtsProvider::new(dir.path().to_path_buf()).with_local_only(true);
+        p.clear_sessions(); // must not panic
+        p.clear_sessions();
     }
 }

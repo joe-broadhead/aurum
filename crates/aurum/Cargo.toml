@@ -10,7 +10,7 @@ documentation = "https://docs.rs/aurum-stt"
 rust-version.workspace = true
 description = "Audio in. Text out. On-device by default."
 readme = "README.md"
-keywords = ["transcription", "whisper", "speech-to-text", "cli", "stt"]
+keywords = ["transcription", "whisper", "speech-to-text", "cli", "stt", "tts"]
 categories = ["command-line-utilities", "multimedia::audio"]
 include = [
   "src/**/*",

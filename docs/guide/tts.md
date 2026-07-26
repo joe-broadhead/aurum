@@ -43,7 +43,7 @@ aurum tts --input-file {input_path} --voice {voice} --language {language} \
 | `--force` | no | allow overwrite of existing non-empty file |
 | `--speaking-rate` | no | clamped to `0.5..=2.0` |
 | `--cleanup` | no | rules-only `raw` \| `clean` |
-| `--timeout` | no | milliseconds (default `120000`) |
+| `--timeout` | no | milliseconds (default `120000`); see [Timeouts](#timeouts) |
 | `--local-only` | no | fail if pack missing (no download) |
 | `--emit-json` | no | honesty JSON on stdout; audio only in file |
 | `-v` | no | verbose |
@@ -146,6 +146,27 @@ Source: `https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8`
 - Sample rate: **24 kHz** mono PCM 16-bit WAV (in-process via `hound`).
 - Peak/loudness guard on PCM before write (no NaN).
 - Cargo feature: `aurum-core` feature `tts` (default **on** for the CLI).
+
+### Binary size / dependencies
+
+Enabling TTS (the CLI default) pulls in **ONNX Runtime** via the `ort` crate (`download-binaries`). That increases build artifacts and release binary size versus an STT-only build. Library consumers who only need STT can disable it:
+
+```toml
+aurum-core = { version = "0.0.0", default-features = false }
+# or: default-features = false, features = []  — STT only
+```
+
+The CLI package keeps `tts` on so `aurum tts` works out of the box.
+
+### Timeouts
+
+`--timeout` / `[tts].timeout_ms` bounds how long Aurum **waits** for a synthesis worker (`spawn_blocking` + `tokio::time::timeout`).
+
+- On expiry the CLI returns a **provider** error and sets a cancel flag when one was provided.
+- This is **best-effort**: ONNX Runtime work already running inside the blocking thread is not hard-killed; CPU may continue briefly until the worker returns.
+- Do not assume wall-clock cancel frees the core the instant the timeout fires (same class of limitation as many embed runtimes).
+
+Library hosts that need deterministic teardown should drop the `LocalTtsProvider` (and call `LocalTtsProvider::clear_sessions` when done) after cancelling in-flight work at the application layer.
 
 ## Limits (MVP)
 

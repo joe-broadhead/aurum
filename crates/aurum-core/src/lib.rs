@@ -52,6 +52,8 @@ pub mod output;
 pub mod pcm;
 pub mod postprocess;
 pub mod providers;
+#[cfg(feature = "tts")]
+pub mod tts;
 pub mod window;
 
 pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
@@ -70,3 +72,11 @@ pub use providers::{
     TranscriptionResult,
 };
 pub use window::{PartialClock, PartialWindowPolicy};
+
+#[cfg(feature = "tts")]
+pub use tts::{
+    format_model_list as format_tts_model_list, format_voice_list as format_tts_voice_list,
+    list_models as list_tts_models, list_voices as list_tts_voices, write_wav_i16_mono_atomic,
+    BackendKind as TtsBackendKind, LocalTtsProvider, SynthesisOptions, SynthesisProvider,
+    SynthesisResult, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE,
+};

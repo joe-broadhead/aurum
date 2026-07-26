@@ -13,6 +13,7 @@ use aurum_core::providers::{
     BackendKind, LocalWhisperProvider, OpenRouterProvider, TranscriptionOptions,
     TranscriptionProvider,
 };
+use aurum_core::SynthesisProvider;
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
@@ -28,6 +29,7 @@ use std::path::PathBuf;
  Quick start:\n \
  aurum meeting.m4a\n \
  aurum meeting.m4a --cleanup clean\n \
+ aurum tts \"Hello from aurum\" --output-file /tmp/a.wav\n \
  aurum cleanup --style bullets < notes.txt\n \
  aurum models\n \
  aurum --help"
@@ -55,6 +57,28 @@ pub enum Commands {
     /// Clean existing text (stdin or file) without re-transcribing.
     #[command(visible_alias = "flow")]
     Cleanup(CleanupArgs),
+
+    /// Synthesize speech from text (local ONNX TTS → mono WAV).
+    Tts(TtsCli),
+}
+
+/// `aurum tts` — synthesize or list TTS models/voices.
+#[derive(Debug, Parser)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct TtsCli {
+    #[command(subcommand)]
+    pub command: Option<TtsCommands>,
+
+    #[command(flatten)]
+    pub synth: TtsArgs,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum TtsCommands {
+    /// List local TTS models and cache status.
+    Models,
+    /// List local TTS voices and cache status.
+    Voices,
 }
 
 #[derive(Debug, Clone, Default, clap::Args)]
@@ -109,6 +133,70 @@ pub struct TranscribeArgs {
     /// Segment policy after cleanup: auto | keep | clear | per-segment.
     #[arg(long = "cleanup-segments", value_name = "auto|keep|clear|per-segment")]
     pub cleanup_segments: Option<String>,
+
+    /// Verbose diagnostics.
+    #[arg(short = 'v', long)]
+    pub verbose: bool,
+}
+
+/// Args for `aurum tts` synthesis.
+#[derive(Debug, Clone, Default, clap::Args)]
+pub struct TtsArgs {
+    /// Text to speak. Use `-` to read UTF-8 from stdin.
+    #[arg(value_name = "TEXT")]
+    pub text: Option<String>,
+
+    /// Read UTF-8 text from this file instead of positional TEXT.
+    #[arg(long = "input-file", value_name = "PATH")]
+    pub input_file: Option<PathBuf>,
+
+    /// TTS provider (only `local` in MVP).
+    #[arg(long, value_name = "local", value_parser = ["local"])]
+    pub provider: Option<String>,
+
+    /// TTS model id (default from config / kitten-nano-int8).
+    #[arg(long, value_name = "NAME")]
+    pub model: Option<String>,
+
+    /// Voice id (default from config / Luna).
+    #[arg(long, value_name = "NAME")]
+    pub voice: Option<String>,
+
+    /// Language code (default: en).
+    #[arg(long, value_name = "CODE")]
+    pub language: Option<String>,
+
+    /// Output container (only `wav` in MVP).
+    #[arg(short = 'o', long = "output", value_name = "wav", value_parser = ["wav"])]
+    pub output: Option<String>,
+
+    /// Write WAV to this path (required for synthesis).
+    #[arg(long = "output-file", short = 'O', value_name = "PATH")]
+    pub output_file: Option<PathBuf>,
+
+    /// Overwrite an existing non-empty output file.
+    #[arg(long)]
+    pub force: bool,
+
+    /// Speaking rate multiplier (clamped 0.5..=2.0).
+    #[arg(long = "speaking-rate", value_name = "RATE")]
+    pub speaking_rate: Option<f32>,
+
+    /// Optional rules-only cleanup style before synth (`clean` min).
+    #[arg(long = "cleanup", value_name = "raw|clean")]
+    pub cleanup: Option<String>,
+
+    /// Wall-clock timeout in milliseconds.
+    #[arg(long = "timeout", value_name = "MS")]
+    pub timeout: Option<u64>,
+
+    /// Print honesty JSON metadata on stdout (audio only in file).
+    #[arg(long = "emit-json")]
+    pub emit_json: bool,
+
+    /// Fail if the voice pack is not already cached (no download).
+    #[arg(long = "local-only")]
+    pub local_only: bool,
 
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
@@ -171,6 +259,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         }
         Some(Commands::Transcribe(args)) => run_transcribe(args).await,
         Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
+        Some(Commands::Tts(tts)) => run_tts_cli(tts).await,
         None => {
             if cli.transcribe.audio_file.is_none() {
                 eprintln!(
@@ -178,17 +267,207 @@ pub async fn run(cli: Cli) -> Result<()> {
  Examples:\n \
  aurum meeting.m4a\n \
  aurum meeting.m4a --cleanup clean\n \
+ aurum tts \"Hello from aurum\" --output-file /tmp/a.wav\n \
  echo 'um hello' | aurum cleanup --style clean\n \
  aurum models\n\n \
  Run `aurum --help` for full options."
                 );
                 return Err(UserError::Other {
-                    message: "AUDIO_FILE is required (or use `aurum models` / `aurum cleanup`)"
+                    message: "AUDIO_FILE is required (or use `aurum models` / `aurum cleanup` / `aurum tts`)"
                         .into(),
                 }
                 .into());
             }
             run_transcribe(cli.transcribe).await
+        }
+    }
+}
+
+async fn run_tts_cli(cli: TtsCli) -> Result<()> {
+    match cli.command {
+        Some(TtsCommands::Models) => {
+            init_tracing(false);
+            let cfg = Config::load()?;
+            print!("{}", aurum_core::format_tts_model_list(&cfg.cache_dir));
+            Ok(())
+        }
+        Some(TtsCommands::Voices) => {
+            init_tracing(false);
+            let cfg = Config::load()?;
+            print!("{}", aurum_core::format_tts_voice_list(&cfg.cache_dir));
+            Ok(())
+        }
+        None => run_tts_synth(cli.synth).await,
+    }
+}
+
+async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
+    init_tracing(cli.verbose);
+    let cfg = Config::load()?;
+
+    let provider_name = cli
+        .provider
+        .as_deref()
+        .unwrap_or(cfg.tts_provider.as_str())
+        .to_ascii_lowercase();
+    if provider_name != "local" {
+        return Err(UserError::InvalidProvider {
+            provider: provider_name,
+        }
+        .into());
+    }
+
+    if let Some(fmt) = cli.output.as_deref() {
+        if fmt != "wav" {
+            return Err(UserError::Other {
+                message: format!(
+                    "unsupported TTS output format '{fmt}'\n  Hint: only `wav` is supported in this release."
+                ),
+            }
+            .into());
+        }
+    }
+
+    let output_file = cli.output_file.clone().ok_or_else(|| UserError::Other {
+        message:
+            "--output-file / -O is required for `aurum tts` synthesis\n  Hint: aurum tts \"Hello\" --output-file /tmp/a.wav"
+                .into(),
+    })?;
+
+    aurum_core::tts::validate::validate_output_path(&output_file)?;
+    aurum_core::tts::validate::check_overwrite(&output_file, cli.force)?;
+
+    // Exactly one text source: positional TEXT | --input-file | (TEXT=- reads stdin).
+    let text = read_tts_text(cli.text.as_deref(), cli.input_file.as_deref()).await?;
+
+    let mut body = text;
+    if let Some(style_raw) = cli.cleanup.as_deref() {
+        let style = CleanupStyle::parse(style_raw)?;
+        match style {
+            CleanupStyle::Raw => {}
+            CleanupStyle::Clean => {
+                let cleaned =
+                    cleanup_text(&body, &RulesCleanup::new(), CleanupStyle::Clean).await?;
+                body = cleaned.text;
+            }
+            other => {
+                return Err(UserError::Other {
+                    message: format!(
+                        "TTS --cleanup only supports raw|clean in MVP (got '{}')",
+                        other.as_str()
+                    ),
+                }
+                .into());
+            }
+        }
+    }
+
+    let model = cli.model.clone().unwrap_or_else(|| cfg.tts_model.clone());
+    let voice = cli.voice.clone().unwrap_or_else(|| cfg.tts_voice.clone());
+    let language = cli
+        .language
+        .clone()
+        .unwrap_or_else(|| cfg.tts_language.clone());
+    let speaking_rate = cli.speaking_rate.unwrap_or(1.0);
+    let timeout_ms = cli.timeout.unwrap_or(cfg.tts_timeout_ms);
+
+    if cli.verbose || atty_stderr() {
+        eprintln!("aurum: tts provider=local model={model} voice={voice} …");
+    }
+
+    let provider = aurum_core::LocalTtsProvider::new(cfg.cache_dir.clone())
+        .with_progress(true)
+        .with_local_only(cli.local_only)
+        .with_max_chars(cfg.tts_max_chars);
+
+    let opts = aurum_core::SynthesisOptions {
+        model,
+        voice,
+        language,
+        sample_rate_hz: None,
+        speaking_rate,
+        timeout_ms,
+        cancel: None,
+        local_only: cli.local_only,
+    };
+
+    let result = provider.synthesize(&body, &opts).await?;
+
+    aurum_core::write_wav_i16_mono_atomic(
+        &output_file,
+        &result.pcm_i16_mono,
+        result.sample_rate_hz,
+    )?;
+
+    if cli.verbose || atty_stderr() {
+        eprintln!(
+            "aurum: wrote {} ({:.1}s, {} Hz mono)",
+            output_file.display(),
+            result.duration_ms as f64 / 1000.0,
+            result.sample_rate_hz
+        );
+    }
+
+    if cli.emit_json {
+        let abs = std::fs::canonicalize(&output_file).unwrap_or(output_file.clone());
+        let payload = serde_json::json!({
+            "backend_kind": "local",
+            "provider": result.provider,
+            "model": result.model,
+            "voice": result.voice,
+            "language": result.language,
+            "output_path": abs.display().to_string(),
+            "format": "wav",
+            "sample_rate_hz": result.sample_rate_hz,
+            "channels": result.channels,
+            "duration_ms": result.duration_ms,
+            "text_chars": result.text_chars,
+            "text_truncated": result.text_truncated,
+        });
+        let mut stdout = io::stdout().lock();
+        writeln!(
+            stdout,
+            "{}",
+            serde_json::to_string_pretty(&payload)
+                .map_err(|e| TranscriptionError::internal(format!("json: {e}")))?
+        )?;
+    }
+
+    Ok(())
+}
+
+async fn read_tts_text(
+    positional: Option<&str>,
+    input_file: Option<&std::path::Path>,
+) -> Result<String> {
+    match (positional, input_file) {
+        (Some(_), Some(_)) => Err(UserError::Other {
+            message:
+                "provide exactly one text source: positional TEXT or --input-file (not both)"
+                    .into(),
+        }
+        .into()),
+        (None, None) => Err(UserError::Other {
+            message:
+                "missing text\n  Hint: aurum tts \"Hello\" --output-file out.wav\n        aurum tts --input-file prompt.txt -O out.wav\n        echo hi | aurum tts - --output-file out.wav"
+                    .into(),
+        }
+        .into()),
+        (Some("-"), None) => {
+            use std::io::Read;
+            let mut buf = String::new();
+            io::stdin().read_to_string(&mut buf)?;
+            Ok(buf)
+        }
+        (Some(t), None) => Ok(t.to_string()),
+        (None, Some(path)) => {
+            if !path.exists() {
+                return Err(UserError::FileNotFound {
+                    path: path.display().to_string(),
+                }
+                .into());
+            }
+            Ok(std::fs::read_to_string(path)?)
         }
     }
 }

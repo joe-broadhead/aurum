@@ -1,0 +1,639 @@
+//! TTS voice/model catalogue, integrity pins, and download lock.
+
+use crate::error::{EnvironmentError, ProviderError, Result, UserError};
+use futures_util::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
+use sha2::{Digest, Sha256};
+use std::fs::{self, File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+/// Default model id (KittenTTS nano int8 ONNX).
+pub const DEFAULT_TTS_MODEL: &str = "kitten-nano-int8";
+/// Default friendly voice name.
+pub const DEFAULT_TTS_VOICE: &str = "Luna";
+
+const HF_BASE: &str = "https://huggingface.co";
+
+/// A downloadable file belonging to a voice pack / model.
+#[derive(Debug, Clone, Copy)]
+pub struct PackFile {
+    pub filename: &'static str,
+    pub sha256: &'static str,
+    pub approx_bytes: u64,
+}
+
+/// Catalogue entry for a TTS model pack.
+#[derive(Debug, Clone, Copy)]
+pub struct TtsModelInfo {
+    pub id: &'static str,
+    pub notes: &'static str,
+    /// HuggingFace repo id, e.g. `KittenML/kitten-tts-nano-0.8-int8`.
+    pub hf_repo: &'static str,
+    pub onnx: PackFile,
+    pub voices: PackFile,
+    pub config: PackFile,
+    pub sample_rate_hz: u32,
+    pub license: &'static str,
+}
+
+/// Friendly voice alias → internal NPZ key.
+#[derive(Debug, Clone, Copy)]
+pub struct VoiceInfo {
+    pub id: &'static str,
+    pub internal_key: &'static str,
+    pub notes: &'static str,
+    /// Model pack this voice belongs to.
+    pub model: &'static str,
+    pub language: &'static str,
+}
+
+/// Pinned KittenTTS nano int8 pack (Apache-2.0 weights).
+pub const MODELS: &[TtsModelInfo] = &[TtsModelInfo {
+    id: DEFAULT_TTS_MODEL,
+    notes: "KittenTTS nano int8 ~25MB — default English ONNX",
+    hf_repo: "KittenML/kitten-tts-nano-0.8-int8",
+    onnx: PackFile {
+        filename: "kitten_tts_nano_v0_8.onnx",
+        sha256: "f7b0afcbee92870b32b8e0276d855b954dc25470c9f051b376ac7eee537c76fc",
+        approx_bytes: 24_369_971,
+    },
+    voices: PackFile {
+        filename: "voices.npz",
+        sha256: "8aa7cee235abb0739cb51e6559685f65a4dacd95568833d05699b1633f519b3f",
+        approx_bytes: 3_278_902,
+    },
+    config: PackFile {
+        filename: "config.json",
+        sha256: "b66006ccbeccd4de5fc3c9272059c47f5725df7215fd889785c03602652fab64",
+        approx_bytes: 688,
+    },
+    sample_rate_hz: 24_000,
+    license: "Apache-2.0",
+}];
+
+/// Voices shipped with the default KittenTTS pack.
+pub const VOICES: &[VoiceInfo] = &[
+    VoiceInfo {
+        id: "Bella",
+        internal_key: "expr-voice-2-f",
+        notes: "female",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+    VoiceInfo {
+        id: "Jasper",
+        internal_key: "expr-voice-2-m",
+        notes: "male",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+    VoiceInfo {
+        id: "Luna",
+        internal_key: "expr-voice-3-f",
+        notes: "female — default",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+    VoiceInfo {
+        id: "Bruno",
+        internal_key: "expr-voice-3-m",
+        notes: "male",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+    VoiceInfo {
+        id: "Rosie",
+        internal_key: "expr-voice-4-f",
+        notes: "female",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+    VoiceInfo {
+        id: "Hugo",
+        internal_key: "expr-voice-4-m",
+        notes: "male",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+    VoiceInfo {
+        id: "Kiki",
+        internal_key: "expr-voice-5-f",
+        notes: "female",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+    VoiceInfo {
+        id: "Leo",
+        internal_key: "expr-voice-5-m",
+        notes: "male",
+        model: DEFAULT_TTS_MODEL,
+        language: "en",
+    },
+];
+
+pub fn available_model_names() -> String {
+    MODELS.iter().map(|m| m.id).collect::<Vec<_>>().join(", ")
+}
+
+pub fn available_voice_names() -> String {
+    VOICES.iter().map(|v| v.id).collect::<Vec<_>>().join(", ")
+}
+
+pub fn lookup_model(name: &str) -> Result<&'static TtsModelInfo> {
+    let key = name.trim().to_ascii_lowercase();
+    MODELS
+        .iter()
+        .find(|m| m.id.eq_ignore_ascii_case(&key))
+        .ok_or_else(|| {
+            UserError::InvalidModel {
+                model: name.to_string(),
+                available: available_model_names(),
+            }
+            .into()
+        })
+}
+
+pub fn lookup_voice(name: &str) -> Result<&'static VoiceInfo> {
+    let key = name.trim();
+    VOICES
+        .iter()
+        .find(|v| v.id.eq_ignore_ascii_case(key) || v.internal_key.eq_ignore_ascii_case(key))
+        .ok_or_else(|| {
+            UserError::Other {
+                message: format!(
+                    "unknown TTS voice '{name}'\n  Hint: available voices: {}",
+                    available_voice_names()
+                ),
+            }
+            .into()
+        })
+}
+
+/// `<cache>/tts/`
+pub fn tts_cache_dir(cache_dir: &Path) -> PathBuf {
+    cache_dir.join("tts")
+}
+
+/// `<cache>/tts/<model-id>/`
+pub fn model_pack_dir(cache_dir: &Path, info: &TtsModelInfo) -> PathBuf {
+    tts_cache_dir(cache_dir).join(info.id)
+}
+
+pub fn onnx_path(cache_dir: &Path, info: &TtsModelInfo) -> PathBuf {
+    model_pack_dir(cache_dir, info).join(info.onnx.filename)
+}
+
+pub fn voices_path(cache_dir: &Path, info: &TtsModelInfo) -> PathBuf {
+    model_pack_dir(cache_dir, info).join(info.voices.filename)
+}
+
+pub fn config_path(cache_dir: &Path, info: &TtsModelInfo) -> PathBuf {
+    model_pack_dir(cache_dir, info).join(info.config.filename)
+}
+
+#[derive(Debug, Clone)]
+pub struct ModelStatus {
+    pub info: &'static TtsModelInfo,
+    pub cached: bool,
+    pub path: PathBuf,
+    pub size_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoiceStatus {
+    pub info: &'static VoiceInfo,
+    pub cached: bool,
+    pub model_cached: bool,
+}
+
+/// True when the full pack (onnx + voices + config) verifies against pins.
+pub fn is_pack_cached(cache_dir: &Path, model_name: &str) -> bool {
+    let Ok(info) = lookup_model(model_name) else {
+        return false;
+    };
+    verify_pack(cache_dir, info).is_ok()
+}
+
+fn verify_pack(cache_dir: &Path, info: &TtsModelInfo) -> Result<()> {
+    verify_file(&onnx_path(cache_dir, info), info.onnx.sha256, info.id)?;
+    verify_file(&voices_path(cache_dir, info), info.voices.sha256, info.id)?;
+    verify_file(&config_path(cache_dir, info), info.config.sha256, info.id)?;
+    Ok(())
+}
+
+fn verify_file(path: &Path, expected_sha: &str, model: &str) -> Result<()> {
+    if !path.exists() {
+        return Err(UserError::ModelNotCached {
+            model: model.to_string(),
+        }
+        .into());
+    }
+    if !verify_against_expected(path, expected_sha) {
+        return Err(ProviderError::ModelDownload {
+            model: model.to_string(),
+            reason: format!(
+                "cached file {} failed pinned sha256 check ({expected_sha})",
+                path.display()
+            ),
+        }
+        .into());
+    }
+    Ok(())
+}
+
+fn verify_against_expected(path: &Path, expected: &str) -> bool {
+    let Ok(mut file) = File::open(path) else {
+        return false;
+    };
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => return false,
+        }
+    }
+    hex::encode(hasher.finalize()) == expected
+}
+
+pub fn list_models(cache_dir: &Path) -> Vec<ModelStatus> {
+    MODELS
+        .iter()
+        .map(|info| {
+            let path = model_pack_dir(cache_dir, info);
+            let cached = verify_pack(cache_dir, info).is_ok();
+            let size_bytes = if cached {
+                let a = fs::metadata(onnx_path(cache_dir, info))
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                let b = fs::metadata(voices_path(cache_dir, info))
+                    .map(|m| m.len())
+                    .unwrap_or(0);
+                Some(a + b)
+            } else {
+                None
+            };
+            ModelStatus {
+                info,
+                cached,
+                path,
+                size_bytes,
+            }
+        })
+        .collect()
+}
+
+pub fn list_voices(cache_dir: &Path) -> Vec<VoiceStatus> {
+    VOICES
+        .iter()
+        .map(|info| {
+            let model_cached = is_pack_cached(cache_dir, info.model);
+            VoiceStatus {
+                info,
+                cached: model_cached,
+                model_cached,
+            }
+        })
+        .collect()
+}
+
+pub fn format_model_list(cache_dir: &Path) -> String {
+    let rows = list_models(cache_dir);
+    let mut out = String::from("Local TTS models (cache: ");
+    out.push_str(&tts_cache_dir(cache_dir).display().to_string());
+    out.push_str(")\n\n");
+    out.push_str(&format!(
+        "{:<22} {:>10}  {:<8}  {}\n",
+        "NAME", "SIZE", "STATUS", "NOTES"
+    ));
+    out.push_str(&format!(
+        "{:<22} {:>10}  {:<8}  {}\n",
+        "----", "----", "------", "-----"
+    ));
+    for row in rows {
+        let size = format_bytes(row.info.onnx.approx_bytes + row.info.voices.approx_bytes);
+        let status = if row.cached { "cached" } else { "—" };
+        out.push_str(&format!(
+            "{:<22} {:>10}  {:<8}  {} [{}]\n",
+            row.info.id, size, status, row.info.notes, row.info.license
+        ));
+    }
+    out.push_str(&format!(
+        "\nDefault model: `{DEFAULT_TTS_MODEL}`. Engine: ONNX Runtime + KittenTTS.\n"
+    ));
+    out
+}
+
+pub fn format_voice_list(cache_dir: &Path) -> String {
+    let rows = list_voices(cache_dir);
+    let mut out = String::from("Local TTS voices\n\n");
+    out.push_str(&format!(
+        "{:<12} {:<18} {:<8}  {:<8}  {}\n",
+        "NAME", "INTERNAL", "LANG", "STATUS", "NOTES"
+    ));
+    out.push_str(&format!(
+        "{:<12} {:<18} {:<8}  {:<8}  {}\n",
+        "----", "--------", "----", "------", "-----"
+    ));
+    for row in rows {
+        let status = if row.cached { "cached" } else { "—" };
+        out.push_str(&format!(
+            "{:<12} {:<18} {:<8}  {:<8}  {} (model: {})\n",
+            row.info.id,
+            row.info.internal_key,
+            row.info.language,
+            status,
+            row.info.notes,
+            row.info.model
+        ));
+    }
+    out.push_str(&format!("\nDefault voice: `{DEFAULT_TTS_VOICE}`.\n"));
+    out
+}
+
+fn format_bytes(n: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    let n = n as f64;
+    if n >= MB {
+        format!("{:.0} MB", n / MB)
+    } else {
+        format!("{:.0} KB", n / KB)
+    }
+}
+
+/// Ensure the model pack is present (download + pin verify). Returns pack dir.
+pub async fn ensure_voice_pack(
+    cache_dir: &Path,
+    model_name: &str,
+    show_progress: bool,
+    local_only: bool,
+) -> Result<PathBuf> {
+    let info = lookup_model(model_name)?;
+    let pack_dir = model_pack_dir(cache_dir, info);
+
+    if verify_pack(cache_dir, info).is_ok() {
+        tracing::info!(model = info.id, path = %pack_dir.display(), "using cached TTS pack");
+        return Ok(pack_dir);
+    }
+
+    if local_only {
+        return Err(UserError::ModelNotCached {
+            model: model_name.to_string(),
+        }
+        .into());
+    }
+
+    fs::create_dir_all(&pack_dir).map_err(|e| EnvironmentError::DirectoryAccess {
+        path: pack_dir.display().to_string(),
+        reason: e.to_string(),
+    })?;
+
+    let lock_path = pack_dir.join(".download.lock");
+    let lock_file = OpenOptions::new()
+        .create(true)
+        .read(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| EnvironmentError::DirectoryAccess {
+            path: lock_path.display().to_string(),
+            reason: e.to_string(),
+        })?;
+
+    if show_progress {
+        eprintln!("aurum: waiting for TTS download lock ({}) …", info.id);
+    }
+    lock_file.lock().map_err(|e| EnvironmentError::Other {
+        message: format!("failed to acquire TTS download lock: {e}"),
+    })?;
+
+    // Re-check after lock.
+    if verify_pack(cache_dir, info).is_ok() {
+        let _ = lock_file.unlock();
+        return Ok(pack_dir);
+    }
+
+    if local_only {
+        let _ = lock_file.unlock();
+        return Err(UserError::ModelNotCached {
+            model: model_name.to_string(),
+        }
+        .into());
+    }
+
+    if show_progress {
+        eprintln!(
+            "aurum: downloading TTS pack `{}` (~{}) — first run only …",
+            info.id,
+            format_bytes(info.onnx.approx_bytes + info.voices.approx_bytes)
+        );
+    }
+
+    let files = [info.config, info.onnx, info.voices];
+    for file in files {
+        let dest = pack_dir.join(file.filename);
+        if dest.exists() && verify_against_expected(&dest, file.sha256) {
+            continue;
+        }
+        let url = format!(
+            "{HF_BASE}/{}/resolve/main/{}?download=true",
+            info.hf_repo, file.filename
+        );
+        if let Err(e) = download_pinned(
+            info.id,
+            &url,
+            &dest,
+            file.sha256,
+            file.approx_bytes,
+            show_progress,
+        )
+        .await
+        {
+            let _ = lock_file.unlock();
+            return Err(e);
+        }
+    }
+
+    let _ = lock_file.unlock();
+    verify_pack(cache_dir, info)?;
+    Ok(pack_dir)
+}
+
+async fn download_pinned(
+    model: &str,
+    url: &str,
+    dest: &Path,
+    expected_sha: &str,
+    approx_bytes: u64,
+    show_progress: bool,
+) -> Result<()> {
+    tracing::info!(%url, path = %dest.display(), "downloading TTS asset");
+
+    let partial = dest.with_extension(format!(
+        "partial.{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+    if partial.exists() {
+        let _ = fs::remove_file(&partial);
+    }
+
+    let client = reqwest::Client::builder()
+        .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
+        .connect_timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(30 * 60))
+        .build()
+        .map_err(|e| ProviderError::ModelDownload {
+            model: model.to_string(),
+            reason: format!("http client error: {e}"),
+        })?;
+
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .map_err(|e| ProviderError::ModelDownload {
+            model: model.to_string(),
+            reason: format!("request failed: {e}"),
+        })?;
+
+    if !response.status().is_success() {
+        return Err(ProviderError::ModelDownload {
+            model: model.to_string(),
+            reason: format!("HTTP {}", response.status()),
+        }
+        .into());
+    }
+
+    let total = response.content_length().unwrap_or(approx_bytes);
+    let pb = if show_progress {
+        let pb = ProgressBar::new(total);
+        pb.set_style(
+            ProgressStyle::with_template(
+                "{msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
+            )
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
+            .progress_chars("=>-"),
+        );
+        pb.set_message(format!(
+            "Downloading {}",
+            dest.file_name().and_then(|s| s.to_str()).unwrap_or("file")
+        ));
+        Some(pb)
+    } else {
+        None
+    };
+
+    let mut file = File::create(&partial).map_err(|e| EnvironmentError::DirectoryAccess {
+        path: partial.display().to_string(),
+        reason: e.to_string(),
+    })?;
+
+    let mut stream = response.bytes_stream();
+    let mut hasher = Sha256::new();
+    let mut downloaded: u64 = 0;
+    let max_allowed = total
+        .saturating_mul(5)
+        .saturating_div(4)
+        .max(approx_bytes.saturating_mul(2).max(1_000_000));
+
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| ProviderError::ModelDownload {
+            model: model.to_string(),
+            reason: format!("stream error: {e}"),
+        })?;
+        file.write_all(&chunk)
+            .map_err(|e| EnvironmentError::DiskSpace {
+                path: partial.display().to_string(),
+                reason: e.to_string(),
+            })?;
+        hasher.update(&chunk);
+        downloaded += chunk.len() as u64;
+        if downloaded > max_allowed {
+            let _ = fs::remove_file(&partial);
+            return Err(ProviderError::ModelDownload {
+                model: model.to_string(),
+                reason: format!("download exceeded size cap ({downloaded} > {max_allowed})"),
+            }
+            .into());
+        }
+        if let Some(pb) = &pb {
+            pb.set_position(downloaded.min(total));
+        }
+    }
+    file.flush().ok();
+    drop(file);
+
+    let digest = hex::encode(hasher.finalize());
+    if digest != expected_sha {
+        let _ = fs::remove_file(&partial);
+        return Err(ProviderError::ModelDownload {
+            model: model.to_string(),
+            reason: format!(
+                "sha256 mismatch for {} (got {digest}, expected {expected_sha}) — refusing to cache",
+                dest.file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("file")
+            ),
+        }
+        .into());
+    }
+
+    fs::rename(&partial, dest).map_err(|e| EnvironmentError::DirectoryAccess {
+        path: dest.display().to_string(),
+        reason: e.to_string(),
+    })?;
+
+    if let Some(pb) = pb {
+        pb.finish_with_message(format!(
+            "Downloaded {} ({downloaded} bytes)",
+            dest.file_name().and_then(|s| s.to_str()).unwrap_or("file")
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn lookup_default_model() {
+        let m = lookup_model(DEFAULT_TTS_MODEL).unwrap();
+        assert_eq!(m.sample_rate_hz, 24_000);
+        assert!(!m.onnx.sha256.is_empty());
+    }
+
+    #[test]
+    fn lookup_voices_case_insensitive() {
+        assert_eq!(lookup_voice("luna").unwrap().id, "Luna");
+        assert_eq!(lookup_voice("expr-voice-3-f").unwrap().id, "Luna");
+        assert!(lookup_voice("nope").is_err());
+    }
+
+    #[test]
+    fn pin_mismatch_fails() {
+        let dir = tempfile::tempdir().unwrap();
+        let info = lookup_model(DEFAULT_TTS_MODEL).unwrap();
+        let pack = model_pack_dir(dir.path(), info);
+        fs::create_dir_all(&pack).unwrap();
+        fs::write(pack.join(info.onnx.filename), b"not-a-model").unwrap();
+        fs::write(pack.join(info.voices.filename), b"nope").unwrap();
+        fs::write(pack.join(info.config.filename), b"{}").unwrap();
+        assert!(verify_pack(dir.path(), info).is_err());
+    }
+
+    #[test]
+    fn lists_format() {
+        let s = format_model_list(Path::new("/tmp/aurum-tts-test-cache"));
+        assert!(s.contains(DEFAULT_TTS_MODEL));
+        let v = format_voice_list(Path::new("/tmp/aurum-tts-test-cache"));
+        assert!(v.contains("Luna"));
+    }
+}

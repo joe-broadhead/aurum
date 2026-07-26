@@ -5,6 +5,9 @@ aurum <AUDIO_FILE> [OPTIONS]
 aurum models
 aurum transcribe <AUDIO_FILE> [OPTIONS]
 aurum cleanup [TEXT_FILE] [OPTIONS]     # alias: aurum flow
+aurum tts "Hello" --output-file out.wav
+aurum tts models
+aurum tts voices
 aurum --help
 aurum --version
 ```
@@ -25,6 +28,27 @@ aurum --version
 | `--cleanup-model <id>` | OpenRouter default | LLM cleanup model |
 | `--cleanup-segments <p>` | `auto` | `auto` \| `keep` \| `clear` \| `per-segment` |
 | `-v, --verbose` | off | Diagnostics on stderr |
+
+## TTS options (`aurum tts`)
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `TEXT` / `-` / `--input-file` | — | Exactly one UTF-8 text source |
+| `--provider` | `local` | Only `local` in MVP |
+| `--model` | `kitten-nano-int8` | TTS model pack id |
+| `--voice` | `Luna` | Voice alias |
+| `--language` | `en` | Language hint |
+| `-o, --output` | `wav` | Only `wav` |
+| `-O, --output-file` | required | Destination WAV path |
+| `--force` | off | Overwrite existing non-empty file |
+| `--speaking-rate` | `1.0` | Clamped `0.5..=2.0` |
+| `--cleanup` | off | Rules-only `raw` \| `clean` |
+| `--timeout` | config / `120000` | Milliseconds |
+| `--local-only` | off | No download if pack missing |
+| `--emit-json` | off | Honesty JSON on stdout |
+| `-v` | off | Diagnostics |
+
+See [TTS guide](../guide/tts.md) for honesty JSON, cache pins, and license matrix.
 
 ## Cleanup-only options
 
@@ -56,4 +80,8 @@ aurum interview.mp3 --cleanup clean --cleanup-segments keep
 aurum interview.mp3 --provider openrouter --model openai/gpt-audio-mini
 echo "um hello" | aurum cleanup -s clean
 aurum cleanup notes.txt --style bullets -o json
+aurum tts "Hello from aurum" --output-file /tmp/a.wav --emit-json
+aurum tts --input-file prompt.txt -O /tmp/a.wav --voice Luna
+aurum tts models
+aurum tts voices
 ```

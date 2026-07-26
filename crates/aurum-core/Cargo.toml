@@ -10,7 +10,7 @@ documentation = "https://docs.rs/aurum-core"
 rust-version.workspace = true
 description = "Reusable on-device speech core (STT whisper.cpp + TTS ONNX + providers + cleanup)"
 readme = "README.md"
-keywords = ["transcription", "whisper", "speech-to-text", "stt", "asr", "tts"]
+keywords = ["transcription", "whisper", "speech-to-text", "stt", "tts"]
 categories = ["multimedia::audio", "api-bindings"]
 include = [
   "src/**/*",

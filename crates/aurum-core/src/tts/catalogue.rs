@@ -462,6 +462,16 @@ pub async fn ensure_voice_pack(
     Ok(pack_dir)
 }
 
+/// Hard download size cap from the pinned catalogue `approx_bytes`.
+///
+/// Content-Length must never raise this: a huge/false header would otherwise
+/// allow unbounded disk fill before the SHA check runs.
+pub(crate) fn download_byte_cap(approx_bytes: u64) -> u64 {
+    const FACTOR: u64 = 3;
+    const FLOOR: u64 = 1_000_000;
+    approx_bytes.saturating_mul(FACTOR).max(FLOOR)
+}
+
 async fn download_pinned(
     model: &str,
     url: &str,
@@ -511,9 +521,13 @@ async fn download_pinned(
         .into());
     }
 
-    let total = response.content_length().unwrap_or(approx_bytes);
+    // Progress total is advisory only — never raise the hard size cap from Content-Length.
+    let progress_total = response
+        .content_length()
+        .filter(|&n| n > 0 && n <= download_byte_cap(approx_bytes))
+        .unwrap_or(approx_bytes);
     let pb = if show_progress {
-        let pb = ProgressBar::new(total);
+        let pb = ProgressBar::new(progress_total);
         pb.set_style(
             ProgressStyle::with_template(
                 "{msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
@@ -538,10 +552,8 @@ async fn download_pinned(
     let mut stream = response.bytes_stream();
     let mut hasher = Sha256::new();
     let mut downloaded: u64 = 0;
-    let max_allowed = total
-        .saturating_mul(5)
-        .saturating_div(4)
-        .max(approx_bytes.saturating_mul(2).max(1_000_000));
+    // Fail-closed size cap from pinned catalogue size only (not Content-Length).
+    let max_allowed = download_byte_cap(approx_bytes);
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| ProviderError::ModelDownload {
@@ -564,7 +576,7 @@ async fn download_pinned(
             .into());
         }
         if let Some(pb) = &pb {
-            pb.set_position(downloaded.min(total));
+            pb.set_position(downloaded.min(progress_total));
         }
     }
     file.flush().ok();
@@ -585,10 +597,21 @@ async fn download_pinned(
         .into());
     }
 
-    fs::rename(&partial, dest).map_err(|e| EnvironmentError::DirectoryAccess {
-        path: dest.display().to_string(),
-        reason: e.to_string(),
-    })?;
+    // Windows cannot rename over an existing destination (re-download / pin repair).
+    if dest.exists() {
+        fs::remove_file(dest).map_err(|e| EnvironmentError::DirectoryAccess {
+            path: dest.display().to_string(),
+            reason: format!("failed to replace existing pack file: {e}"),
+        })?;
+    }
+    if let Err(e) = fs::rename(&partial, dest) {
+        let _ = fs::remove_file(&partial);
+        return Err(EnvironmentError::DirectoryAccess {
+            path: dest.display().to_string(),
+            reason: e.to_string(),
+        }
+        .into());
+    }
 
     if let Some(pb) = pb {
         pb.finish_with_message(format!(
@@ -635,5 +658,18 @@ mod tests {
         assert!(s.contains(DEFAULT_TTS_MODEL));
         let v = format_voice_list(Path::new("/tmp/aurum-tts-test-cache"));
         assert!(v.contains("Luna"));
+    }
+
+    #[test]
+    fn download_cap_uses_pinned_approx_not_content_length() {
+        // Small pin → floor of 1 MiB.
+        assert_eq!(download_byte_cap(100), 1_000_000);
+        // Typical pin → 3× approx.
+        assert_eq!(download_byte_cap(10_000_000), 30_000_000);
+        // Cap must not grow with a forged Content-Length (helper ignores it).
+        let pin = 24_369_971u64;
+        let forged_cl = 10_u64.pow(12);
+        assert!(download_byte_cap(pin) < forged_cl);
+        assert_eq!(download_byte_cap(pin), pin.saturating_mul(3));
     }
 }

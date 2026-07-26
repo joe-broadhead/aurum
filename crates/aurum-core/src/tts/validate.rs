@@ -10,12 +10,47 @@ pub const DEFAULT_TIMEOUT_MS: u64 = 120_000;
 pub const SPEAKING_RATE_MIN: f32 = 0.5;
 pub const SPEAKING_RATE_MAX: f32 = 2.0;
 
+/// UTF-8 worst-case bytes per Unicode scalar + small framing overhead for reads.
+const READ_BYTES_PER_CHAR: usize = 4;
+const READ_BYTE_OVERHEAD: usize = 4096;
+
 /// Validated / truncated text ready for synthesis.
 #[derive(Debug, Clone)]
 pub struct PreparedText {
     pub text: String,
     pub text_chars: usize,
     pub text_truncated: bool,
+}
+
+/// Byte budget for loading TTS text from a file or stdin before full allocation.
+///
+/// Tied to `max_chars` so a huge input fails as a user error instead of OOM.
+pub fn tts_input_byte_budget(max_chars: usize) -> usize {
+    max_chars
+        .saturating_mul(READ_BYTES_PER_CHAR)
+        .saturating_add(READ_BYTE_OVERHEAD)
+}
+
+/// Normalize / accept only English locales the G2P engine actually supports.
+///
+/// Empty input defaults to `en`. Unsupported tags are a user error (honest
+/// failure rather than echoing a language the engine did not use).
+pub fn normalize_tts_language(lang: &str) -> Result<String> {
+    let trimmed = lang.trim();
+    if trimmed.is_empty() {
+        return Ok("en".to_string());
+    }
+    let key = trimmed.to_ascii_lowercase().replace('_', "-");
+    match key.as_str() {
+        "en" | "en-us" => Ok("en".to_string()),
+        _ => Err(UserError::Other {
+            message: format!(
+                "unsupported TTS language '{trimmed}'\n  \
+                 Hint: KittenTTS G2P is English-only in this release; use en or en-US."
+            ),
+        }
+        .into()),
+    }
 }
 
 /// Reject empty / whitespace-only text (user error).
@@ -154,5 +189,32 @@ mod tests {
         let empty = dir.path().join("empty.wav");
         std::fs::write(&empty, b"").unwrap();
         assert!(check_overwrite(&empty, false).is_ok());
+    }
+
+    #[test]
+    fn language_accepts_english_aliases() {
+        assert_eq!(normalize_tts_language("").unwrap(), "en");
+        assert_eq!(normalize_tts_language("en").unwrap(), "en");
+        assert_eq!(normalize_tts_language("en-US").unwrap(), "en");
+        assert_eq!(normalize_tts_language("en_us").unwrap(), "en");
+        assert_eq!(normalize_tts_language(" EN-us ").unwrap(), "en");
+    }
+
+    #[test]
+    fn language_rejects_unsupported() {
+        for bad in ["fr", "de", "es-ES", "zh", "en-GB", "ja"] {
+            let err = normalize_tts_language(bad).unwrap_err();
+            assert_eq!(err.exit_code(), 2, "{bad}");
+        }
+    }
+
+    #[test]
+    fn input_byte_budget_scales_with_max_chars() {
+        assert_eq!(tts_input_byte_budget(0), READ_BYTE_OVERHEAD);
+        assert_eq!(
+            tts_input_byte_budget(100),
+            100 * READ_BYTES_PER_CHAR + READ_BYTE_OVERHEAD
+        );
+        assert!(tts_input_byte_budget(5_000) < 30_000 + READ_BYTE_OVERHEAD);
     }
 }

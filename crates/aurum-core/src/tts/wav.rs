@@ -86,14 +86,24 @@ pub fn write_wav_i16_mono_atomic(path: &Path, samples: &[i16], sample_rate_hz: u
         let _ = fs::remove_file(&tmp_path);
         return Err(e);
     }
-    fs::rename(&tmp_path, path).map_err(|e| {
+    // Windows cannot rename over an existing destination. Callers authorize
+    // overwrite via check_overwrite(--force); remove dest then rename.
+    replace_file(&tmp_path, path).map_err(|e| {
         let _ = fs::remove_file(&tmp_path);
         EnvironmentError::DirectoryAccess {
             path: path.display().to_string(),
-            reason: format!("atomic rename failed: {e}"),
+            reason: format!("atomic replace failed: {e}"),
         }
         .into()
     })
+}
+
+/// Same-directory temp → destination replace (portable across Unix/Windows).
+fn replace_file(tmp: &Path, dest: &Path) -> std::io::Result<()> {
+    if dest.exists() {
+        fs::remove_file(dest)?;
+    }
+    fs::rename(tmp, dest)
 }
 
 #[cfg(test)]
@@ -131,5 +141,19 @@ mod tests {
         assert_eq!(spec.bits_per_sample, 16);
         let decoded: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
         assert_eq!(decoded, samples);
+    }
+
+    #[test]
+    fn atomic_overwrite_existing_dest() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("exists.wav");
+        // Pre-create destination (the Windows rename failure case).
+        write_wav_i16_mono_atomic(&path, &[1i16, 2, 3], 16_000).unwrap();
+        let replacement = vec![9i16, 8, 7, 6];
+        write_wav_i16_mono_atomic(&path, &replacement, 24_000).unwrap();
+        let mut reader = hound::WavReader::open(&path).unwrap();
+        assert_eq!(reader.spec().sample_rate, 24_000);
+        let decoded: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
+        assert_eq!(decoded, replacement);
     }
 }

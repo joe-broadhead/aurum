@@ -338,7 +338,13 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
     aurum_core::tts::validate::check_overwrite(&output_file, cli.force)?;
 
     // Exactly one text source: positional TEXT | --input-file | (TEXT=- reads stdin).
-    let text = read_tts_text(cli.text.as_deref(), cli.input_file.as_deref()).await?;
+    // Cap the read before full string load so a huge file/stdin cannot OOM us.
+    let text = read_tts_text(
+        cli.text.as_deref(),
+        cli.input_file.as_deref(),
+        cfg.tts_max_chars,
+    )
+    .await?;
 
     let mut body = text;
     if let Some(style_raw) = cli.cleanup.as_deref() {
@@ -393,6 +399,10 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
 
     let result = provider.synthesize(&body, &opts).await?;
 
+    // Re-check immediately before replace so a long synth cannot silently
+    // clobber a file that appeared (or was filled) after the initial check.
+    aurum_core::tts::validate::check_overwrite(&output_file, cli.force)?;
+
     aurum_core::write_wav_i16_mono_atomic(
         &output_file,
         &result.pcm_i16_mono,
@@ -439,7 +449,9 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
 async fn read_tts_text(
     positional: Option<&str>,
     input_file: Option<&std::path::Path>,
+    max_chars: usize,
 ) -> Result<String> {
+    let budget = aurum_core::tts::tts_input_byte_budget(max_chars);
     match (positional, input_file) {
         (Some(_), Some(_)) => Err(UserError::Other {
             message:
@@ -455,11 +467,21 @@ async fn read_tts_text(
         .into()),
         (Some("-"), None) => {
             use std::io::Read;
-            let mut buf = String::new();
-            io::stdin().read_to_string(&mut buf)?;
-            Ok(buf)
+            let mut limited = io::stdin().take(budget as u64 + 1);
+            let mut buf = Vec::new();
+            limited.read_to_end(&mut buf)?;
+            enforce_tts_read_budget(buf.len(), budget, "stdin")?;
+            String::from_utf8(buf).map_err(|e| {
+                UserError::Other {
+                    message: format!("TTS stdin is not valid UTF-8: {e}"),
+                }
+                .into()
+            })
         }
-        (Some(t), None) => Ok(t.to_string()),
+        (Some(t), None) => {
+            enforce_tts_read_budget(t.len(), budget, "positional TEXT")?;
+            Ok(t.to_string())
+        }
         (None, Some(path)) => {
             if !path.exists() {
                 return Err(UserError::FileNotFound {
@@ -467,8 +489,44 @@ async fn read_tts_text(
                 }
                 .into());
             }
-            Ok(std::fs::read_to_string(path)?)
+            // Cheap metadata pre-check when available (regular files).
+            if let Ok(meta) = std::fs::metadata(path) {
+                if meta.is_file() && meta.len() > budget as u64 {
+                    return Err(tts_input_too_large(path.display().to_string(), budget).into());
+                }
+            }
+            use std::io::Read;
+            let file = std::fs::File::open(path)?;
+            let mut limited = file.take(budget as u64 + 1);
+            let mut buf = Vec::new();
+            limited.read_to_end(&mut buf)?;
+            enforce_tts_read_budget(buf.len(), budget, &path.display().to_string())?;
+            String::from_utf8(buf).map_err(|e| {
+                UserError::Other {
+                    message: format!(
+                        "TTS input file '{}' is not valid UTF-8: {e}",
+                        path.display()
+                    ),
+                }
+                .into()
+            })
         }
+    }
+}
+
+fn enforce_tts_read_budget(len: usize, budget: usize, source: &str) -> Result<()> {
+    if len > budget {
+        return Err(tts_input_too_large(source.to_string(), budget).into());
+    }
+    Ok(())
+}
+
+fn tts_input_too_large(source: String, budget: usize) -> UserError {
+    UserError::Other {
+        message: format!(
+            "TTS input from {source} exceeds the read budget ({budget} bytes)\n  \
+             Hint: shorten the text, or raise [tts].max_chars in config if truncation is acceptable."
+        ),
     }
 }
 

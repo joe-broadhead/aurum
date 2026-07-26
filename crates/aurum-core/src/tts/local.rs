@@ -4,7 +4,9 @@ use super::catalogue::{ensure_voice_pack, lookup_model, lookup_voice, onnx_path,
 use super::npz::load_voices_npz;
 use super::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
 use super::tokenize::ipa_to_ids;
-use super::validate::{clamp_speaking_rate, prepare_text, DEFAULT_MAX_CHARS};
+use super::validate::{
+    clamp_speaking_rate, normalize_tts_language, prepare_text, DEFAULT_MAX_CHARS,
+};
 use super::wav::peak_guard_f32_to_i16;
 use crate::error::{ProviderError, Result, UserError};
 use async_trait::async_trait;
@@ -13,7 +15,7 @@ use ort::value::Tensor;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 /// Samples trimmed from the tail of every chunk (trailing silence artifact).
 const TAIL_TRIM: usize = 2_000;
@@ -207,6 +209,9 @@ fn synthesize_with_pack(
         .checked_div(sample_rate as u64)
         .unwrap_or(0);
 
+    // Report the engine language actually used (English-only G2P), not a raw echo.
+    let language = normalize_tts_language(&opts.language).unwrap_or_else(|_| "en".into());
+
     Ok(SynthesisResult {
         pcm_i16_mono: pcm,
         sample_rate_hz: sample_rate,
@@ -215,7 +220,7 @@ fn synthesize_with_pack(
         provider: "local".into(),
         model: opts.model.clone(),
         voice: voice.id.to_string(),
-        language: opts.language.clone(),
+        language,
         duration_ms,
         text_chars,
         text_truncated,
@@ -277,6 +282,9 @@ impl SynthesisProvider for LocalTtsProvider {
 
     async fn synthesize(&self, text: &str, opts: &SynthesisOptions) -> Result<SynthesisResult> {
         let prepared = prepare_text(text, self.max_chars)?;
+        // Reject unsupported languages up front (G2P is English-only).
+        let mut opts = opts.clone();
+        opts.language = normalize_tts_language(&opts.language)?;
         lookup_model(&opts.model)?;
         lookup_voice(&opts.voice)?;
 
@@ -300,9 +308,10 @@ impl SynthesisProvider for LocalTtsProvider {
         let text_truncated = prepared.text_truncated;
         let opts_owned = opts.clone();
         let pack_clone = Arc::clone(&pack);
-        let start = Instant::now();
+        // Best-effort cancel if a wall-clock timeout fires mid-inference.
+        let cancel_on_timeout = opts.cancel.clone();
 
-        let result = tokio::task::spawn_blocking(move || {
+        let join = tokio::task::spawn_blocking(move || {
             synthesize_with_pack(
                 pack_clone.as_ref(),
                 &text_owned,
@@ -310,20 +319,26 @@ impl SynthesisProvider for LocalTtsProvider {
                 text_chars,
                 text_truncated,
             )
-        })
-        .await
-        .map_err(|e| crate::error::TranscriptionError::internal(format!("TTS synth join: {e}")))?;
+        });
 
-        if start.elapsed() > timeout {
-            return Err(ProviderError::Other {
-                message: format!(
-                    "TTS synthesis exceeded timeout ({} ms)",
-                    timeout.as_millis()
-                ),
+        match tokio::time::timeout(timeout, join).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(e)) => Err(crate::error::TranscriptionError::internal(format!(
+                "TTS synth join: {e}"
+            ))),
+            Err(_elapsed) => {
+                if let Some(flag) = cancel_on_timeout {
+                    flag.cancel();
+                }
+                Err(ProviderError::Other {
+                    message: format!(
+                        "TTS synthesis exceeded timeout ({} ms)",
+                        timeout.as_millis()
+                    ),
+                }
+                .into())
             }
-            .into());
         }
-        result
     }
 
     async fn preload(&self, model: &str, voice: &str) -> Result<()> {
@@ -370,5 +385,18 @@ mod tests {
             .await
             .unwrap_err();
         assert!(matches!(err.exit_code(), 2 | 4));
+    }
+
+    #[tokio::test]
+    async fn unsupported_language_user_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = LocalTtsProvider::new(dir.path().to_path_buf()).with_local_only(true);
+        let opts = SynthesisOptions {
+            language: "fr".into(),
+            ..Default::default()
+        };
+        let err = p.synthesize("Hello", &opts).await.unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.to_string().contains("unsupported TTS language"));
     }
 }

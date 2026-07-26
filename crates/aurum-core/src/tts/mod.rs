@@ -32,8 +32,9 @@ pub use provider::{
 };
 #[cfg(feature = "tts")]
 pub use validate::{
-    clamp_speaking_rate, prepare_text, validate_output_path, validate_text, PreparedText,
-    DEFAULT_MAX_CHARS, DEFAULT_TIMEOUT_MS, SPEAKING_RATE_MAX, SPEAKING_RATE_MIN,
+    clamp_speaking_rate, normalize_tts_language, prepare_text, tts_input_byte_budget,
+    validate_output_path, validate_text, PreparedText, DEFAULT_MAX_CHARS, DEFAULT_TIMEOUT_MS,
+    SPEAKING_RATE_MAX, SPEAKING_RATE_MIN,
 };
 #[cfg(feature = "tts")]
 pub use wav::{peak_guard_f32_to_i16, write_wav_i16_mono, write_wav_i16_mono_atomic};

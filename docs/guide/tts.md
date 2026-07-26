@@ -29,6 +29,20 @@ aurum tts --input-file {input_path} --voice {voice} --language {language} \
   -o wav --output-file {output_path} --emit-json
 ```
 
+### Voice demos (local only — not in git)
+
+Regenerate a short WAV per catalogue voice under `target/tts-demos/` (gitignored via `/target`):
+
+```bash
+cargo build -p aurum-stt --release
+./scripts/generate_tts_demos.sh
+./scripts/generate_tts_demos.sh --play          # macOS: afplay each clip
+./scripts/generate_tts_demos.sh --out ~/Downloads/aurum-tts-voices
+TEXT='Custom line.' ./scripts/generate_tts_demos.sh
+```
+
+Do **not** commit the generated WAVs; they are rebuildable artifacts of the pinned model pack.
+
 ## CLI
 
 | Flag | Required | Notes |

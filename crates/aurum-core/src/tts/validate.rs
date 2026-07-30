@@ -14,11 +14,16 @@ pub const SPEAKING_RATE_MAX: f32 = 2.0;
 const READ_BYTES_PER_CHAR: usize = 4;
 const READ_BYTE_OVERHEAD: usize = 4096;
 
-/// Validated / truncated text ready for synthesis.
+/// Validated text ready for synthesis.
+///
+/// Policy is **complete-or-error**: text is never silently truncated. Character
+/// budget is a safety bound (OOM / abuse); model phoneme capacity is enforced
+/// separately during chunking.
 #[derive(Debug, Clone)]
 pub struct PreparedText {
     pub text: String,
     pub text_chars: usize,
+    /// Always `false` under the complete-or-error policy.
     pub text_truncated: bool,
 }
 
@@ -64,33 +69,48 @@ pub fn validate_text(text: &str) -> Result<()> {
     Ok(())
 }
 
-/// Trim, enforce max chars, and report truncation.
+/// Trim and enforce max chars with complete-or-error semantics.
 ///
-/// Truncation prefers a word boundary near the limit when possible.
+/// Oversized input is a user error. Silent truncation is not supported; raise
+/// `[tts].max_chars` only when intentionally accepting larger inputs (chunking
+/// still enforces model phoneme limits).
 pub fn prepare_text(text: &str, max_chars: usize) -> Result<PreparedText> {
     validate_text(text)?;
     let trimmed = text.trim();
-    let chars: Vec<char> = trimmed.chars().collect();
-    if chars.len() <= max_chars {
-        return Ok(PreparedText {
-            text: trimmed.to_string(),
-            text_chars: chars.len(),
-            text_truncated: false,
-        });
-    }
-    // Truncate at last whitespace before limit when possible.
-    let mut end = max_chars;
-    if let Some(pos) = chars[..max_chars].iter().rposition(|c| c.is_whitespace()) {
-        if pos > max_chars / 2 {
-            end = pos;
+    let char_count = trimmed.chars().count();
+    if char_count > max_chars {
+        return Err(UserError::Other {
+            message: format!(
+                "TTS text is too long ({char_count} characters; limit is {max_chars}).\n  \
+                 Hint: shorten the input, split it yourself, or raise [tts].max_chars in config. \
+                 Aurum does not silently truncate synthesis input."
+            ),
         }
+        .into());
     }
-    let truncated: String = chars[..end].iter().collect();
     Ok(PreparedText {
-        text: truncated.trim_end().to_string(),
-        text_chars: end,
-        text_truncated: true,
+        text: trimmed.to_string(),
+        text_chars: char_count,
+        text_truncated: false,
     })
+}
+
+/// Reject a requested sample-rate override that is not the adapter's native rate.
+///
+/// Real resampling is not implemented; metadata-only relabeling is refused.
+pub fn resolve_sample_rate(requested: Option<u32>, native_hz: u32) -> Result<u32> {
+    match requested {
+        None => Ok(native_hz),
+        Some(hz) if hz == native_hz => Ok(native_hz),
+        Some(hz) => Err(UserError::Other {
+            message: format!(
+                "unsupported TTS sample rate {hz} Hz (model native rate is {native_hz} Hz).\n  \
+                 Hint: omit sample_rate_hz to use the native rate. Real resampling is not \
+                 available in this release."
+            ),
+        }
+        .into()),
+    }
 }
 
 /// Clamp speaking rate into the supported range.
@@ -155,12 +175,11 @@ mod tests {
     }
 
     #[test]
-    fn prepare_truncates() {
+    fn prepare_rejects_over_limit() {
         let long = "word ".repeat(20);
-        let p = prepare_text(&long, 30).unwrap();
-        assert!(p.text_truncated);
-        assert!(p.text.chars().count() <= 30);
-        assert!(!p.text.is_empty());
+        let err = prepare_text(&long, 30).unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.to_string().contains("too long"));
     }
 
     #[test]
@@ -169,6 +188,14 @@ mod tests {
         assert!(!p.text_truncated);
         assert_eq!(p.text, "hello");
         assert_eq!(p.text_chars, 5);
+    }
+
+    #[test]
+    fn sample_rate_reject_non_native() {
+        assert_eq!(resolve_sample_rate(None, 24_000).unwrap(), 24_000);
+        assert_eq!(resolve_sample_rate(Some(24_000), 24_000).unwrap(), 24_000);
+        let err = resolve_sample_rate(Some(16_000), 24_000).unwrap_err();
+        assert_eq!(err.exit_code(), 2);
     }
 
     #[test]

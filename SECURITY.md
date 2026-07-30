@@ -16,9 +16,10 @@ Aurum is an on-device speech I/O CLI and library (STT + TTS). Reports are especi
 - Unexpected network access on the default (`local`) STT or TTS path
 - API key leakage in logs, debug output, or error messages
 - Model / voice-pack download integrity / supply-chain issues (SHA-256 pins)
-- Temp-file or path handling races (including TTS atomic WAV writes)
+- Temp-file or path handling races (STT/cleanup/TTS share one output transaction)
 - Path traversal via `--input-file` / `--output-file` on TTS or cleanup
 - Memory / resource exhaustion via crafted audio inputs or very large TTS text
+- Symlink-destination clobber or partial-file exposure on crash mid-write
 
 ## Supported versions
 
@@ -32,3 +33,18 @@ published release and the default branch.
 - Remote STT provider uses HTTPS to OpenRouter only when explicitly selected
 - TTS never calls OpenRouter; network on the TTS path is only for explicit voice/model pack download
 - ffmpeg is a **system** dependency for STT file decode (not bundled; not used for TTS WAV)
+
+## Output file commits
+
+User-visible output files (transcripts, cleanup text, TTS WAV) use a shared
+commit protocol in `aurum_core::output::transaction`:
+
+- Randomized same-directory temporary file with exclusive create
+- Write → flush → `sync_all` on the temp file
+- Atomic publish (`rename`; Windows removes destination first)
+- Best-effort parent-directory sync
+- Default **reject** policy for destination symbolic links
+- TTS supports `NoClobber` (default without `--force`) and `Replace` (`--force`)
+
+A failure before publish leaves the previous destination intact and removes the
+temp file. Concurrent writers never share a temp path.

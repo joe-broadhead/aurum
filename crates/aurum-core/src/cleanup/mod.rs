@@ -155,7 +155,7 @@ impl SegmentCleanupPolicy {
     }
 }
 
-/// Result of a cleanup pass.
+/// Result of a cleanup pass over bare text.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanupResult {
     pub text: String,
@@ -164,6 +164,26 @@ pub struct CleanupResult {
     /// Original text before cleanup (for debugging / JSON).
     pub original_text: String,
 }
+
+/// Structured report for a full-result cleanup transaction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupReport {
+    pub style: CleanupStyle,
+    pub provider: CleanupProviderKind,
+    pub segment_policy: SegmentCleanupPolicy,
+    /// Fields that changed relative to the input result.
+    pub changed_fields: Vec<String>,
+    pub warnings: Vec<String>,
+    /// Segments dropped because rewritten text was empty (per-segment policy).
+    pub dropped_segments: usize,
+    /// Whether timings were cleared under the applied policy.
+    pub segments_cleared: bool,
+}
+
+/// Hard bounds for per-segment cleanup (failure semantics live here; remote
+/// batching belongs to a follow-up issue).
+pub const MAX_PER_SEGMENT_COUNT: usize = 2_000;
+pub const MAX_PER_SEGMENT_CHARS: usize = 8_000;
 
 /// Pluggable cleanup backend.
 #[async_trait]
@@ -182,56 +202,161 @@ pub async fn apply_cleanup(
     cleanup: &dyn TextCleanup,
     style: CleanupStyle,
 ) -> Result<CleanupResult> {
-    apply_cleanup_with_segments(result, cleanup, style, SegmentCleanupPolicy::Auto).await
+    let (out, _report) =
+        apply_cleanup_with_segments(result, cleanup, style, SegmentCleanupPolicy::Auto).await?;
+    Ok(out)
 }
 
 /// Like [`apply_cleanup`] with explicit segment policy.
+///
+/// **Transactional:** the caller's `TranscriptionResult` is mutated only after
+/// the full operation validates. An injected failure on segment N leaves the
+/// original result byte-for-byte unchanged.
 pub async fn apply_cleanup_with_segments(
     result: &mut TranscriptionResult,
     cleanup: &dyn TextCleanup,
     style: CleanupStyle,
     segments: SegmentCleanupPolicy,
-) -> Result<CleanupResult> {
+) -> Result<(CleanupResult, CleanupReport)> {
     let policy = segments.resolve(style);
 
     if matches!(style, CleanupStyle::Raw) {
+        // Raw remains the identity default — no metadata pollution.
         result.cleanup_style = CleanupStyle::Raw;
         result.cleanup_provider = None;
         result.original_text = None;
-        return Ok(CleanupResult {
+        result.original_segments = None;
+        result.cleanup_segment_policy = None;
+        let out = CleanupResult {
             text: result.text.clone(),
             style,
             provider: cleanup.kind(),
             original_text: result.text.clone(),
-        });
+        };
+        let report = CleanupReport {
+            style,
+            provider: cleanup.kind(),
+            segment_policy: policy,
+            changed_fields: vec![],
+            warnings: vec![],
+            dropped_segments: 0,
+            segments_cleared: false,
+        };
+        return Ok((out, report));
     }
 
-    let out = cleanup.cleanup(&result.text, style).await?;
-    result.original_text = Some(out.original_text.clone());
-    result.text = out.text.clone();
-    result.cleanup_style = out.style;
-    result.cleanup_provider = Some(out.provider);
+    // Bound per-segment work before any mutation.
+    if matches!(policy, SegmentCleanupPolicy::PerSegment) {
+        if result.segments.len() > MAX_PER_SEGMENT_COUNT {
+            return Err(UserError::Other {
+                message: format!(
+                    "per-segment cleanup refused: {} segments exceeds limit of {MAX_PER_SEGMENT_COUNT}",
+                    result.segments.len()
+                ),
+            }
+            .into());
+        }
+        for (i, seg) in result.segments.iter().enumerate() {
+            let n = seg.text.chars().count();
+            if n > MAX_PER_SEGMENT_CHARS {
+                return Err(UserError::Other {
+                    message: format!(
+                        "per-segment cleanup refused: segment {i} has {n} chars \
+                         (limit {MAX_PER_SEGMENT_CHARS})"
+                    ),
+                }
+                .into());
+            }
+        }
+    }
 
-    match policy {
-        SegmentCleanupPolicy::Keep | SegmentCleanupPolicy::Auto => {}
+    // Snapshot inputs; mutate only after full success.
+    let original_text = result.text.clone();
+    let original_segments = result.segments.clone();
+    let mut warnings = Vec::new();
+    let mut dropped_segments = 0usize;
+    let mut segments_cleared = false;
+
+    let out = cleanup.cleanup(&original_text, style).await?;
+
+    let proposed_segments = match policy {
+        SegmentCleanupPolicy::Keep | SegmentCleanupPolicy::Auto => {
+            // Keep timings; TXT may diverge from SRT segment text for light styles.
+            if !matches!(style, CleanupStyle::Clean | CleanupStyle::Professional) {
+                // Should not happen for Keep defaults, but record honesty.
+            }
+            if matches!(style, CleanupStyle::Clean | CleanupStyle::Professional) {
+                warnings.push(
+                    "segment timings kept; segment text is pre-cleanup ASR while \
+                     `text` is cleaned (JSON exposes original_text)"
+                        .into(),
+                );
+            }
+            original_segments.clone()
+        }
         SegmentCleanupPolicy::Clear => {
-            result.segments.clear();
+            segments_cleared = true;
+            warnings.push(
+                "segments cleared under structural/explicit clear policy; \
+                 use original_segments for raw ASR timings"
+                    .into(),
+            );
+            Vec::new()
         }
         SegmentCleanupPolicy::PerSegment => {
-            // For structural styles, per-segment cleanup is usually wrong; still honor request.
-            let mut cleaned = Vec::with_capacity(result.segments.len());
-            for mut seg in result.segments.drain(..) {
-                let piece = cleanup.cleanup(&seg.text, style).await?;
+            let mut cleaned = Vec::with_capacity(original_segments.len());
+            for (i, seg) in original_segments.iter().enumerate() {
+                let piece = match cleanup.cleanup(&seg.text, style).await {
+                    Ok(p) => p,
+                    Err(e) => {
+                        // No mutation yet — original `result` is intact.
+                        return Err(UserError::Other {
+                            message: format!("per-segment cleanup failed on segment {i}: {e}"),
+                        }
+                        .into());
+                    }
+                };
+                let mut seg = seg.clone();
                 seg.text = piece.text;
-                if !seg.text.trim().is_empty() {
+                if seg.text.trim().is_empty() {
+                    dropped_segments += 1;
+                } else {
                     cleaned.push(seg);
                 }
             }
-            result.segments = cleaned;
+            cleaned
         }
-    }
+    };
 
-    Ok(out)
+    // Commit proposed state only now.
+    let mut changed_fields = vec![
+        "text".into(),
+        "cleanup_style".into(),
+        "cleanup_provider".into(),
+    ];
+    result.original_text = Some(original_text.clone());
+    result.original_segments = Some(original_segments);
+    result.text = out.text.clone();
+    result.cleanup_style = out.style;
+    result.cleanup_provider = Some(out.provider);
+    result.cleanup_segment_policy = Some(policy);
+    if result.segments != proposed_segments {
+        changed_fields.push("segments".into());
+    }
+    result.segments = proposed_segments;
+    changed_fields.push("original_text".into());
+    changed_fields.push("original_segments".into());
+
+    let report = CleanupReport {
+        style: out.style,
+        provider: out.provider,
+        segment_policy: policy,
+        changed_fields,
+        warnings,
+        dropped_segments,
+        segments_cleared,
+    };
+    Ok((out, report))
 }
 
 /// Clean a bare string (stdin / text file path) without a full transcription result.
@@ -317,7 +442,7 @@ mod tests {
             "tiny".into(),
             2.0,
         );
-        apply_cleanup_with_segments(
+        let (_out, report) = apply_cleanup_with_segments(
             &mut result,
             &c,
             CleanupStyle::Bullets,
@@ -329,6 +454,9 @@ mod tests {
         assert!(result.text.contains('•'));
         assert_eq!(result.cleanup_style, CleanupStyle::Bullets);
         assert_eq!(result.cleanup_provider, Some(CleanupProviderKind::Rules));
+        assert!(report.segments_cleared);
+        assert!(result.original_segments.as_ref().unwrap().len() == 2);
+        assert_eq!(result.original_text.as_deref(), Some("One. Two. Three."));
     }
 
     #[tokio::test]
@@ -354,6 +482,75 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(result.segments.len(), 1);
+        assert_eq!(result.segments[0].text, "um hello there");
+        assert!(result.original_text.is_some());
+    }
+
+    /// Failing backend used only for transactional guarantees.
+    struct FailAfterN {
+        n: std::sync::atomic::AtomicUsize,
+        fail_at: usize,
+        inner: RulesCleanup,
+    }
+
+    #[async_trait]
+    impl TextCleanup for FailAfterN {
+        fn name(&self) -> &'static str {
+            "fail-after-n"
+        }
+        fn kind(&self) -> CleanupProviderKind {
+            CleanupProviderKind::Rules
+        }
+        async fn cleanup(&self, text: &str, style: CleanupStyle) -> Result<CleanupResult> {
+            let i = self.n.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if i >= self.fail_at {
+                return Err(UserError::Other {
+                    message: format!("injected failure at call {i}"),
+                }
+                .into());
+            }
+            self.inner.cleanup(text, style).await
+        }
+    }
+
+    #[tokio::test]
+    async fn per_segment_failure_leaves_result_unchanged() {
+        let backend = FailAfterN {
+            n: std::sync::atomic::AtomicUsize::new(0),
+            // Full-transcript cleanup succeeds (call 0); first segment rewrite fails (call 1).
+            fail_at: 1,
+            inner: RulesCleanup::new(),
+        };
+        let mut result = TranscriptionResult::local(
+            "um one. um two.".into(),
+            vec![
+                Segment {
+                    start: 0.0,
+                    end: 1.0,
+                    text: "um one.".into(),
+                },
+                Segment {
+                    start: 1.0,
+                    end: 2.0,
+                    text: "um two.".into(),
+                },
+            ],
+            None,
+            "tiny".into(),
+            2.0,
+        );
+        let before = serde_json::to_string(&result).unwrap();
+        let err = apply_cleanup_with_segments(
+            &mut result,
+            &backend,
+            CleanupStyle::Clean,
+            SegmentCleanupPolicy::PerSegment,
+        )
+        .await
+        .unwrap_err();
+        assert!(err.to_string().contains("segment"), "{err}");
+        let after = serde_json::to_string(&result).unwrap();
+        assert_eq!(before, after, "result must be unchanged after failure");
     }
 
     #[tokio::test]

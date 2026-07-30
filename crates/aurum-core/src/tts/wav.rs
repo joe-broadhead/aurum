@@ -1,7 +1,10 @@
 //! Mono PCM → WAV writer (in-process, no ffmpeg).
+//!
+//! All public file writes go through [`crate::output::OutputTransaction`].
 
 use crate::error::{EnvironmentError, Result};
-use std::fs::{self, File};
+use crate::output::{CommitMode, OutputTransaction};
+use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 
@@ -28,16 +31,8 @@ pub(crate) fn peak_guard_f32_to_i16(samples: &[f32], peak_limit: f32) -> Vec<i16
         .collect()
 }
 
-/// Write mono i16 PCM to a WAV file (overwrite destination).
-pub(crate) fn write_wav_i16_mono(path: &Path, samples: &[i16], sample_rate_hz: u32) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent).map_err(|e| EnvironmentError::DirectoryAccess {
-                path: parent.display().to_string(),
-                reason: e.to_string(),
-            })?;
-        }
-    }
+/// Write mono i16 PCM into an open path (used only for the transaction temp file).
+fn write_wav_i16_mono_to_path(path: &Path, samples: &[i16], sample_rate_hz: u32) -> Result<()> {
     let spec = hound::WavSpec {
         channels: 1,
         sample_rate: sample_rate_hz,
@@ -66,49 +61,36 @@ pub(crate) fn write_wav_i16_mono(path: &Path, samples: &[i16], sample_rate_hz: u
     Ok(())
 }
 
-/// Atomic write: temp file in the same directory → rename.
+/// Atomic WAV write via the shared output transaction (`Replace` mode).
+///
+/// Callers that need no-clobber should preflight with
+/// [`crate::output::OutputTransaction`] or use [`write_wav_i16_mono_transaction`].
 pub fn write_wav_i16_mono_atomic(path: &Path, samples: &[i16], sample_rate_hz: u32) -> Result<()> {
-    let parent = path.parent().unwrap_or_else(|| Path::new("."));
-    if !parent.as_os_str().is_empty() {
-        fs::create_dir_all(parent).map_err(|e| EnvironmentError::DirectoryAccess {
-            path: parent.display().to_string(),
-            reason: e.to_string(),
-        })?;
-    }
-    let tmp_name = format!(
-        ".{}.{}.partial.wav",
-        path.file_name().and_then(|s| s.to_str()).unwrap_or("out"),
-        std::process::id()
-    );
-    let tmp_path = parent.join(tmp_name);
-    let result = write_wav_i16_mono(&tmp_path, samples, sample_rate_hz);
-    if let Err(e) = result {
-        let _ = fs::remove_file(&tmp_path);
-        return Err(e);
-    }
-    // Windows cannot rename over an existing destination. Callers authorize
-    // overwrite via check_overwrite(--force); remove dest then rename.
-    replace_file(&tmp_path, path).map_err(|e| {
-        let _ = fs::remove_file(&tmp_path);
-        EnvironmentError::DirectoryAccess {
-            path: path.display().to_string(),
-            reason: format!("atomic replace failed: {e}"),
-        }
-        .into()
-    })
+    write_wav_i16_mono_transaction(path, samples, sample_rate_hz, CommitMode::Replace)
 }
 
-/// Same-directory temp → destination replace (portable across Unix/Windows).
-fn replace_file(tmp: &Path, dest: &Path) -> std::io::Result<()> {
-    if dest.exists() {
-        fs::remove_file(dest)?;
+/// Write mono WAV through the shared secure output transaction.
+pub fn write_wav_i16_mono_transaction(
+    path: &Path,
+    samples: &[i16],
+    sample_rate_hz: u32,
+    mode: CommitMode,
+) -> Result<()> {
+    if sample_rate_hz == 0 {
+        return Err(EnvironmentError::Other {
+            message: "WAV sample rate must be non-zero".into(),
+        }
+        .into());
     }
-    fs::rename(tmp, dest)
+    let samples = samples.to_vec();
+    OutputTransaction::new(path, mode)
+        .commit_with(move |tmp| write_wav_i16_mono_to_path(tmp, &samples, sample_rate_hz))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::output::CommitMode;
     use tempfile::tempdir;
 
     #[test]
@@ -116,7 +98,6 @@ mod tests {
         let pcm = peak_guard_f32_to_i16(&[0.5, f32::NAN, 2.0, f32::NEG_INFINITY], 0.95);
         assert_eq!(pcm.len(), 4);
         assert_eq!(pcm[1], 0);
-        // peak was 2.0 → scale 0.95/2 so sample is reduced vs unscaled 2.0
         assert!(pcm[2] != 0);
     }
 
@@ -147,7 +128,6 @@ mod tests {
     fn atomic_overwrite_existing_dest() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("exists.wav");
-        // Pre-create destination (the Windows rename failure case).
         write_wav_i16_mono_atomic(&path, &[1i16, 2, 3], 16_000).unwrap();
         let replacement = vec![9i16, 8, 7, 6];
         write_wav_i16_mono_atomic(&path, &replacement, 24_000).unwrap();
@@ -155,5 +135,18 @@ mod tests {
         assert_eq!(reader.spec().sample_rate, 24_000);
         let decoded: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
         assert_eq!(decoded, replacement);
+    }
+
+    #[test]
+    fn no_clobber_preserves_existing_wav() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("keep.wav");
+        write_wav_i16_mono_transaction(&path, &[1i16, 2], 24_000, CommitMode::Replace).unwrap();
+        let err = write_wav_i16_mono_transaction(&path, &[9i16], 24_000, CommitMode::NoClobber)
+            .unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        let mut reader = hound::WavReader::open(&path).unwrap();
+        let decoded: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
+        assert_eq!(decoded, vec![1, 2]);
     }
 }

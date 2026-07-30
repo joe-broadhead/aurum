@@ -93,7 +93,8 @@ use aurum_core::cleanup::{
 
 # async fn demo(mut result: aurum_core::TranscriptionResult) -> aurum_core::Result<()> {
 let rules = RulesCleanup::new();
-apply_cleanup_with_segments(
+// Returns (CleanupResult, CleanupReport). Mutates only on full success.
+let (_out, _report) = apply_cleanup_with_segments(
     &mut result,
     &rules as &dyn TextCleanup,
     CleanupStyle::Clean,

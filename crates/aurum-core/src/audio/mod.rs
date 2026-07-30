@@ -434,12 +434,29 @@ pub async fn load_via_ffmpeg_with_timeout(
 
     match drain {
         Ok(Ok((raw, stderr_bytes))) => {
-            let status = child
-                .wait()
-                .await
-                .map_err(|e| EnvironmentError::FfmpegFailed {
-                    reason: format!("ffmpeg wait failed: {e}"),
-                })?;
+            // Bound the final wait so a stuck child after pipe close cannot hang forever.
+            let status = match tokio::time::timeout(
+                std::time::Duration::from_secs(30),
+                child.wait(),
+            )
+            .await
+            {
+                Ok(Ok(s)) => s,
+                Ok(Err(e)) => {
+                    return Err(EnvironmentError::FfmpegFailed {
+                        reason: format!("ffmpeg wait failed: {e}"),
+                    }
+                    .into());
+                }
+                Err(_) => {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    return Err(EnvironmentError::FfmpegFailed {
+                        reason: "ffmpeg hung after decode pipes closed".into(),
+                    }
+                    .into());
+                }
+            };
             if !status.success() {
                 let stderr = String::from_utf8_lossy(&stderr_bytes);
                 let reason = stderr.trim();

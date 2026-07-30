@@ -196,7 +196,20 @@ async fn download_to_partial(
         .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(opts.connect_timeout)
         .timeout(opts.total_timeout)
-        .redirect(reqwest::redirect::Policy::none())
+        // Model packs live on HF CDN (302 from resolve/). Allow only HF hosts.
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            let host = attempt.url().host_str().unwrap_or("").to_ascii_lowercase();
+            let ok = host == "huggingface.co"
+                || host.ends_with(".huggingface.co")
+                || host.ends_with(".hf.co")
+                || host == "hf.co"
+                || host.ends_with(".cdn.hf.co");
+            if ok && attempt.previous().len() < 8 {
+                attempt.follow()
+            } else {
+                attempt.stop()
+            }
+        }))
         .build()
         .map_err(|e| ProviderError::ModelDownload {
             model: spec.id.to_string(),

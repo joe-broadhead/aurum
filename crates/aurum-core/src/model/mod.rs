@@ -536,12 +536,13 @@ async fn download_model(
     }
 
     // Bound total download time so a stalled transfer can't hold the lock forever.
-    // No redirects: credentials/tokenless downloads must not hop off reviewed origin.
+    // Follow redirects only onto known HuggingFace CDN hosts (HF always 302s resolve/
+    // URLs). Credentialed OpenRouter traffic stays on HardenedHttpClient (no redirects).
     let client = reqwest::Client::builder()
         .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(std::time::Duration::from_secs(30))
         .timeout(std::time::Duration::from_secs(30 * 60))
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::custom(hf_redirect_policy))
         .build()
         .map_err(|e| ProviderError::ModelDownload {
             model: info.name.to_string(),
@@ -693,6 +694,22 @@ async fn download_model(
     Ok(())
 }
 
+/// Allow HuggingFace CDN redirects; stop on anything else.
+fn hf_redirect_policy(attempt: reqwest::redirect::Attempt<'_>) -> reqwest::redirect::Action {
+    let url = attempt.url();
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let allowed = host == "huggingface.co"
+        || host.ends_with(".huggingface.co")
+        || host.ends_with(".hf.co")
+        || host == "hf.co"
+        || host.ends_with(".cdn.hf.co");
+    if allowed && attempt.previous().len() < 8 {
+        attempt.follow()
+    } else {
+        attempt.stop()
+    }
+}
+
 /// Independently reviewed SHA-256 digests (JOE-1590).
 /// A missing pin still allows download but fails closed on publish when
 /// `require_reviewed_pin` is true; cache verify reports unpinned state.
@@ -720,7 +737,7 @@ fn pinned_sha256(filename: &str) -> Option<&'static str> {
 }
 
 /// Reviewed exact sizes when known (from HF package metadata / maintainer review).
-fn pinned_exact_bytes(filename: &str) -> Option<u64> {
+pub fn pinned_exact_bytes(filename: &str) -> Option<u64> {
     match filename {
         "ggml-tiny.bin" => Some(77_691_713),
         "ggml-tiny-q5_1.bin" => Some(32_152_673),
@@ -801,11 +818,11 @@ fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
     })?;
 
     if meta.len() < 1_000_000 {
-        let _ = fs::remove_file(path);
+        // Do not delete — cache verify quarantines; leave bytes for forensics.
         return Err(ProviderError::ModelDownload {
             model: info.name.to_string(),
             reason: format!(
-                "downloaded file is only {} bytes — likely truncated or HTML error page",
+                "model file is only {} bytes — likely truncated or HTML error page",
                 meta.len()
             ),
         }
@@ -839,7 +856,7 @@ fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
     );
 
     if !magic_ok {
-        let _ = fs::remove_file(path);
+        // Do not delete — cache verify quarantines; leave bytes for forensics.
         return Err(ProviderError::ModelDownload {
             model: info.name.to_string(),
             reason: format!(

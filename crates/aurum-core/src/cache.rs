@@ -42,14 +42,22 @@ pub fn status_stt(cache_dir: &Path) -> Vec<CacheEntry> {
             let (actual, state) = match fs::metadata(&row.path) {
                 Ok(m) if m.len() > 1_000_000 => {
                     let actual = m.len();
-                    let state = if let Some(exp) = expected {
+                    let state = if let Some(exp) = model::pinned_exact_bytes(row.info.filename) {
                         if actual == exp {
                             VerifyState::Healthy
                         } else {
                             VerifyState::SizeMismatch
                         }
                     } else {
-                        VerifyState::Unpinned
+                        // Approx is UX only — allow ±5% band when no exact pin.
+                        let approx = row.info.approx_bytes;
+                        let lo = approx.saturating_mul(95) / 100;
+                        let hi = approx.saturating_mul(105) / 100;
+                        if (lo..=hi).contains(&actual) {
+                            VerifyState::Unpinned
+                        } else {
+                            VerifyState::SizeMismatch
+                        }
                     };
                     (Some(actual), state)
                 }
@@ -138,8 +146,8 @@ fn verify_one_stt(cache_dir: &Path, info: &ModelInfo, path: &Path) -> CacheEntry
 }
 
 fn model_exact_or_approx(info: &ModelInfo) -> Option<u64> {
-    // Prefer reviewed exact size via list/metadata helper.
-    Some(info.approx_bytes)
+    // Prefer reviewed exact size; fall back to approx only when no pin exists.
+    model::pinned_exact_bytes(info.filename).or(Some(info.approx_bytes))
 }
 
 pub fn quarantine_dir(cache_dir: &Path) -> PathBuf {

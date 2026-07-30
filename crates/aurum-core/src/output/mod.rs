@@ -1,9 +1,14 @@
-//! Output formatters: txt, srt, json.
+//! Output formatters: txt, srt, json — and secure file commit transactions.
+
+pub mod transaction;
 
 use crate::error::{Result, UserError};
 use crate::providers::{Segment, TranscriptionResult};
 use serde::Serialize;
 use std::io::Write;
+use std::path::Path;
+
+pub use transaction::{commit_text, CommitMode, OutputTransaction, SymlinkPolicy};
 
 /// Supported output formats.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,6 +65,17 @@ pub fn write_result<W: Write>(
         writer.write_all(b"\n")?;
     }
     Ok(())
+}
+
+/// Format and commit a transcription result through the shared output transaction.
+pub fn write_result_to_path(
+    result: &TranscriptionResult,
+    format: OutputFormat,
+    path: &Path,
+    mode: CommitMode,
+) -> Result<()> {
+    let body = format_result(result, format)?;
+    commit_text(path, &body, mode)
 }
 
 fn format_txt(result: &TranscriptionResult) -> String {
@@ -120,6 +136,7 @@ fn format_ts(secs: f64) -> String {
 
 #[derive(Serialize)]
 struct JsonOutput<'a> {
+    /// Rendered transcript text (post-cleanup when applied).
     text: &'a str,
     language: Option<&'a str>,
     model: &'a str,
@@ -131,8 +148,15 @@ struct JsonOutput<'a> {
     cleanup_style: crate::cleanup::CleanupStyle,
     #[serde(skip_serializing_if = "Option::is_none")]
     cleanup_provider: Option<crate::cleanup::CleanupProviderKind>,
+    /// Pre-cleanup ASR text when cleanup rewrote content (raw representation).
     #[serde(skip_serializing_if = "Option::is_none")]
     original_text: Option<&'a str>,
+    /// Pre-cleanup ASR segments when cleanup rewrote or cleared timings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original_segments: Option<&'a [Segment]>,
+    /// Segment policy applied during cleanup (`keep` / `clear` / `per-segment`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cleanup_segment_policy: Option<&'a str>,
     segments: &'a [Segment],
 }
 
@@ -148,6 +172,8 @@ fn format_json(result: &TranscriptionResult) -> Result<String> {
         cleanup_style: result.cleanup_style,
         cleanup_provider: result.cleanup_provider,
         original_text: result.original_text.as_deref(),
+        original_segments: result.original_segments.as_deref(),
+        cleanup_segment_policy: result.cleanup_segment_policy.map(|p| p.as_str()),
         segments: &result.segments,
     };
     serde_json::to_string_pretty(&payload).map_err(|e| {

@@ -21,9 +21,10 @@ pub struct SynthesisOptions {
     pub model: String,
     pub voice: String,
     pub language: String,
-    /// Optional override; engine may ignore if fixed by the model.
+    /// Optional requested sample rate. Must equal the adapter native rate when set;
+    /// non-native values are rejected (no metadata-only relabeling, no resampler).
     pub sample_rate_hz: Option<u32>,
-    /// Speaking rate multiplier (clamped by callers, e.g. 0.5..=2.0).
+    /// Speaking rate multiplier (must be finite and within engine range).
     pub speaking_rate: f32,
     /// Wall-clock timeout in milliseconds (enforced by the local provider).
     pub timeout_ms: u64,
@@ -54,17 +55,27 @@ pub struct SynthesisResult {
     /// Mono PCM samples (signed 16-bit).
     #[serde(skip)]
     pub pcm_i16_mono: Vec<i16>,
+    /// Actual sample rate of [`Self::pcm_i16_mono`] (always the adapter native rate).
     pub sample_rate_hz: u32,
     /// Always 1 for MVP.
     pub channels: u16,
     pub backend_kind: BackendKind,
     pub provider: String,
+    /// Canonical model id actually used.
     pub model: String,
+    /// Canonical voice id actually used.
     pub voice: String,
     pub language: String,
+    /// Duration derived from final PCM length and actual sample rate.
     pub duration_ms: u64,
+    /// Character count of the synthesized (complete) text.
     pub text_chars: usize,
+    /// Always `false` under complete-or-error policy.
     pub text_truncated: bool,
+    /// Number of model-safe chunks synthesized and concatenated.
+    pub chunk_count: usize,
+    /// Characters of source text actually synthesized (equals `text_chars`).
+    pub synthesized_chars: usize,
 }
 
 /// Provider trait for local (and future) TTS backends.

@@ -62,8 +62,8 @@ The full synth test is `#[ignore]` by default (may download the voice pack). Emp
 | `--language` | no | default `en` |
 | `-o/--output` | no | only `wav` |
 | `--output-file` / `-O` | **yes** for synth | destination path |
-| `--force` | no | allow overwrite of existing non-empty file |
-| `--speaking-rate` | no | clamped to `0.5..=2.0` |
+| `--force` | no | allow overwrite of existing non-empty file (replace mode) |
+| `--speaking-rate` | no | must be finite in `0.5..=2.0` (rejected otherwise) |
 | `--cleanup` | no | rules-only `raw` \| `clean` |
 | `--timeout` | no | milliseconds (default `120000`); see [Timeouts](#timeouts) |
 | `--local-only` | no | fail if pack missing (no download) |
@@ -83,14 +83,17 @@ Same taxonomy as STT: `0` ok, `2` user, `3` environment, `4` provider, `1` inter
 
 ### I/O rules
 
-- Atomic write: temp file in the same directory → rename.
-- Refuse overwrite of an existing non-empty file without `--force`.
+- Shared secure output transaction (exclusive same-directory temp → flush/sync → atomic publish).
+- Refuse overwrite of an existing non-empty file without `--force` (`NoClobber`); `--force` uses `Replace`.
+- Destination symbolic links are rejected by default.
 - Empty / whitespace-only text → exit `2`.
-- Max characters default `5000` (config `[tts].max_chars`); longer input is truncated with `text_truncated: true` in JSON.
+- Max characters default `5000` (config `[tts].max_chars`); longer input is a **user error** (complete-or-error — no silent truncation).
+- Long text within `max_chars` is **chunked** by model phoneme capacity (sentence, then word boundaries) with a short silence between chunks; an unsplittable unit that exceeds the model limit fails with a precise error.
+- Sample rate is always the adapter native rate (24 kHz for KittenTTS). Arbitrary rate overrides are rejected; real resampling is not implemented.
 
 ## Honesty JSON (`--emit-json`)
 
-Stdout is **only** JSON metadata (no audio bytes):
+Stdout is **only** JSON metadata (no audio bytes). Model/voice IDs are **canonical** catalogue IDs actually used:
 
 ```json
 {
@@ -105,7 +108,9 @@ Stdout is **only** JSON metadata (no audio bytes):
   "channels": 1,
   "duration_ms": 1234,
   "text_chars": 42,
-  "text_truncated": false
+  "text_truncated": false,
+  "chunk_count": 1,
+  "synthesized_chars": 42
 }
 ```
 
@@ -165,7 +170,9 @@ Source: `https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8`
 ## Engine notes
 
 - **Why KittenTTS (not Piper default):** Piper-class pipelines commonly need eSpeak NG for phonemes (GPL). KittenTTS ONNX + MIT G2P keeps the MIT binary story intact while still delivering real neural speech.
-- Sample rate: **24 kHz** mono PCM 16-bit WAV (in-process via `hound`).
+- Sample rate: **24 kHz** mono PCM 16-bit WAV (in-process via `hound`). Duration is derived from final PCM length after chunk concat and trailing-silence validation.
+- Trailing silence is trimmed with a bounded energy detector (never empties short valid clips). Fixed sample chopping is not used.
+- Voices are **model-scoped**: a voice only works with its catalogue model pack.
 - Peak/loudness guard on PCM before write (no NaN).
 - Cargo feature: `aurum-core` feature `tts` (default **on** for the CLI).
 

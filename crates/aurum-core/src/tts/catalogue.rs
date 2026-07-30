@@ -34,7 +34,17 @@ pub struct TtsModelInfo {
     pub voices: PackFile,
     pub config: PackFile,
     pub sample_rate_hz: u32,
+    /// Soft upper bound on phoneme tokens (including pads). The loaded voice
+    /// matrix may impose a tighter limit; synthesis uses `min(catalogue, pack)`.
+    pub max_phoneme_tokens: usize,
+    /// Supported BCP-47 language tags for this pack (English-only G2P today).
+    pub languages: &'static [&'static str],
+    /// Adapter id — prepares multi-adapter catalogues without implementing them.
+    pub adapter: &'static str,
     pub license: &'static str,
+    /// When false, the model is catalogue-only (multi-adapter prep / tests).
+    /// It is not listed for end users and cannot be downloaded.
+    pub shipped: bool,
 }
 
 /// Friendly voice alias → internal NPZ key.
@@ -48,29 +58,68 @@ pub struct VoiceInfo {
     pub language: &'static str,
 }
 
+/// Placeholder model id for multi-adapter catalogue prep / model-scope tests.
+/// Not downloadable and not shown in user-facing lists.
+pub const PLACEHOLDER_ADAPTER_MODEL: &str = "adapter-b-placeholder";
+
 /// Pinned KittenTTS nano int8 pack (Apache-2.0 weights).
-pub const MODELS: &[TtsModelInfo] = &[TtsModelInfo {
-    id: DEFAULT_TTS_MODEL,
-    notes: "KittenTTS nano int8 ~25MB — default English ONNX",
-    hf_repo: "KittenML/kitten-tts-nano-0.8-int8",
-    onnx: PackFile {
-        filename: "kitten_tts_nano_v0_8.onnx",
-        sha256: "f7b0afcbee92870b32b8e0276d855b954dc25470c9f051b376ac7eee537c76fc",
-        approx_bytes: 24_369_971,
+pub const MODELS: &[TtsModelInfo] = &[
+    TtsModelInfo {
+        id: DEFAULT_TTS_MODEL,
+        notes: "KittenTTS nano int8 ~25MB — default English ONNX",
+        hf_repo: "KittenML/kitten-tts-nano-0.8-int8",
+        onnx: PackFile {
+            filename: "kitten_tts_nano_v0_8.onnx",
+            sha256: "f7b0afcbee92870b32b8e0276d855b954dc25470c9f051b376ac7eee537c76fc",
+            approx_bytes: 24_369_971,
+        },
+        voices: PackFile {
+            filename: "voices.npz",
+            sha256: "8aa7cee235abb0739cb51e6559685f65a4dacd95568833d05699b1633f519b3f",
+            approx_bytes: 3_278_902,
+        },
+        config: PackFile {
+            filename: "config.json",
+            sha256: "b66006ccbeccd4de5fc3c9272059c47f5725df7215fd889785c03602652fab64",
+            approx_bytes: 688,
+        },
+        sample_rate_hz: 24_000,
+        // KittenTTS voice matrices expose ~400 style rows (seq length index).
+        max_phoneme_tokens: 400,
+        languages: &["en", "en-US"],
+        adapter: "kitten-onnx-v1",
+        license: "Apache-2.0",
+        shipped: true,
     },
-    voices: PackFile {
-        filename: "voices.npz",
-        sha256: "8aa7cee235abb0739cb51e6559685f65a4dacd95568833d05699b1633f519b3f",
-        approx_bytes: 3_278_902,
+    // Multi-adapter catalogue slot (no weights). Enables model-scoped voice
+    // rejection tests and future adapter registration without Kokoro yet.
+    TtsModelInfo {
+        id: PLACEHOLDER_ADAPTER_MODEL,
+        notes: "Catalogue placeholder for multi-adapter prep (not downloadable)",
+        hf_repo: "aurum/not-shipped",
+        onnx: PackFile {
+            filename: "not-shipped.onnx",
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            approx_bytes: 1,
+        },
+        voices: PackFile {
+            filename: "not-shipped.npz",
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            approx_bytes: 1,
+        },
+        config: PackFile {
+            filename: "not-shipped.json",
+            sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+            approx_bytes: 1,
+        },
+        sample_rate_hz: 24_000,
+        max_phoneme_tokens: 400,
+        languages: &["en"],
+        adapter: "placeholder-v0",
+        license: "n/a",
+        shipped: false,
     },
-    config: PackFile {
-        filename: "config.json",
-        sha256: "b66006ccbeccd4de5fc3c9272059c47f5725df7215fd889785c03602652fab64",
-        approx_bytes: 688,
-    },
-    sample_rate_hz: 24_000,
-    license: "Apache-2.0",
-}];
+];
 
 /// Voices shipped with the default KittenTTS pack.
 pub const VOICES: &[VoiceInfo] = &[
@@ -130,14 +179,36 @@ pub const VOICES: &[VoiceInfo] = &[
         model: DEFAULT_TTS_MODEL,
         language: "en",
     },
+    // Bound only to the placeholder adapter — used for model-scope rejection.
+    VoiceInfo {
+        id: "PlaceholderVoice",
+        internal_key: "placeholder-voice",
+        notes: "catalogue-only; not for synthesis",
+        model: PLACEHOLDER_ADAPTER_MODEL,
+        language: "en",
+    },
 ];
 
 pub fn available_model_names() -> String {
-    MODELS.iter().map(|m| m.id).collect::<Vec<_>>().join(", ")
+    MODELS
+        .iter()
+        .filter(|m| m.shipped)
+        .map(|m| m.id)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn available_voice_names() -> String {
-    VOICES.iter().map(|v| v.id).collect::<Vec<_>>().join(", ")
+    VOICES
+        .iter()
+        .filter(|v| {
+            MODELS
+                .iter()
+                .any(|m| m.shipped && m.id.eq_ignore_ascii_case(v.model))
+        })
+        .map(|v| v.id)
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn lookup_model(name: &str) -> Result<&'static TtsModelInfo> {
@@ -154,6 +225,23 @@ pub fn lookup_model(name: &str) -> Result<&'static TtsModelInfo> {
         })
 }
 
+/// Lookup a **shipped** model suitable for download/synthesis.
+pub fn lookup_shipped_model(name: &str) -> Result<&'static TtsModelInfo> {
+    let info = lookup_model(name)?;
+    if !info.shipped {
+        return Err(UserError::Other {
+            message: format!(
+                "TTS model '{}' is a catalogue placeholder and is not downloadable yet\n  \
+                 Hint: available models: {}",
+                info.id,
+                available_model_names()
+            ),
+        }
+        .into());
+    }
+    Ok(info)
+}
+
 pub fn lookup_voice(name: &str) -> Result<&'static VoiceInfo> {
     let key = name.trim();
     VOICES
@@ -168,6 +256,64 @@ pub fn lookup_voice(name: &str) -> Result<&'static VoiceInfo> {
             }
             .into()
         })
+}
+
+/// Resolve a voice **within** a selected model pack.
+///
+/// Case-insensitive aliases resolve without losing canonical model/voice IDs.
+/// A voice that belongs to another model is rejected deterministically.
+pub fn resolve_voice_for_model(
+    model: &str,
+    voice: &str,
+) -> Result<(&'static TtsModelInfo, &'static VoiceInfo)> {
+    let model_info = lookup_model(model)?;
+    let voice_info = lookup_voice(voice)?;
+    if !voice_info.model.eq_ignore_ascii_case(model_info.id) {
+        return Err(UserError::Other {
+            message: format!(
+                "voice '{}' belongs to model '{}', not '{}'\n  \
+                 Hint: available voices for {}: {}",
+                voice_info.id,
+                voice_info.model,
+                model_info.id,
+                model_info.id,
+                voices_for_model(model_info.id)
+            ),
+        }
+        .into());
+    }
+    Ok((model_info, voice_info))
+}
+
+fn voices_for_model(model_id: &str) -> String {
+    VOICES
+        .iter()
+        .filter(|v| v.model.eq_ignore_ascii_case(model_id))
+        .map(|v| v.id)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Validate speaking rate against the model/engine range before inference.
+pub fn validate_speaking_rate(rate: f32) -> Result<f32> {
+    use super::validate::{SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
+    if !rate.is_finite() {
+        return Err(UserError::Other {
+            message: format!(
+                "invalid speaking rate (not finite)\n  Hint: use a value in {SPEAKING_RATE_MIN}..={SPEAKING_RATE_MAX}."
+            ),
+        }
+        .into());
+    }
+    if !(SPEAKING_RATE_MIN..=SPEAKING_RATE_MAX).contains(&rate) {
+        return Err(UserError::Other {
+            message: format!(
+                "speaking rate {rate} is outside supported range {SPEAKING_RATE_MIN}..={SPEAKING_RATE_MAX}"
+            ),
+        }
+        .into());
+    }
+    Ok(rate)
 }
 
 /// `<cache>/tts/`
@@ -261,6 +407,7 @@ fn verify_against_expected(path: &Path, expected: &str) -> bool {
 pub fn list_models(cache_dir: &Path) -> Vec<ModelStatus> {
     MODELS
         .iter()
+        .filter(|info| info.shipped)
         .map(|info| {
             let path = model_pack_dir(cache_dir, info);
             let cached = verify_pack(cache_dir, info).is_ok();
@@ -288,6 +435,11 @@ pub fn list_models(cache_dir: &Path) -> Vec<ModelStatus> {
 pub fn list_voices(cache_dir: &Path) -> Vec<VoiceStatus> {
     VOICES
         .iter()
+        .filter(|info| {
+            MODELS
+                .iter()
+                .any(|m| m.shipped && m.id.eq_ignore_ascii_case(info.model))
+        })
         .map(|info| {
             let model_cached = is_pack_cached(cache_dir, info.model);
             VoiceStatus {
@@ -328,28 +480,29 @@ pub fn format_model_list(cache_dir: &Path) -> String {
 
 pub fn format_voice_list(cache_dir: &Path) -> String {
     let rows = list_voices(cache_dir);
-    let mut out = String::from("Local TTS voices\n\n");
+    let mut out = String::from("Local TTS voices (model-scoped)\n\n");
     out.push_str(&format!(
-        "{:<12} {:<18} {:<8}  {:<8}  {}\n",
-        "NAME", "INTERNAL", "LANG", "STATUS", "NOTES"
+        "{:<12} {:<20} {:<8}  {:<8}  {:<8}  {}\n",
+        "NAME", "MODEL", "LANG", "STATUS", "ADAPTER", "NOTES"
     ));
     out.push_str(&format!(
-        "{:<12} {:<18} {:<8}  {:<8}  {}\n",
-        "----", "--------", "----", "------", "-----"
+        "{:<12} {:<20} {:<8}  {:<8}  {:<8}  {}\n",
+        "----", "-----", "----", "------", "-------", "-----"
     ));
     for row in rows {
         let status = if row.cached { "cached" } else { "—" };
+        let adapter = lookup_model(row.info.model)
+            .map(|m| m.adapter)
+            .unwrap_or("?");
         out.push_str(&format!(
-            "{:<12} {:<18} {:<8}  {:<8}  {} (model: {})\n",
-            row.info.id,
-            row.info.internal_key,
-            row.info.language,
-            status,
-            row.info.notes,
-            row.info.model
+            "{:<12} {:<20} {:<8}  {:<8}  {:<8}  {}\n",
+            row.info.id, row.info.model, row.info.language, status, adapter, row.info.notes
         ));
     }
-    out.push_str(&format!("\nDefault voice: `{DEFAULT_TTS_VOICE}`.\n"));
+    out.push_str(&format!(
+        "\nDefault voice: `{DEFAULT_TTS_VOICE}` on model `{DEFAULT_TTS_MODEL}`.\n\
+         Voices are validated against the selected model; mismatches are rejected.\n"
+    ));
     out
 }
 
@@ -371,7 +524,7 @@ pub async fn ensure_voice_pack(
     show_progress: bool,
     local_only: bool,
 ) -> Result<PathBuf> {
-    let info = lookup_model(model_name)?;
+    let info = lookup_shipped_model(model_name)?;
     let pack_dir = model_pack_dir(cache_dir, info);
 
     if verify_pack(cache_dir, info).is_ok() {
@@ -638,6 +791,59 @@ mod tests {
         assert_eq!(lookup_voice("luna").unwrap().id, "Luna");
         assert_eq!(lookup_voice("expr-voice-3-f").unwrap().id, "Luna");
         assert!(lookup_voice("nope").is_err());
+    }
+
+    #[test]
+    fn resolve_voice_for_default_model() {
+        let (m, v) = resolve_voice_for_model(DEFAULT_TTS_MODEL, "luna").unwrap();
+        assert_eq!(m.id, DEFAULT_TTS_MODEL);
+        assert_eq!(v.id, "Luna");
+        assert_eq!(v.model, DEFAULT_TTS_MODEL);
+    }
+
+    #[test]
+    fn resolve_voice_unknown_model() {
+        assert!(resolve_voice_for_model("no-such-model", "Luna").is_err());
+    }
+
+    #[test]
+    fn resolve_rejects_voice_bound_to_another_model() {
+        let err = resolve_voice_for_model(DEFAULT_TTS_MODEL, "PlaceholderVoice").unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.to_string().contains("belongs to model"), "{err}");
+        // Actionable guidance should list voices for the requested model.
+        assert!(err.to_string().contains("Luna") || err.to_string().contains("available"));
+    }
+
+    #[test]
+    fn resolve_rejects_default_voice_on_placeholder_model() {
+        let err = resolve_voice_for_model(PLACEHOLDER_ADAPTER_MODEL, "Luna").unwrap_err();
+        assert_eq!(err.exit_code(), 2);
+        assert!(err.to_string().contains("belongs to model"), "{err}");
+    }
+
+    #[test]
+    fn lists_hide_placeholder_models_and_voices() {
+        let s = format_model_list(Path::new("/tmp/aurum-tts-test-cache"));
+        assert!(s.contains(DEFAULT_TTS_MODEL));
+        assert!(!s.contains(PLACEHOLDER_ADAPTER_MODEL));
+        let v = format_voice_list(Path::new("/tmp/aurum-tts-test-cache"));
+        assert!(v.contains("Luna"));
+        assert!(!v.contains("PlaceholderVoice"));
+    }
+
+    #[test]
+    fn unshipped_model_not_downloadable() {
+        assert!(lookup_shipped_model(PLACEHOLDER_ADAPTER_MODEL).is_err());
+        assert!(lookup_model(PLACEHOLDER_ADAPTER_MODEL).is_ok());
+    }
+
+    #[test]
+    fn speaking_rate_bounds() {
+        assert!(validate_speaking_rate(1.0).is_ok());
+        assert!(validate_speaking_rate(0.1).is_err());
+        assert!(validate_speaking_rate(9.0).is_err());
+        assert!(validate_speaking_rate(f32::NAN).is_err());
     }
 
     #[test]

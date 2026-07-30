@@ -83,6 +83,12 @@ pub struct TranscriptionResult {
     /// Pre-cleanup ASR text when cleanup rewrote [`Self::text`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub original_text: Option<String>,
+    /// Pre-cleanup ASR segments when cleanup rewrote or cleared timings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_segments: Option<Vec<Segment>>,
+    /// Segment policy that was applied during cleanup (when not raw).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cleanup_segment_policy: Option<crate::cleanup::SegmentCleanupPolicy>,
 }
 
 fn default_backend_kind() -> BackendKind {
@@ -112,6 +118,8 @@ impl TranscriptionResult {
             cleanup_style: crate::cleanup::CleanupStyle::Raw,
             cleanup_provider: None,
             original_text: None,
+            original_segments: None,
+            cleanup_segment_policy: None,
         }
     }
 
@@ -136,6 +144,8 @@ impl TranscriptionResult {
             cleanup_style: crate::cleanup::CleanupStyle::Raw,
             cleanup_provider: None,
             original_text: None,
+            original_segments: None,
+            cleanup_segment_policy: None,
         }
     }
 }

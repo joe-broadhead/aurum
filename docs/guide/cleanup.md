@@ -80,7 +80,8 @@ CLI flags override the file.
 ```
 
 - `cleanup_style` is always present (`raw` when off).
-- `cleanup_provider` and `original_text` appear only when a non-raw cleanup ran.
+- `cleanup_provider`, `original_text`, `original_segments`, and `cleanup_segment_policy`
+  appear when a non-raw cleanup ran (raw vs rendered are explicit).
 
 ## Library
 
@@ -91,7 +92,8 @@ use aurum_core::cleanup::{
 
 # async fn demo(mut result: aurum_core::TranscriptionResult) -> aurum_core::Result<()> {
 let rules = RulesCleanup::new();
-apply_cleanup_with_segments(
+// Transactional: on failure the original result is left unchanged.
+let (_out, _report) = apply_cleanup_with_segments(
  &mut result,
  &rules as &dyn TextCleanup,
  CleanupStyle::Clean,
@@ -105,4 +107,6 @@ apply_cleanup_with_segments(
 
 - **Local-first:** default cleanup backend never leaves the machine.
 - **ASR vs flow:** transcription produces text; cleanup is a separate stage.
-- **Segments:** structural styles clear segments by default so SRT is not misleading.
+- **Transactional:** per-segment failures do not partially rewrite the result.
+- **Segments:** structural styles clear segments by default so SRT is not misleading;
+  raw ASR timings remain in `original_segments` for JSON honesty.

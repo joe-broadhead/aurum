@@ -61,13 +61,17 @@ pub mod window;
 pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
 pub use cancel::CancelFlag;
 pub use cleanup::{
-    apply_cleanup, apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupResult,
-    CleanupStyle, OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
+    apply_cleanup, apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupReport,
+    CleanupResult, CleanupStyle, OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy,
+    TextCleanup,
 };
 pub use config::Config;
 pub use error::{Result, TranscriptionError};
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
-pub use output::{format_result, OutputFormat};
+pub use output::{
+    commit_text, format_result, write_result_to_path, CommitMode, OutputFormat, OutputTransaction,
+    SymlinkPolicy,
+};
 pub use pcm::PcmBuffer;
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, Segment, TranscriptionOptions, TranscriptionProvider,
@@ -78,7 +82,8 @@ pub use window::{PartialClock, PartialWindowPolicy};
 #[cfg(feature = "tts")]
 pub use tts::{
     format_model_list as format_tts_model_list, format_voice_list as format_tts_voice_list,
-    list_models as list_tts_models, list_voices as list_tts_voices, write_wav_i16_mono_atomic,
-    BackendKind as TtsBackendKind, LocalTtsProvider, SynthesisOptions, SynthesisProvider,
-    SynthesisResult, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE,
+    list_models as list_tts_models, list_voices as list_tts_voices, resolve_voice_for_model,
+    write_wav_i16_mono_atomic, write_wav_i16_mono_transaction, BackendKind as TtsBackendKind,
+    LocalTtsProvider, SynthesisOptions, SynthesisProvider, SynthesisResult, DEFAULT_TTS_MODEL,
+    DEFAULT_TTS_VOICE,
 };

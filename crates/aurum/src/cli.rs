@@ -8,7 +8,7 @@ use aurum_core::cleanup::{
 use aurum_core::config::Config;
 use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
-use aurum_core::output::{self, OutputFormat};
+use aurum_core::output::{self, commit_text, CommitMode, OutputFormat};
 use aurum_core::providers::{
     BackendKind, LocalWhisperProvider, OpenRouterProvider, TranscriptionOptions,
     TranscriptionProvider,
@@ -338,7 +338,13 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
     })?;
 
     aurum_core::tts::validate::validate_output_path(&output_file)?;
-    aurum_core::tts::validate::check_overwrite(&output_file, cli.force)?;
+    let commit_mode = if cli.force {
+        CommitMode::Replace
+    } else {
+        CommitMode::NoClobber
+    };
+    // Preflight no-clobber / symlink policy before expensive synthesis.
+    aurum_core::OutputTransaction::new(&output_file, commit_mode).preflight()?;
 
     // Exactly one text source: positional TEXT | --input-file | (TEXT=- reads stdin).
     // Cap the read before full string load so a huge file/stdin cannot OOM us.
@@ -404,20 +410,21 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
 
     // Re-check immediately before replace so a long synth cannot silently
     // clobber a file that appeared (or was filled) after the initial check.
-    aurum_core::tts::validate::check_overwrite(&output_file, cli.force)?;
-
-    aurum_core::write_wav_i16_mono_atomic(
+    aurum_core::write_wav_i16_mono_transaction(
         &output_file,
         &result.pcm_i16_mono,
         result.sample_rate_hz,
+        commit_mode,
     )?;
 
     if cli.verbose || atty_stderr() {
         eprintln!(
-            "aurum: wrote {} ({:.1}s, {} Hz mono)",
+            "aurum: wrote {} ({:.1}s, {} Hz mono, {} chunk{})",
             output_file.display(),
             result.duration_ms as f64 / 1000.0,
-            result.sample_rate_hz
+            result.sample_rate_hz,
+            result.chunk_count,
+            if result.chunk_count == 1 { "" } else { "s" }
         );
     }
 
@@ -436,6 +443,8 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
             "duration_ms": result.duration_ms,
             "text_chars": result.text_chars,
             "text_truncated": result.text_truncated,
+            "chunk_count": result.chunk_count,
+            "synthesized_chars": result.synthesized_chars,
         });
         let mut stdout = io::stdout().lock();
         writeln!(
@@ -702,13 +711,8 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
     .await?;
 
     if let Some(path) = &cfg.output_file {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-        let mut file = std::fs::File::create(path)?;
-        output::write_result(&result, format, &mut file)?;
+        // STT path replaces by default (historical CLI behavior for -o files).
+        output::write_result_to_path(&result, format, path, CommitMode::Replace)?;
         if cli.verbose || atty_stderr() {
             eprintln!("aurum: wrote {}", path.display());
         }
@@ -796,12 +800,7 @@ async fn run_cleanup_cmd(cli: CleanupArgs) -> Result<()> {
     };
 
     if let Some(path) = &cli.output_file {
-        if let Some(parent) = path.parent() {
-            if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)?;
-            }
-        }
-        std::fs::write(path, format!("{body}\n"))?;
+        commit_text(path, &body, CommitMode::Replace)?;
         if cli.verbose || atty_stderr() {
             eprintln!("aurum: wrote {}", path.display());
         }
@@ -857,6 +856,8 @@ async fn apply_configured_cleanup(
         result.cleanup_style = CleanupStyle::Raw;
         result.cleanup_provider = None;
         result.original_text = None;
+        result.original_segments = None;
+        result.cleanup_segment_policy = None;
         return Ok(());
     }
     if verbose || atty_stderr() {
@@ -868,7 +869,13 @@ async fn apply_configured_cleanup(
         );
     }
     let backend = build_cleanup_backend(cfg, kind)?;
-    apply_cleanup_with_segments(result, backend.as_ref(), style, segments).await?;
+    let (_out, report) =
+        apply_cleanup_with_segments(result, backend.as_ref(), style, segments).await?;
+    if verbose {
+        for w in &report.warnings {
+            eprintln!("aurum: cleanup note: {w}");
+        }
+    }
     Ok(())
 }
 

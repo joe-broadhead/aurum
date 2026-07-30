@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **JOE-1571** Critical correctness and transactional behavior:
+  - Long local TTS input is split at sentence/word boundaries using the model’s
+    phoneme-token capacity, then synthesized into one WAV (GitHub #15). Policy is
+    **complete-or-error** — no silent character truncation.
+  - TTS sample-rate metadata always matches adapter-native PCM; non-native
+    `sample_rate_hz` overrides are rejected (no metadata-only relabeling).
+  - Fixed `TAIL_TRIM = 2000` replaced with signal-aware trailing-silence trim that
+    never empties short valid utterances.
+  - Voices are validated as model-scoped; JSON/CLI report canonical model/voice IDs.
+  - Cleanup applies transactionally: failures leave `TranscriptionResult` unchanged;
+    raw vs rendered text/segments are explicit in JSON.
+  - STT, cleanup, and TTS file outputs share one secure output transaction
+    (exclusive temp, flush/sync, atomic publish, symlink reject, no-clobber/replace).
+
+### Changed
+
+- `prepare_text` rejects oversized TTS input instead of truncating (raise
+  `[tts].max_chars` if you intentionally accept longer text; chunking still
+  enforces model phoneme limits).
+- `apply_cleanup_with_segments` returns `(CleanupResult, CleanupReport)`.
+- TTS `--emit-json` includes `chunk_count` and `synthesized_chars`; `text_truncated`
+  is always `false` under complete-or-error.
+
 ## [0.0.2] - 2026-07-26
 
 ### Changed

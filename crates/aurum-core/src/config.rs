@@ -69,6 +69,19 @@ pub struct OpenRouterSection {
     pub model: Option<String>,
     /// Optional custom base URL (for testing / proxies).
     pub base_url: Option<String>,
+    /// Allow credentialed non-OpenRouter HTTPS endpoints (JOE-1587). Default false.
+    #[serde(default)]
+    pub allow_custom_endpoint: bool,
+    /// STT path mode: `auto` | `chat` | `transcriptions` (JOE-1586).
+    #[serde(default = "default_stt_mode")]
+    pub stt_mode: String,
+    /// Use system HTTP(S)_PROXY (privacy implications). Default false.
+    #[serde(default)]
+    pub use_system_proxy: bool,
+}
+
+fn default_stt_mode() -> String {
+    "auto".into()
 }
 
 /// Post-ASR cleanup defaults ( flow).
@@ -189,6 +202,11 @@ pub struct Config {
     pub openrouter_api_key: Option<String>,
     pub openrouter_base_url: String,
     pub openrouter_default_model: String,
+    /// Allow custom credentialed endpoints (JOE-1587).
+    pub openrouter_allow_custom_endpoint: bool,
+    /// `auto` | `chat` | `transcriptions` (JOE-1586).
+    pub openrouter_stt_mode: String,
+    pub openrouter_use_system_proxy: bool,
     /// Cleanup style name (`raw`, `clean`, …).
     pub cleanup_style: String,
     /// Cleanup backend name (`rules`, `openrouter`).
@@ -222,6 +240,15 @@ impl std::fmt::Debug for Config {
             )
             .field("openrouter_base_url", &self.openrouter_base_url)
             .field("openrouter_default_model", &self.openrouter_default_model)
+            .field(
+                "openrouter_allow_custom_endpoint",
+                &self.openrouter_allow_custom_endpoint,
+            )
+            .field("openrouter_stt_mode", &self.openrouter_stt_mode)
+            .field(
+                "openrouter_use_system_proxy",
+                &self.openrouter_use_system_proxy,
+            )
             .field("cleanup_style", &self.cleanup_style)
             .field("cleanup_provider", &self.cleanup_provider)
             .field("cleanup_openrouter_model", &self.cleanup_openrouter_model)
@@ -322,6 +349,13 @@ impl Config {
             openrouter_api_key,
             openrouter_base_url,
             openrouter_default_model,
+            openrouter_allow_custom_endpoint: file.openrouter.allow_custom_endpoint,
+            openrouter_stt_mode: if file.openrouter.stt_mode.trim().is_empty() {
+                default_stt_mode()
+            } else {
+                file.openrouter.stt_mode
+            },
+            openrouter_use_system_proxy: file.openrouter.use_system_proxy,
             cleanup_style: file.cleanup.style,
             cleanup_provider: file.cleanup.provider,
             cleanup_openrouter_model: file.cleanup.openrouter_model,
@@ -446,7 +480,23 @@ impl Config {
     }
 }
 
+/// Maximum config file size before TOML parse (JOE-1593).
+pub const MAX_CONFIG_BYTES: u64 = 256 * 1024;
+
 fn load_config_file(path: &Path) -> Result<ConfigFile> {
+    let meta = fs::metadata(path).map_err(|e| UserError::InvalidConfig {
+        reason: format!("failed to stat {}: {e}", path.display()),
+    })?;
+    if meta.len() > MAX_CONFIG_BYTES {
+        return Err(UserError::InvalidConfig {
+            reason: format!(
+                "config file {} is too large ({} > {MAX_CONFIG_BYTES} bytes)",
+                path.display(),
+                meta.len()
+            ),
+        }
+        .into());
+    }
     let contents = fs::read_to_string(path).map_err(|e| UserError::InvalidConfig {
         reason: format!("failed to read {}: {e}", path.display()),
     })?;

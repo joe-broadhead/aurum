@@ -1,80 +1,166 @@
 //! OpenRouter remote transcription provider.
 //!
-//! OpenRouter does not currently expose an OpenAI-compatible
-//! `/audio/transcriptions` endpoint. Instead, audio is sent via the
-//! multimodal chat completions API (`input_audio`).
+//! Supports two request paths (JOE-1586):
+//! - **Dedicated ASR** — multipart `POST /audio/transcriptions` for models that
+//!   expose a real transcription endpoint (e.g. OpenAI Whisper-class models).
+//! - **LLM-assisted** — multimodal `POST /chat/completions` with `input_audio`
+//!   (Gemini etc.). Timestamps are unreliable.
 //!
-//! **Important product semantics:** this is LLM-assisted transcription, not a
-//! dedicated ASR model. Output may paraphrase, omit filler, or invent
-//! timestamps. Prefer the local provider when verbatim accuracy matters.
+//! Path selection: config/CLI mode, then model-name heuristics in `auto`.
 
 use super::{
     BackendKind, Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
 };
 use crate::audio::{self, AudioInput, DEFAULT_MAX_UPLOAD_BYTES};
 use crate::error::{ProviderError, Result, UserError};
-use crate::postprocess::{self, truncate_chars};
+use crate::postprocess;
+use crate::remote::{
+    map_http_status, read_body_limited, validate_segments, validate_text_bounds,
+    HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
+};
 use async_trait::async_trait;
 use base64::Engine;
+use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;
-use std::time::Duration;
 
-const DEFAULT_BASE_URL: &str = "https://openrouter.ai/api/v1";
 const PROVIDER_NAME: &str = "openrouter";
 
-/// OpenRouter provider using multimodal chat completions for transcription.
+/// How to route OpenRouter STT requests (JOE-1586).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum OpenRouterSttMode {
+    /// Heuristic + capability: dedicated models → transcriptions, else chat.
+    #[default]
+    Auto,
+    /// Always multimodal chat completions (`LlmAssisted`).
+    Chat,
+    /// Always dedicated `/audio/transcriptions` (`Asr`).
+    Transcriptions,
+}
+
+impl OpenRouterSttMode {
+    pub fn parse(s: &str) -> Result<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "auto" | "" => Ok(Self::Auto),
+            "chat" | "llm" | "completions" => Ok(Self::Chat),
+            "transcriptions" | "asr" | "dedicated" | "audio" => Ok(Self::Transcriptions),
+            other => Err(UserError::Other {
+                message: format!(
+                    "unknown openrouter STT mode '{other}'\n  \
+                     Hint: use one of: auto, chat, transcriptions"
+                ),
+            }
+            .into()),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Chat => "chat",
+            Self::Transcriptions => "transcriptions",
+        }
+    }
+}
+
+/// OpenRouter provider with dual STT paths.
 pub struct OpenRouterProvider {
     api_key: String,
-    base_url: String,
-    http: reqwest::Client,
+    http: HardenedHttpClient,
     max_upload_bytes: usize,
+    stt_mode: OpenRouterSttMode,
 }
 
 impl std::fmt::Debug for OpenRouterProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OpenRouterProvider")
-            .field("base_url", &self.base_url)
+            .field("base_url", &self.http.base_url())
             .field("api_key", &"***")
             .field("max_upload_bytes", &self.max_upload_bytes)
+            .field("stt_mode", &self.stt_mode)
             .finish()
     }
 }
 
 impl OpenRouterProvider {
-    /// Create a provider. Fails early if the API key is missing/empty.
     pub fn new(api_key: Option<String>, base_url: Option<String>) -> Result<Self> {
+        Self::with_policy(
+            api_key,
+            base_url,
+            RemotePolicy::default(),
+            OpenRouterSttMode::Auto,
+        )
+    }
+
+    pub fn with_policy(
+        api_key: Option<String>,
+        base_url: Option<String>,
+        mut policy: RemotePolicy,
+        stt_mode: OpenRouterSttMode,
+    ) -> Result<Self> {
         let api_key = api_key
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
             .ok_or(UserError::MissingApiKey)?;
 
-        let base_url = base_url
-            .map(|s| s.trim_end_matches('/').to_string())
-            .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| DEFAULT_BASE_URL.to_string());
+        // Wiremock / local tests use loopback HTTP.
+        if base_url
+            .as_deref()
+            .is_some_and(|u| u.contains("127.0.0.1") || u.contains("localhost"))
+        {
+            policy.allow_loopback_http = true;
+        }
 
-        let http = reqwest::Client::builder()
-            .user_agent(concat!("aurum/", env!("CARGO_PKG_VERSION")))
-            .timeout(Duration::from_secs(600))
-            .build()
-            .map_err(|e| ProviderError::Network {
-                provider: PROVIDER_NAME.into(),
-                reason: e.to_string(),
-            })?;
+        let http = HardenedHttpClient::build(base_url.as_deref(), policy)?;
 
         Ok(Self {
             api_key,
-            base_url,
             http,
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
+            stt_mode,
         })
     }
 
-    fn chat_url(&self) -> String {
-        format!("{}/chat/completions", self.base_url)
+    pub fn with_stt_mode(mut self, mode: OpenRouterSttMode) -> Self {
+        self.stt_mode = mode;
+        self
     }
+
+    /// Resolve which path to use for `model`.
+    pub fn resolve_path(&self, model: &str) -> SttPath {
+        match self.stt_mode {
+            OpenRouterSttMode::Chat => SttPath::Chat,
+            OpenRouterSttMode::Transcriptions => SttPath::Transcriptions,
+            OpenRouterSttMode::Auto => {
+                if looks_like_dedicated_asr(model) {
+                    SttPath::Transcriptions
+                } else {
+                    SttPath::Chat
+                }
+            }
+        }
+    }
+}
+
+/// Selected request path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SttPath {
+    Chat,
+    Transcriptions,
+}
+
+/// Heuristic for dedicated ASR model ids (not sole source of truth; config can override).
+pub fn looks_like_dedicated_asr(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    // OpenAI Whisper / GPT-4o-transcribe style ids and common OpenRouter slugs.
+    m.contains("whisper")
+        || m.contains("transcribe")
+        || m.contains("/audio-")
+        || m.ends_with("-asr")
+        || m.contains("speech-to-text")
+        || m.contains("nova-2")
+        || m.contains("nova-3")
 }
 
 #[async_trait]
@@ -84,6 +170,7 @@ impl TranscriptionProvider for OpenRouterProvider {
     }
 
     fn backend_kind(&self) -> BackendKind {
+        // Default label; actual result uses path-specific backend_kind.
         BackendKind::LlmAssisted
     }
 
@@ -92,7 +179,115 @@ impl TranscriptionProvider for OpenRouterProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
-        // Compress before base64 — raw WAV in JSON OOMs on long audio.
+        let path = self.resolve_path(&options.model);
+        match path {
+            SttPath::Transcriptions => self.transcribe_dedicated(input, options).await,
+            SttPath::Chat => self.transcribe_chat(input, options).await,
+        }
+    }
+}
+
+impl OpenRouterProvider {
+    async fn transcribe_dedicated(
+        &self,
+        input: &AudioInput,
+        options: &TranscriptionOptions,
+    ) -> Result<TranscriptionResult> {
+        let (upload_path, format) =
+            audio::encode_for_upload(&input.samples, self.max_upload_bytes).await?;
+        let _cleanup = scopeguard_path(upload_path.clone());
+
+        let file_bytes = tokio::fs::read(&upload_path).await?;
+        if file_bytes.len() > self.max_upload_bytes {
+            return Err(UserError::AudioTooLarge {
+                decoded_bytes: file_bytes.len(),
+                max_bytes: self.max_upload_bytes,
+            }
+            .into());
+        }
+
+        let filename = format!("audio.{format}");
+        let mime = match format {
+            "mp3" => "audio/mpeg",
+            "wav" => "audio/wav",
+            _ => "application/octet-stream",
+        };
+        let part = Part::bytes(file_bytes)
+            .file_name(filename)
+            .mime_str(mime)
+            .map_err(|e| ProviderError::Other {
+                message: format!("multipart mime: {e}"),
+            })?;
+
+        let mut form = Form::new()
+            .text("model", options.model.clone())
+            .part("file", part);
+        let lang = options.language.trim().to_ascii_lowercase();
+        if !lang.is_empty() && lang != "auto" {
+            form = form.text("language", lang.clone());
+        }
+        if options.timestamps {
+            form = form.text("response_format", "verbose_json");
+        } else {
+            form = form.text("response_format", "json");
+        }
+
+        tracing::debug!(
+            model = %options.model,
+            path = "audio/transcriptions",
+            "openrouter dedicated STT request"
+        );
+
+        let response = self
+            .http
+            .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| ProviderError::Network {
+                provider: PROVIDER_NAME.into(),
+                reason: e.to_string(),
+            })?;
+
+        let status = response.status();
+        let body = read_body_limited(response, PROVIDER_NAME, RemoteBodyLimits::stt()).await?;
+        let body_text = String::from_utf8_lossy(&body).into_owned();
+        map_http_status(PROVIDER_NAME, status, &body_text)?;
+
+        let (text, segments, timestamps_reliable) =
+            parse_transcriptions_body(&body_text, options.timestamps, input.duration_secs)?;
+        validate_text_bounds(&text, None, TranscriptLimits::default(), PROVIDER_NAME)?;
+        validate_segments(
+            &segments,
+            input.duration_secs,
+            TranscriptLimits::default(),
+            PROVIDER_NAME,
+        )?;
+
+        let mut result = TranscriptionResult::openrouter(
+            text,
+            segments,
+            if lang != "auto" && !lang.is_empty() {
+                Some(lang)
+            } else {
+                None
+            },
+            options.model.clone(),
+            input.duration_secs,
+            options.timestamps,
+        );
+        // Dedicated ASR path.
+        result.backend_kind = BackendKind::Asr;
+        result.timestamps_reliable = timestamps_reliable;
+        result.provider = PROVIDER_NAME.into();
+        Ok(postprocess::normalize_result(result))
+    }
+
+    async fn transcribe_chat(
+        &self,
+        input: &AudioInput,
+        options: &TranscriptionOptions,
+    ) -> Result<TranscriptionResult> {
         let (upload_path, format) =
             audio::encode_for_upload(&input.samples, self.max_upload_bytes).await?;
         let cleanup = scopeguard_path(upload_path.clone());
@@ -106,7 +301,7 @@ impl TranscriptionProvider for OpenRouterProvider {
             .into());
         }
         let b64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
-        drop(cleanup); // remove temp file as soon as encoded
+        drop(cleanup);
 
         let mut prompt =
             String::from("Transcribe the audio verbatim. Reply with ONLY the transcript text");
@@ -142,25 +337,19 @@ impl TranscriptionProvider for OpenRouterProvider {
                 ]
             }],
             "temperature": 0,
-            // Required by some providers (e.g. Voxtral) when temperature is 0.
             "top_p": 1,
         });
 
         tracing::debug!(
             model = %options.model,
-            url = %self.chat_url(),
-            upload_format = format,
-            upload_bytes = file_bytes.len(),
-            "openrouter request"
+            path = "chat/completions",
+            "openrouter LLM-assisted STT request"
         );
 
         let response = self
             .http
-            .post(self.chat_url())
-            .header("Authorization", format!("Bearer {}", self.api_key))
+            .request(reqwest::Method::POST, "chat/completions", &self.api_key)?
             .header("Content-Type", "application/json")
-            .header("HTTP-Referer", "https://github.com/joe-broadhead/aurum")
-            .header("X-Title", "Aurum")
             .json(&body)
             .send()
             .await
@@ -170,47 +359,17 @@ impl TranscriptionProvider for OpenRouterProvider {
             })?;
 
         let status = response.status();
-        let body_text = response.text().await.map_err(|e| ProviderError::Network {
-            provider: PROVIDER_NAME.into(),
-            reason: e.to_string(),
+        let body_bytes =
+            read_body_limited(response, PROVIDER_NAME, RemoteBodyLimits::chat()).await?;
+        let body_text = String::from_utf8_lossy(&body_bytes).into_owned();
+        map_http_status(PROVIDER_NAME, status, &body_text)?;
+
+        let parsed: ChatCompletionResponse = serde_json::from_str(&body_text).map_err(|e| {
+            ProviderError::InvalidProviderPayload {
+                provider: PROVIDER_NAME.into(),
+                reason: format!("invalid JSON: {e}"),
+            }
         })?;
-
-        if status.as_u16() == 401 || status.as_u16() == 403 {
-            return Err(ProviderError::Auth {
-                provider: PROVIDER_NAME.into(),
-                reason: truncate_chars(&body_text, 300),
-            }
-            .into());
-        }
-        if status.as_u16() == 429 {
-            return Err(ProviderError::RateLimited {
-                provider: PROVIDER_NAME.into(),
-            }
-            .into());
-        }
-        if status.as_u16() == 402 {
-            return Err(ProviderError::QuotaExceeded {
-                provider: PROVIDER_NAME.into(),
-                reason: truncate_chars(&body_text, 300),
-            }
-            .into());
-        }
-        if !status.is_success() {
-            return Err(ProviderError::Remote {
-                provider: PROVIDER_NAME.into(),
-                reason: format!("HTTP {status}: {}", truncate_chars(&body_text, 500)),
-            }
-            .into());
-        }
-
-        let parsed: ChatCompletionResponse =
-            serde_json::from_str(&body_text).map_err(|e| ProviderError::Remote {
-                provider: PROVIDER_NAME.into(),
-                reason: format!(
-                    "invalid JSON response: {e}; body={}",
-                    truncate_chars(&body_text, 300)
-                ),
-            })?;
 
         let content = parsed
             .choices
@@ -227,7 +386,18 @@ impl TranscriptionProvider for OpenRouterProvider {
             .into());
         }
 
-        let (text, segments) = parse_content(&content, options.timestamps, input.duration_secs);
+        let (text, segments) =
+            parse_chat_content(&content, options.timestamps, input.duration_secs);
+        validate_text_bounds(&text, None, TranscriptLimits::default(), PROVIDER_NAME)?;
+        // LLM segments are not trusted for ordering hard-fail; soft-validate only when present.
+        if options.timestamps {
+            let _ = validate_segments(
+                &segments,
+                input.duration_secs,
+                TranscriptLimits::default(),
+                PROVIDER_NAME,
+            );
+        }
 
         let result = TranscriptionResult::openrouter(
             text,
@@ -241,12 +411,10 @@ impl TranscriptionProvider for OpenRouterProvider {
             input.duration_secs,
             options.timestamps,
         );
-
         Ok(postprocess::normalize_result(result))
     }
 }
 
-/// Tiny RAII helper so temp upload files are removed even on early return.
 struct PathGuard(PathBuf);
 impl Drop for PathGuard {
     fn drop(&mut self) {
@@ -279,7 +447,93 @@ struct TimestampPayload {
     segments: Vec<Segment>,
 }
 
-fn parse_content(content: &str, want_timestamps: bool, duration: f64) -> (String, Vec<Segment>) {
+#[derive(Debug, Deserialize)]
+struct TranscriptionsJson {
+    text: String,
+    #[serde(default)]
+    segments: Option<Vec<TranscriptionsSegment>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TranscriptionsSegment {
+    #[serde(default)]
+    start: f64,
+    #[serde(default)]
+    end: f64,
+    #[serde(default)]
+    text: String,
+}
+
+fn parse_transcriptions_body(
+    body: &str,
+    want_timestamps: bool,
+    duration: f64,
+) -> Result<(String, Vec<Segment>, bool)> {
+    // Plain text response_format=text
+    if !body.trim_start().starts_with('{') {
+        let text = body.trim().to_string();
+        if text.is_empty() {
+            return Err(ProviderError::TranscriptionFailed {
+                reason: "empty transcription response".into(),
+            }
+            .into());
+        }
+        return Ok((
+            text.clone(),
+            vec![Segment {
+                start: 0.0,
+                end: duration,
+                text,
+            }],
+            false,
+        ));
+    }
+
+    let parsed: TranscriptionsJson =
+        serde_json::from_str(body).map_err(|e| ProviderError::InvalidProviderPayload {
+            provider: PROVIDER_NAME.into(),
+            reason: format!("transcriptions JSON: {e}"),
+        })?;
+
+    let text = parsed.text.trim().to_string();
+    if text.is_empty() {
+        return Err(ProviderError::TranscriptionFailed {
+            reason: "empty transcription text".into(),
+        }
+        .into());
+    }
+
+    if want_timestamps {
+        if let Some(raw_segs) = parsed.segments {
+            let segments: Vec<Segment> = raw_segs
+                .into_iter()
+                .map(|s| Segment {
+                    start: s.start,
+                    end: s.end,
+                    text: s.text,
+                })
+                .collect();
+            // Dedicated verbose_json segments are treated as engine-derived.
+            return Ok((text, segments, true));
+        }
+    }
+
+    Ok((
+        text.clone(),
+        vec![Segment {
+            start: 0.0,
+            end: duration,
+            text,
+        }],
+        false,
+    ))
+}
+
+fn parse_chat_content(
+    content: &str,
+    want_timestamps: bool,
+    duration: f64,
+) -> (String, Vec<Segment>) {
     if want_timestamps {
         let cleaned = content
             .trim()
@@ -308,6 +562,26 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
+    #[test]
+    fn mode_parse() {
+        assert_eq!(
+            OpenRouterSttMode::parse("auto").unwrap(),
+            OpenRouterSttMode::Auto
+        );
+        assert_eq!(
+            OpenRouterSttMode::parse("transcriptions").unwrap(),
+            OpenRouterSttMode::Transcriptions
+        );
+        assert!(OpenRouterSttMode::parse("nope").is_err());
+    }
+
+    #[test]
+    fn dedicated_heuristics() {
+        assert!(looks_like_dedicated_asr("openai/whisper-1"));
+        assert!(looks_like_dedicated_asr("openai/gpt-4o-transcribe"));
+        assert!(!looks_like_dedicated_asr("google/gemini-2.5-flash"));
+    }
+
     #[tokio::test]
     async fn missing_key_fails_early() {
         let err = OpenRouterProvider::new(None, None).unwrap_err();
@@ -318,7 +592,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn parses_successful_response() {
+    async fn parses_successful_chat_response() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/chat/completions"))
@@ -330,8 +604,16 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            OpenRouterProvider::new(Some("test-key".into()), Some(server.uri())).unwrap();
+        let provider = OpenRouterProvider::with_policy(
+            Some("test-key".into()),
+            Some(server.uri()),
+            RemotePolicy {
+                allow_loopback_http: true,
+                ..Default::default()
+            },
+            OpenRouterSttMode::Chat,
+        )
+        .unwrap();
 
         let samples: Arc<[f32]> = vec![0.0f32; 1600].into();
         let input = AudioInput {
@@ -349,7 +631,47 @@ mod tests {
         let result = provider.transcribe(&input, &opts).await.unwrap();
         assert_eq!(result.text, "Hello from the cloud.");
         assert_eq!(result.provider, "openrouter");
-        assert_eq!(result.language.as_deref(), Some("en"));
+        assert_eq!(result.backend_kind, BackendKind::LlmAssisted);
+        assert!(!result.timestamps_reliable);
+    }
+
+    #[tokio::test]
+    async fn dedicated_path_hits_transcriptions() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/audio/transcriptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "text": "Dedicated ASR path works."
+            })))
+            .mount(&server)
+            .await;
+
+        let provider = OpenRouterProvider::with_policy(
+            Some("test-key".into()),
+            Some(server.uri()),
+            RemotePolicy {
+                allow_loopback_http: true,
+                ..Default::default()
+            },
+            OpenRouterSttMode::Transcriptions,
+        )
+        .unwrap();
+
+        let input = AudioInput {
+            source_path: PathBuf::from("x.wav"),
+            samples: vec![0.0; 1600].into(),
+            sample_rate: 16_000,
+            duration_secs: 0.1,
+        };
+        let opts = TranscriptionOptions {
+            model: "openai/whisper-1".into(),
+            language: "en".into(),
+            timestamps: false,
+            cancel: None,
+        };
+        let result = provider.transcribe(&input, &opts).await.unwrap();
+        assert_eq!(result.text, "Dedicated ASR path works.");
+        assert_eq!(result.backend_kind, BackendKind::Asr);
     }
 
     #[tokio::test]
@@ -361,8 +683,16 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            OpenRouterProvider::new(Some("test-key".into()), Some(server.uri())).unwrap();
+        let provider = OpenRouterProvider::with_policy(
+            Some("test-key".into()),
+            Some(server.uri()),
+            RemotePolicy {
+                allow_loopback_http: true,
+                ..Default::default()
+            },
+            OpenRouterSttMode::Chat,
+        )
+        .unwrap();
         let input = AudioInput {
             source_path: PathBuf::from("x.wav"),
             samples: vec![0.0; 1600].into(),
@@ -385,9 +715,25 @@ mod tests {
     #[test]
     fn parse_timestamp_json() {
         let raw = r#"{"text":"Hi there","segments":[{"start":0.0,"end":1.0,"text":"Hi there"}]}"#;
-        let (text, segs) = parse_content(raw, true, 1.0);
+        let (text, segs) = parse_chat_content(raw, true, 1.0);
         assert_eq!(text, "Hi there");
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].end, 1.0);
+    }
+
+    #[test]
+    fn auto_routes_whisper_to_transcriptions() {
+        let p = OpenRouterProvider::with_policy(
+            Some("k".into()),
+            Some("https://openrouter.ai/api/v1".into()),
+            RemotePolicy::default(),
+            OpenRouterSttMode::Auto,
+        )
+        .unwrap();
+        assert_eq!(
+            p.resolve_path("openai/whisper-large-v3"),
+            SttPath::Transcriptions
+        );
+        assert_eq!(p.resolve_path("google/gemini-2.5-flash"), SttPath::Chat);
     }
 }

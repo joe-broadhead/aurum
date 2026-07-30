@@ -265,19 +265,66 @@ fn try_load_wav_direct(
     })
 }
 
-/// Decode any format to 16 kHz mono f32 via ffmpeg, streaming with hard caps.
+/// Default wall-clock deadline for a single FFmpeg decode (JOE-1585).
+pub const DEFAULT_FFMPEG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(600);
+/// Bounded stderr diagnostic tail retained for user-facing errors.
+const STDERR_TAIL_CAP: usize = 8 * 1024;
+
+/// Structured FFmpeg termination reason (JOE-1585).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FfmpegTermination {
+    Success,
+    InvalidMedia,
+    LimitExceeded,
+    Timeout,
+    Cancelled,
+    SpawnFailure,
+    NonZeroExit,
+}
+
+/// Decode any format to 16 kHz mono f32 via supervised FFmpeg (JOE-1585).
+///
+/// - Shell-free argv, `-nostdin`, protocol restriction for local files
+/// - Concurrent stdout/stderr drain with hard caps
+/// - Wall-clock deadline; kill+reap on any failure path
 async fn load_via_ffmpeg(
     path: &Path,
     max_duration_secs: f64,
     max_decoded_bytes: usize,
 ) -> Result<AudioInput> {
-    let ffmpeg = require_ffmpeg()?;
+    load_via_ffmpeg_with_timeout(
+        path,
+        max_duration_secs,
+        max_decoded_bytes,
+        DEFAULT_FFMPEG_TIMEOUT,
+        None,
+    )
+    .await
+}
 
-    // Cap decode duration at the source so ffmpeg stops early.
+/// Supervised FFmpeg decode with explicit deadline and optional cancel flag.
+pub async fn load_via_ffmpeg_with_timeout(
+    path: &Path,
+    max_duration_secs: f64,
+    max_decoded_bytes: usize,
+    timeout: std::time::Duration,
+    cancel: Option<crate::cancel::CancelFlag>,
+) -> Result<AudioInput> {
+    let ffmpeg = require_ffmpeg()?;
     let max_t = format!("{max_duration_secs:.3}");
+    // Restrict demuxer protocols to local files when supported by the build.
+    let protocol_whitelist = "file,crypto,data";
 
     let mut child = Command::new(&ffmpeg)
-        .args(["-hide_banner", "-loglevel", "error", "-i"])
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-protocol_whitelist",
+            protocol_whitelist,
+            "-i",
+        ])
         .arg(path)
         .args([
             "-t",
@@ -292,6 +339,7 @@ async fn load_via_ffmpeg(
             "16000",
             "-",
         ])
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true)
@@ -306,93 +354,162 @@ async fn load_via_ffmpeg(
         .ok_or_else(|| EnvironmentError::FfmpegFailed {
             reason: "ffmpeg stdout missing".into(),
         })?;
-
-    // Raw s16le bytes; cap before converting to f32.
-    let max_raw_bytes = max_decoded_bytes / std::mem::size_of::<f32>() * 2;
-    let mut raw: Vec<u8> = Vec::new();
-    let mut buf = [0u8; 64 * 1024];
-
-    loop {
-        let n = stdout
-            .read(&mut buf)
-            .await
-            .map_err(|e| EnvironmentError::FfmpegFailed {
-                reason: format!("reading ffmpeg stdout: {e}"),
-            })?;
-        if n == 0 {
-            break;
-        }
-        if raw.len().saturating_add(n) > max_raw_bytes {
-            let _ = child.kill().await;
-            return Err(UserError::AudioTooLarge {
-                decoded_bytes: (raw.len() + n) / 2 * std::mem::size_of::<f32>(),
-                max_bytes: max_decoded_bytes,
-            }
-            .into());
-        }
-        raw.extend_from_slice(&buf[..n]);
-    }
-
-    let status = child
-        .wait_with_output()
-        .await
-        .map_err(|e| EnvironmentError::FfmpegFailed {
-            reason: format!("ffmpeg wait failed: {e}"),
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| EnvironmentError::FfmpegFailed {
+            reason: "ffmpeg stderr missing".into(),
         })?;
 
-    if !status.status.success() {
-        let stderr = String::from_utf8_lossy(&status.stderr);
-        let reason = stderr.trim().to_string();
-        let short = reason.lines().last().unwrap_or(&reason).to_string();
-        return Err(UserError::InvalidAudio { reason: short }.into());
-    }
+    let max_raw_bytes = max_decoded_bytes / std::mem::size_of::<f32>() * 2;
 
-    if raw.is_empty() {
-        return Err(UserError::InvalidAudio {
-            reason: "ffmpeg produced no audio data (empty or corrupt file?)".into(),
+    if let Some(flag) = &cancel {
+        if flag.is_cancelled() {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(crate::error::ProviderError::Cancelled.into());
         }
-        .into());
     }
-    if !raw.len().is_multiple_of(2) {
-        return Err(UserError::InvalidAudio {
-            reason: "ffmpeg produced misaligned PCM data".into(),
+
+    let stdout_task = async {
+        let mut raw: Vec<u8> = Vec::new();
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            if let Some(flag) = &cancel {
+                if flag.is_cancelled() {
+                    return Err(crate::error::ProviderError::Cancelled.into());
+                }
+            }
+            let n = stdout
+                .read(&mut buf)
+                .await
+                .map_err(|e| EnvironmentError::FfmpegFailed {
+                    reason: format!("reading ffmpeg stdout: {e}"),
+                })?;
+            if n == 0 {
+                break;
+            }
+            if raw.len().saturating_add(n) > max_raw_bytes {
+                return Err(UserError::AudioTooLarge {
+                    decoded_bytes: (raw.len() + n) / 2 * std::mem::size_of::<f32>(),
+                    max_bytes: max_decoded_bytes,
+                }
+                .into());
+            }
+            raw.extend_from_slice(&buf[..n]);
         }
-        .into());
-    }
+        Ok::<Vec<u8>, crate::error::TranscriptionError>(raw)
+    };
 
-    let samples: Arc<[f32]> = raw
-        .chunks_exact(2)
-        .map(|c| {
-            let s = i16::from_le_bytes([c[0], c[1]]);
-            s as f32 / 32768.0
-        })
-        .collect::<Vec<_>>()
-        .into();
-
-    let duration_secs = samples.len() as f64 / 16_000.0;
-    // ffmpeg -t stops at the cap; if we filled the full window, the source may be longer.
-    // Reject to match the WAV path (no silent truncation).
-    if duration_secs + 0.05 >= max_duration_secs {
-        return Err(UserError::AudioTooLong {
-            duration_secs: max_duration_secs,
-            max_secs: max_duration_secs,
+    let stderr_task = async {
+        let mut tail: Vec<u8> = Vec::new();
+        let mut buf = [0u8; 4 * 1024];
+        loop {
+            let n = stderr
+                .read(&mut buf)
+                .await
+                .map_err(|e| EnvironmentError::FfmpegFailed {
+                    reason: format!("reading ffmpeg stderr: {e}"),
+                })?;
+            if n == 0 {
+                break;
+            }
+            if tail.len() + n > STDERR_TAIL_CAP {
+                let drop_n = (tail.len() + n).saturating_sub(STDERR_TAIL_CAP);
+                if drop_n < tail.len() {
+                    tail.drain(..drop_n);
+                } else {
+                    tail.clear();
+                }
+            }
+            tail.extend_from_slice(&buf[..n]);
         }
-        .into());
-    }
+        Ok::<Vec<u8>, crate::error::TranscriptionError>(tail)
+    };
 
-    if samples.is_empty() {
-        return Err(UserError::InvalidAudio {
-            reason: "audio contains no samples".into(),
-        }
-        .into());
-    }
-
-    Ok(AudioInput {
-        source_path: path.to_path_buf(),
-        samples,
-        sample_rate: 16_000,
-        duration_secs,
+    let drain = tokio::time::timeout(timeout, async {
+        tokio::try_join!(stdout_task, stderr_task)
     })
+    .await;
+
+    match drain {
+        Ok(Ok((raw, stderr_bytes))) => {
+            let status = child
+                .wait()
+                .await
+                .map_err(|e| EnvironmentError::FfmpegFailed {
+                    reason: format!("ffmpeg wait failed: {e}"),
+                })?;
+            if !status.success() {
+                let stderr = String::from_utf8_lossy(&stderr_bytes);
+                let reason = stderr.trim();
+                let short = reason
+                    .lines()
+                    .last()
+                    .unwrap_or("ffmpeg failed")
+                    .chars()
+                    .take(400)
+                    .collect::<String>();
+                return Err(UserError::InvalidAudio { reason: short }.into());
+            }
+            if raw.is_empty() {
+                return Err(UserError::InvalidAudio {
+                    reason: "ffmpeg produced no audio data (empty or corrupt file?)".into(),
+                }
+                .into());
+            }
+            if !raw.len().is_multiple_of(2) {
+                return Err(UserError::InvalidAudio {
+                    reason: "ffmpeg produced misaligned PCM data".into(),
+                }
+                .into());
+            }
+            let samples: Arc<[f32]> = raw
+                .chunks_exact(2)
+                .map(|c| {
+                    let s = i16::from_le_bytes([c[0], c[1]]);
+                    s as f32 / 32768.0
+                })
+                .collect::<Vec<_>>()
+                .into();
+            let duration_secs = samples.len() as f64 / 16_000.0;
+            if duration_secs + 0.05 >= max_duration_secs {
+                return Err(UserError::AudioTooLong {
+                    duration_secs: max_duration_secs,
+                    max_secs: max_duration_secs,
+                }
+                .into());
+            }
+            if samples.is_empty() {
+                return Err(UserError::InvalidAudio {
+                    reason: "audio contains no samples".into(),
+                }
+                .into());
+            }
+            Ok(AudioInput {
+                source_path: path.to_path_buf(),
+                samples,
+                sample_rate: 16_000,
+                duration_secs,
+            })
+        }
+        Ok(Err(e)) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            Err(e)
+        }
+        Err(_elapsed) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            Err(EnvironmentError::FfmpegFailed {
+                reason: format!(
+                    "ffmpeg decode exceeded wall-clock deadline ({}s)",
+                    timeout.as_secs()
+                ),
+            }
+            .into())
+        }
+    }
 }
 
 /// Write samples out as a 16 kHz mono WAV using an exclusive create (O_EXCL).

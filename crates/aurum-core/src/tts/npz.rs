@@ -1,10 +1,22 @@
-//! Minimal NPZ / NPY loader for KittenTTS voice embeddings (float32 only).
+//! Bounded NPZ / NPY loader for KittenTTS voice embeddings (float32 only).
+//!
+//! Hard limits prevent ZIP bombs, dimension overflow, and uncontrolled
+//! allocation (JOE-1593).
 
 use crate::error::{ProviderError, Result};
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::Path;
 use zip::ZipArchive;
+
+/// Global adapter/parser limits (documented; not magic numbers).
+pub const MAX_NPZ_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_NPZ_ENTRIES: usize = 64;
+pub const MAX_NPZ_ENTRY_EXPANDED_BYTES: usize = 32 * 1024 * 1024;
+pub const MAX_NPZ_TOTAL_EXPANDED_BYTES: usize = 48 * 1024 * 1024;
+pub const MAX_NPZ_FILENAME_LEN: usize = 256;
+pub const MAX_MATRIX_DIM: usize = 16_384;
+pub const MAX_MATRIX_ELEMENTS: usize = 8 * 1024 * 1024;
 
 /// One voice style matrix (rows × cols), row-major f32.
 #[derive(Debug, Clone)]
@@ -24,6 +36,20 @@ impl VoiceMatrix {
 
 /// Load all float32 arrays from a voices NPZ archive.
 pub fn load_voices_npz(path: &Path) -> Result<HashMap<String, VoiceMatrix>> {
+    let meta = std::fs::metadata(path).map_err(|e| ProviderError::ModelLoad {
+        model: path.display().to_string(),
+        reason: format!("stat voices npz: {e}"),
+    })?;
+    if meta.len() > MAX_NPZ_ARCHIVE_BYTES {
+        return Err(ProviderError::ModelLoad {
+            model: path.display().to_string(),
+            reason: format!(
+                "npz archive too large ({} > {MAX_NPZ_ARCHIVE_BYTES})",
+                meta.len()
+            ),
+        }
+        .into());
+    }
     let file = std::fs::File::open(path).map_err(|e| ProviderError::ModelLoad {
         model: path.display().to_string(),
         reason: format!("open voices npz: {e}"),
@@ -32,13 +58,28 @@ pub fn load_voices_npz(path: &Path) -> Result<HashMap<String, VoiceMatrix>> {
         model: path.display().to_string(),
         reason: format!("invalid npz/zip: {e}"),
     })?;
+    if zip.len() > MAX_NPZ_ENTRIES {
+        return Err(ProviderError::ModelLoad {
+            model: path.display().to_string(),
+            reason: format!("too many npz entries ({})", zip.len()),
+        }
+        .into());
+    }
     let mut out = HashMap::new();
+    let mut total_expanded = 0usize;
     for i in 0..zip.len() {
         let mut entry = zip.by_index(i).map_err(|e| ProviderError::ModelLoad {
             model: path.display().to_string(),
             reason: format!("zip entry: {e}"),
         })?;
         let name = entry.name().to_string();
+        if name.len() > MAX_NPZ_FILENAME_LEN {
+            return Err(ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: "npz entry filename too long".into(),
+            }
+            .into());
+        }
         if !name.ends_with(".npy") {
             continue;
         }
@@ -48,14 +89,61 @@ pub fn load_voices_npz(path: &Path) -> Result<HashMap<String, VoiceMatrix>> {
             .next()
             .unwrap_or(&name)
             .to_string();
+        if out.contains_key(&key) {
+            return Err(ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: format!("duplicate voice key '{key}'"),
+            }
+            .into());
+        }
+        // Prefer declared uncompressed size when available.
+        let declared = entry.size() as usize;
+        if declared > MAX_NPZ_ENTRY_EXPANDED_BYTES {
+            return Err(ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: format!("npz entry '{key}' expanded size exceeds limit"),
+            }
+            .into());
+        }
         let mut buf = Vec::new();
         entry
+            .by_ref()
+            .take(MAX_NPZ_ENTRY_EXPANDED_BYTES as u64 + 1)
             .read_to_end(&mut buf)
             .map_err(|e| ProviderError::ModelLoad {
                 model: path.display().to_string(),
                 reason: format!("read npy: {e}"),
             })?;
+        if buf.len() > MAX_NPZ_ENTRY_EXPANDED_BYTES {
+            return Err(ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: format!("npz entry '{key}' exceeded expanded byte cap"),
+            }
+            .into());
+        }
+        total_expanded =
+            total_expanded
+                .checked_add(buf.len())
+                .ok_or_else(|| ProviderError::ModelLoad {
+                    model: path.display().to_string(),
+                    reason: "expanded size overflow".into(),
+                })?;
+        if total_expanded > MAX_NPZ_TOTAL_EXPANDED_BYTES {
+            return Err(ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: "total expanded npz bytes exceed limit".into(),
+            }
+            .into());
+        }
         let (shape, data) = parse_npy(&buf)?;
+        // Reject nonfinite embeddings.
+        if data.iter().any(|v| !v.is_finite()) {
+            return Err(ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: format!("voice '{key}' contains non-finite values"),
+            }
+            .into());
+        }
         let (nrows, ncols) = match shape.as_slice() {
             [r, c] => (*r, *c),
             [r] => (*r, 1),
@@ -67,6 +155,13 @@ pub fn load_voices_npz(path: &Path) -> Result<HashMap<String, VoiceMatrix>> {
                 .into());
             }
         };
+        if nrows == 0 || ncols == 0 || nrows > MAX_MATRIX_DIM || ncols > MAX_MATRIX_DIM {
+            return Err(ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: format!("invalid matrix dims {nrows}x{ncols} for {key}"),
+            }
+            .into());
+        }
         out.insert(key, VoiceMatrix { nrows, ncols, data });
     }
     if out.is_empty() {
@@ -79,7 +174,8 @@ pub fn load_voices_npz(path: &Path) -> Result<HashMap<String, VoiceMatrix>> {
     Ok(out)
 }
 
-fn parse_npy(data: &[u8]) -> Result<(Vec<usize>, Vec<f32>)> {
+/// Public for fuzz targets / unit tests.
+pub fn parse_npy(data: &[u8]) -> Result<(Vec<usize>, Vec<f32>)> {
     if data.len() < 10 || &data[..6] != b"\x93NUMPY" {
         return Err(ProviderError::Other {
             message: "not a valid NPY file (bad magic)".into(),
@@ -135,10 +231,34 @@ fn parse_npy(data: &[u8]) -> Result<(Vec<usize>, Vec<f32>)> {
     let shape_str = extract_header_field(header, "shape").ok_or_else(|| ProviderError::Other {
         message: "NPY header missing shape".into(),
     })?;
+    if header.contains("fortran_order': True") || header.contains("fortran_order\": True") {
+        return Err(ProviderError::Other {
+            message: "Fortran-order NPY is not supported".into(),
+        }
+        .into());
+    }
     let shape = parse_shape(shape_str.trim())?;
-    let n_elements: usize = shape.iter().product();
+    for d in &shape {
+        if *d == 0 || *d > MAX_MATRIX_DIM {
+            return Err(ProviderError::Other {
+                message: format!("invalid NPY dimension {d}"),
+            }
+            .into());
+        }
+    }
+    let n_elements = shape.iter().try_fold(1usize, |acc, &d| {
+        acc.checked_mul(d).filter(|&n| n <= MAX_MATRIX_ELEMENTS)
+    });
+    let n_elements = n_elements.ok_or_else(|| ProviderError::Other {
+        message: "NPY dimension product overflow or exceeds element cap".into(),
+    })?;
+    let need = n_elements
+        .checked_mul(4)
+        .ok_or_else(|| ProviderError::Other {
+            message: "NPY byte length overflow".into(),
+        })?;
     let data_bytes = &data[header_end..];
-    if data_bytes.len() < n_elements * 4 {
+    if data_bytes.len() < need {
         return Err(ProviderError::Other {
             message: "NPY data section too short".into(),
         }

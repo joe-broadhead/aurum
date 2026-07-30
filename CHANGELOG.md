@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1572** Safe external I/O and artifact trust:
+  - Supervised FFmpeg decode (concurrent stdout/stderr drain, `-nostdin`, protocol
+    whitelist, wall-clock deadline, kill+reap)
+  - Shared hardened remote HTTP client with OpenRouter-origin credential policy,
+    no redirects, optional custom endpoint opt-in (STT + cleanup)
+  - Dual OpenRouter STT paths: dedicated `/audio/transcriptions` and multimodal chat
+    (`--openrouter-stt-mode auto|chat|transcriptions`)
+  - Bounded remote response bodies and transcript/segment validation
+  - Structured remote cleanup contract with expansion caps; segment batch helper
+  - STT reviewed exact sizes + SHA-256 pins for default/trial models; verify-before-publish
+    downloads (no redirects); shared `download` size-cap helpers
+  - `aurum cache status|verify|repair` (verify quarantines bad STT artifacts)
+  - Hardened NPZ/NPY/config parsers (ZIP/dimension/config byte caps)
+
 ### Fixed
 
 - **JOE-1571** Critical correctness and transactional behavior:

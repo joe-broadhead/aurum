@@ -1,9 +1,9 @@
 //! Local ONNX KittenTTS provider (MIT binary path — no GPL phonemizer).
 
 use super::catalogue::{ensure_voice_pack, lookup_model, lookup_voice, onnx_path, voices_path};
+use super::chunk::{prepare_tts_chunks, TtsChunk};
 use super::npz::load_voices_npz;
 use super::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
-use super::tokenize::ipa_to_ids;
 use super::validate::{
     clamp_speaking_rate, normalize_tts_language, prepare_text, DEFAULT_MAX_CHARS,
 };
@@ -21,6 +21,8 @@ use std::time::Duration;
 const TAIL_TRIM: usize = 2_000;
 /// Peak limit before i16 quantization.
 const PEAK_LIMIT: f32 = 0.95;
+/// Silence inserted between independently synthesized chunks.
+const CHUNK_PAUSE_MS: u64 = 150;
 
 /// On-device KittenTTS via ONNX Runtime + misaki-rs G2P (no espeak / GPL).
 pub struct LocalTtsProvider {
@@ -135,20 +137,6 @@ fn synthesize_with_pack(
     let internal = voice.internal_key;
     let rate = clamp_speaking_rate(opts.speaking_rate);
 
-    // G2P (MIT misaki-rs, no espeak).
-    let g2p = misaki_rs::G2P::new(misaki_rs::Language::EnglishUS);
-    let (ipa, _) = g2p.g2p(text).map_err(|e| ProviderError::Other {
-        message: format!("G2P failed: {e}"),
-    })?;
-    // Strip unknown markers that misaki may emit without espeak fallback.
-    let ipa = ipa.replace('❓', "");
-    if ipa.trim().is_empty() {
-        return Err(ProviderError::Other {
-            message: "G2P produced empty phonemes for input text".into(),
-        }
-        .into());
-    }
-
     let voice_mat = pack
         .voices
         .get(internal)
@@ -161,21 +149,90 @@ fn synthesize_with_pack(
         })?;
 
     let effective_speed = rate * pack.speed_priors.get(internal).copied().unwrap_or(1.0);
-    let ids = ipa_to_ids(&ipa);
-    if ids.len() <= 2 {
-        return Err(ProviderError::Other {
-            message: format!("no tokenizable phonemes from IPA {ipa:?}"),
+    // The voice matrix has one style embedding per supported sequence length.
+    // Reserve one row because the token vector includes start/end pads.
+    let max_tokens = voice_mat.nrows.saturating_sub(1);
+    if max_tokens <= 2 {
+        return Err(ProviderError::ModelLoad {
+            model: opts.model.clone(),
+            reason: "voice embedding has no usable sequence rows".into(),
         }
         .into());
     }
-    let seq_len = ids.len();
-    let style = voice_mat.style_row(text.chars().count()).to_vec();
-    let style_dim = style.len();
+    let chunks = prepare_tts_chunks(text, max_tokens)?;
+    let sample_rate = opts.sample_rate_hz.unwrap_or(pack.sample_rate_hz);
+    let pause_samples = (sample_rate as u64)
+        .saturating_mul(CHUNK_PAUSE_MS)
+        .checked_div(1_000)
+        .unwrap_or(0) as usize;
+    let mut pcm = Vec::new();
 
-    let t_ids =
-        Tensor::<i64>::from_array(([1usize, seq_len], ids)).map_err(|e| ProviderError::Other {
+    for (index, chunk) in chunks.iter().enumerate() {
+        if let Some(flag) = &opts.cancel {
+            if flag.is_cancelled() {
+                return Err(ProviderError::Cancelled.into());
+            }
+        }
+        let chunk_pcm =
+            synthesize_chunk(pack, voice_mat, chunk, effective_speed).map_err(|err| {
+                ProviderError::Other {
+                    message: format!(
+                        "TTS chunk {}/{} failed near {:?}: {err}",
+                        index + 1,
+                        chunks.len(),
+                        chunk.text.chars().take(80).collect::<String>()
+                    ),
+                }
+            })?;
+        if index > 0 {
+            pcm.resize(pcm.len().saturating_add(pause_samples), 0);
+        }
+        pcm.extend(chunk_pcm);
+    }
+    if pcm.is_empty() {
+        return Err(ProviderError::Other {
+            message: "synthesis produced empty audio".into(),
+        }
+        .into());
+    }
+    let duration_ms = (pcm.len() as u64)
+        .saturating_mul(1000)
+        .checked_div(sample_rate as u64)
+        .unwrap_or(0);
+
+    // Report the engine language actually used (English-only G2P), not a raw echo.
+    let language = normalize_tts_language(&opts.language).unwrap_or_else(|_| "en".into());
+
+    Ok(SynthesisResult {
+        pcm_i16_mono: pcm,
+        sample_rate_hz: sample_rate,
+        channels: 1,
+        backend_kind: BackendKind::Local,
+        provider: "local".into(),
+        model: opts.model.clone(),
+        voice: voice.id.to_string(),
+        language,
+        duration_ms,
+        text_chars,
+        text_truncated,
+    })
+}
+
+fn synthesize_chunk(
+    pack: &LoadedPack,
+    voice_mat: &super::npz::VoiceMatrix,
+    chunk: &TtsChunk,
+    effective_speed: f32,
+) -> Result<Vec<i16>> {
+    let seq_len = chunk.ids.len();
+    // KittenTTS indexes the style embedding by phoneme sequence length.
+    let style = voice_mat.style_row(seq_len).to_vec();
+    let style_dim = style.len();
+    let t_ids = Tensor::<i64>::from_array(([1usize, seq_len], chunk.ids.clone())).map_err(|e| {
+        ProviderError::Other {
             message: format!("input_ids tensor: {e}"),
-        })?;
+        }
+    })?;
     let t_style = Tensor::<f32>::from_array(([1usize, style_dim], style)).map_err(|e| {
         ProviderError::Other {
             message: format!("style tensor: {e}"),
@@ -204,37 +261,16 @@ fn synthesize_with_pack(
             })?;
     let audio_flat: Vec<f32> = audio_data.to_vec();
     let trimmed_len = audio_flat.len().saturating_sub(TAIL_TRIM);
-    let audio = &audio_flat[..trimmed_len];
-    if audio.is_empty() {
+    if trimmed_len == 0 {
         return Err(ProviderError::Other {
             message: "synthesis produced empty audio".into(),
         }
         .into());
     }
-
-    let pcm = peak_guard_f32_to_i16(audio, PEAK_LIMIT);
-    let sample_rate = opts.sample_rate_hz.unwrap_or(pack.sample_rate_hz);
-    let duration_ms = (pcm.len() as u64)
-        .saturating_mul(1000)
-        .checked_div(sample_rate as u64)
-        .unwrap_or(0);
-
-    // Report the engine language actually used (English-only G2P), not a raw echo.
-    let language = normalize_tts_language(&opts.language).unwrap_or_else(|_| "en".into());
-
-    Ok(SynthesisResult {
-        pcm_i16_mono: pcm,
-        sample_rate_hz: sample_rate,
-        channels: 1,
-        backend_kind: BackendKind::Local,
-        provider: "local".into(),
-        model: opts.model.clone(),
-        voice: voice.id.to_string(),
-        language,
-        duration_ms,
-        text_chars,
-        text_truncated,
-    })
+    Ok(peak_guard_f32_to_i16(
+        &audio_flat[..trimmed_len],
+        PEAK_LIMIT,
+    ))
 }
 
 fn load_pack(

@@ -6,6 +6,8 @@
 #[cfg(feature = "tts")]
 pub mod catalogue;
 #[cfg(feature = "tts")]
+mod chunk;
+#[cfg(feature = "tts")]
 pub mod local;
 #[cfg(feature = "tts")]
 mod npz;

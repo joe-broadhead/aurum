@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Long local TTS input is split at sentence or word boundaries using the model's
+  phoneme-token capacity, then synthesized into one WAV instead of failing in
+  ONNX with an `invalid expand shape` error.
+
 ## [0.0.2] - 2026-07-26
 
 ### Changed

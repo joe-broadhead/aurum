@@ -83,3 +83,39 @@ async fn synth_fixed_phrase_to_wav() {
     assert_eq!(reader.spec().sample_format, hound::SampleFormat::Int);
     assert_eq!(reader.spec().bits_per_sample, 16);
 }
+
+#[tokio::test]
+#[ignore = "uses cached voice pack when available; enable with --ignored"]
+async fn synth_long_text_is_chunked_into_one_result() {
+    let provider = LocalTtsProvider::new(cache_dir())
+        .with_progress(true)
+        .with_local_only(true);
+    let opts = SynthesisOptions {
+        model: DEFAULT_TTS_MODEL.into(),
+        voice: DEFAULT_TTS_VOICE.into(),
+        language: "en".into(),
+        sample_rate_hz: None,
+        speaking_rate: 1.0,
+        timeout_ms: 180_000,
+        cancel: None,
+        local_only: true,
+    };
+    let text = "Tadej Pogačar, nicknamed Pogi, is a Slovenian professional cyclist. \
+        His victories include multiple Tours de France, the Giro d'Italia, and many one-day \
+        Monuments. Comfortable in time-trialing, classic riding, and grand-tour climbing, he \
+        has been compared to great all-round cyclists. This paragraph deliberately continues \
+        with enough descriptive language to exceed a single KittenTTS voice-style sequence. \
+        Aurum should split it at sentence boundaries, synthesize every chunk, and return one \
+        continuous mono PCM result without exposing an ONNX invalid-expand-shape error.";
+
+    let result = provider
+        .synthesize(text, &opts)
+        .await
+        .expect("long-form synthesis should be chunked");
+
+    assert_eq!(result.text_chars, text.chars().count());
+    assert!(!result.text_truncated);
+    assert_eq!(result.sample_rate_hz, 24_000);
+    assert!(result.duration_ms > 10_000);
+    assert!(result.pcm_i16_mono.len() > 240_000);
+}

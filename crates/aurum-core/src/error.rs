@@ -145,6 +145,15 @@ pub enum ProviderError {
     #[error("{provider} returned an error: {reason}")]
     Remote { provider: String, reason: String },
 
+    #[error("{provider} response too large: {reason}")]
+    ResponseTooLarge { provider: String, reason: String },
+
+    #[error("{provider} returned an invalid payload: {reason}")]
+    InvalidProviderPayload { provider: String, reason: String },
+
+    #[error("limit exceeded: {reason}")]
+    LimitExceeded { reason: String },
+
     #[error("{message}")]
     Other { message: String },
 }

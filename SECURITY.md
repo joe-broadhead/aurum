@@ -34,6 +34,18 @@ published release and the default branch.
 - TTS never calls OpenRouter; network on the TTS path is only for explicit voice/model pack download
 - ffmpeg is a **system** dependency for STT file decode (not bundled; not used for TTS WAV)
 
+## External I/O trust (JOE-1572)
+
+- **FFmpeg:** shell-free argv, `-nostdin`, concurrent pipe drain, stderr tail cap,
+  wall-clock deadline, kill-on-failure. Protocol whitelist prefers local files.
+  Hostile multi-tenant media still requires an outer process sandbox.
+- **Remote HTTP:** credentialed traffic defaults to the official OpenRouter HTTPS
+  origin only. Custom endpoints require `openrouter.allow_custom_endpoint = true`.
+  Redirects are disabled; system proxy is off by default.
+- **Models:** downloads stream to exclusive partials, hash while writing, and
+  publish only after reviewed size/digest checks. Cache inventory:
+  `aurum cache status|verify`.
+
 ## Output file commits
 
 User-visible output files (transcripts, cleanup text, TTS WAV) use a shared

@@ -173,4 +173,4 @@ pub trait TranscriptionProvider: Send + Sync {
 }
 
 pub use local::LocalWhisperProvider;
-pub use openrouter::OpenRouterProvider;
+pub use openrouter::{OpenRouterProvider, OpenRouterSttMode, SttPath};

@@ -127,6 +127,7 @@ dependencies = [
  "tokio",
  "toml",
  "tracing",
+ "url",
  "which",
  "whisper-rs",
  "wiremock",

@@ -98,6 +98,9 @@ impl From<TranscriptionError> for FfiError {
                 ProviderError::ModelLoad { .. }
                 | ProviderError::TranscriptionFailed { .. }
                 | ProviderError::Remote { .. }
+                | ProviderError::ResponseTooLarge { .. }
+                | ProviderError::InvalidProviderPayload { .. }
+                | ProviderError::LimitExceeded { .. }
                 | ProviderError::Other { .. } => FfiStatus::Inference,
             },
             TranscriptionError::Internal(_) => FfiStatus::Internal,

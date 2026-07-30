@@ -10,9 +10,10 @@ use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
 use aurum_core::output::{self, commit_text, CommitMode, OutputFormat};
 use aurum_core::providers::{
-    BackendKind, LocalWhisperProvider, OpenRouterProvider, TranscriptionOptions,
+    BackendKind, LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, TranscriptionOptions,
     TranscriptionProvider,
 };
+use aurum_core::remote::RemotePolicy;
 use aurum_core::SynthesisProvider;
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
@@ -63,6 +64,36 @@ pub enum Commands {
 
     /// Synthesize speech from text (local ONNX TTS → mono WAV).
     Tts(TtsCli),
+
+    /// Inspect and verify local model/voice-pack cache (JOE-1592).
+    Cache(CacheCli),
+}
+
+/// `aurum cache` — inventory / verify / repair surface.
+#[derive(Debug, Parser)]
+pub struct CacheCli {
+    #[command(subcommand)]
+    pub command: CacheCommands,
+
+    /// Emit JSON instead of a table.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Debug, Subcommand)]
+pub enum CacheCommands {
+    /// Cheap size/existence inventory (no full hashing).
+    Status,
+    /// Full digest verification for STT pins; quarantines bad artifacts (no network).
+    Verify,
+    /// Re-download a model through the verified path (requires network unless --local-only).
+    Repair {
+        /// Model name (e.g. tiny-q5_1).
+        model: String,
+        /// Fail if the model is missing rather than downloading.
+        #[arg(long)]
+        local_only: bool,
+    },
 }
 
 /// `aurum tts` — synthesize or list TTS models/voices.
@@ -117,6 +148,10 @@ pub struct TranscribeArgs {
     /// Allow SRT/timestamp output from OpenRouter despite unreliable timings.
     #[arg(long = "allow-unreliable-timestamps")]
     pub allow_unreliable_timestamps: bool,
+
+    /// OpenRouter STT path: auto | chat | transcriptions (JOE-1586).
+    #[arg(long = "openrouter-stt-mode", value_name = "auto|chat|transcriptions")]
+    pub openrouter_stt_mode: Option<String>,
 
     /// Post-transcript cleanup style (default: raw = off).
     #[arg(
@@ -263,6 +298,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Transcribe(args)) => run_transcribe(args).await,
         Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
         Some(Commands::Tts(tts)) => run_tts_cli(tts).await,
+        Some(Commands::Cache(cache)) => run_cache_cmd(cache).await,
         None => {
             if cli.transcribe.audio_file.is_none() {
                 eprintln!(
@@ -570,31 +606,14 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
     // SRT always needs timestamps.
     let want_timestamps = cfg.timestamps || matches!(format, OutputFormat::Srt);
 
-    // OpenRouter timestamps are unreliable — refuse SRT unless explicitly overridden.
-    if provider_name == "openrouter"
-        && matches!(format, OutputFormat::Srt)
-        && !cli.allow_unreliable_timestamps
-    {
-        return Err(UserError::Other {
-            message:
-                "OpenRouter is LLM-assisted and does not produce reliable media timestamps.\n \
- Use `-o txt` or `-o json` (json sets timestamps_reliable=false), or pass \
- `--allow-unreliable-timestamps` to force SRT."
-                    .into(),
-        }
-        .into());
-    }
+    let stt_mode_raw = cli
+        .openrouter_stt_mode
+        .as_deref()
+        .unwrap_or(cfg.openrouter_stt_mode.as_str());
+    let stt_mode = OpenRouterSttMode::parse(stt_mode_raw)?;
 
-    if provider_name == "openrouter"
-        && want_timestamps
-        && !cli.allow_unreliable_timestamps
-        && atty_stderr()
-    {
-        eprintln!(
-            "aurum: warning: OpenRouter timestamps are best-effort only \
- (timestamps_reliable=false in JSON)"
-        );
-    }
+    // Chat/LLM path timestamps are unreliable; dedicated ASR may be reliable.
+    // We still warn before the request; final SRT gate uses result.timestamps_reliable.
 
     tracing::info!(
     provider = %provider_name,
@@ -671,14 +690,24 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
             provider.transcribe(&audio, &options).await?
         }
         "openrouter" => {
-            let provider = OpenRouterProvider::new(
+            let policy = RemotePolicy {
+                allow_custom_credentialed_endpoint: cfg.openrouter_allow_custom_endpoint,
+                use_system_proxy: cfg.openrouter_use_system_proxy,
+                allow_loopback_http: cfg.openrouter_base_url.contains("127.0.0.1")
+                    || cfg.openrouter_base_url.contains("localhost"),
+                ..Default::default()
+            };
+            let provider = OpenRouterProvider::with_policy(
                 cfg.openrouter_api_key.clone(),
                 Some(cfg.openrouter_base_url.clone()),
+                policy,
+                stt_mode,
             )?;
             if cli.verbose {
                 eprintln!(
-                    "aurum: provider=openrouter model={model} backend={:?}",
-                    BackendKind::LlmAssisted
+                    "aurum: provider=openrouter model={model} stt_mode={} path={:?}",
+                    stt_mode.as_str(),
+                    provider.resolve_path(&model)
                 );
             }
             provider.transcribe(&audio, &options).await?
@@ -690,6 +719,23 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
             .into());
         }
     };
+
+    // SRT requires reliable timings unless explicitly overridden.
+    if matches!(format, OutputFormat::Srt)
+        && !result.timestamps_reliable
+        && !cli.allow_unreliable_timestamps
+    {
+        return Err(UserError::Other {
+            message: format!(
+                "Selected path did not produce reliable media timestamps \
+                 (backend={:?}, timestamps_reliable=false).\n  \
+                 Hint: use `-o txt` or `-o json`, pass `--allow-unreliable-timestamps`, \
+                 or use `--openrouter-stt-mode transcriptions` with a dedicated ASR model.",
+                result.backend_kind
+            ),
+        }
+        .into());
+    }
 
     let cleanup_style = CleanupStyle::parse(&cfg.cleanup_style)?;
     let cleanup_kind = CleanupProviderKind::parse(&cfg.cleanup_provider)?;
@@ -834,13 +880,23 @@ async fn read_cleanup_input(path: Option<&std::path::Path>) -> Result<String> {
 fn build_cleanup_backend(cfg: &Config, kind: CleanupProviderKind) -> Result<Box<dyn TextCleanup>> {
     match kind {
         CleanupProviderKind::Rules => Ok(Box::new(RulesCleanup::new())),
-        CleanupProviderKind::OpenRouter => Ok(Box::new(OpenRouterCleanup::new(
-            cfg.openrouter_api_key.clone(),
-            Some(cfg.openrouter_base_url.clone()),
-            cfg.cleanup_openrouter_model
-                .clone()
-                .or_else(|| Some(cfg.openrouter_default_model.clone())),
-        )?)),
+        CleanupProviderKind::OpenRouter => {
+            let policy = RemotePolicy {
+                allow_custom_credentialed_endpoint: cfg.openrouter_allow_custom_endpoint,
+                use_system_proxy: cfg.openrouter_use_system_proxy,
+                allow_loopback_http: cfg.openrouter_base_url.contains("127.0.0.1")
+                    || cfg.openrouter_base_url.contains("localhost"),
+                ..Default::default()
+            };
+            Ok(Box::new(OpenRouterCleanup::with_policy(
+                cfg.openrouter_api_key.clone(),
+                Some(cfg.openrouter_base_url.clone()),
+                cfg.cleanup_openrouter_model
+                    .clone()
+                    .or_else(|| Some(cfg.openrouter_default_model.clone())),
+                policy,
+            )?))
+        }
     }
 }
 
@@ -874,6 +930,53 @@ async fn apply_configured_cleanup(
     if verbose {
         for w in &report.warnings {
             eprintln!("aurum: cleanup note: {w}");
+        }
+    }
+    Ok(())
+}
+
+async fn run_cache_cmd(cli: CacheCli) -> Result<()> {
+    let cfg = Config::load()?;
+    match cli.command {
+        CacheCommands::Status => {
+            let entries = aurum_core::cache::status_stt(&cfg.cache_dir);
+            if cli.json {
+                println!("{}", aurum_core::cache::status_json(&entries)?);
+            } else {
+                print!("{}", aurum_core::cache::format_status(&entries));
+            }
+        }
+        CacheCommands::Verify => {
+            let entries = aurum_core::cache::verify_stt(&cfg.cache_dir);
+            if cli.json {
+                println!("{}", aurum_core::cache::status_json(&entries)?);
+            } else {
+                print!("{}", aurum_core::cache::format_status(&entries));
+            }
+        }
+        CacheCommands::Repair { model, local_only } => {
+            use aurum_core::model::{ensure_model_with_options, EnsureModelOptions};
+            let path = ensure_model_with_options(
+                &cfg.cache_dir,
+                &model,
+                EnsureModelOptions::new()
+                    .local_only(local_only)
+                    .show_progress(true),
+            )
+            .await?;
+            if cli.json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "model": model,
+                        "path": path.display().to_string(),
+                        "repaired": true,
+                        "local_only": local_only,
+                    })
+                );
+            } else {
+                println!("aurum: repaired model `{model}` → {}", path.display());
+            }
         }
     }
     Ok(())

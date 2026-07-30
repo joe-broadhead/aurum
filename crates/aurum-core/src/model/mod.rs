@@ -10,7 +10,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 /// HuggingFace repo hosting official ggml whisper.cpp models.
+/// Content authenticity is enforced by reviewed SHA-256 pins (JOE-1590), not by
+/// mutable branch tip alone. Prefer pins over URL mutability.
 const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+/// Manifest schema version for diagnostics (JOE-1590).
+pub const ARTIFACT_MANIFEST_VERSION: &str = "1";
+/// Provenance label for built-in pins.
+pub const ARTIFACT_MANIFEST_SOURCE: &str = "aurum-builtin-review";
 
 /// Known local model names and their ggml filenames.
 #[derive(Debug, Clone, Copy)]
@@ -530,10 +536,13 @@ async fn download_model(
     }
 
     // Bound total download time so a stalled transfer can't hold the lock forever.
+    // Follow redirects only onto known HuggingFace CDN hosts (HF always 302s resolve/
+    // URLs). Credentialed OpenRouter traffic stays on HardenedHttpClient (no redirects).
     let client = reqwest::Client::builder()
         .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(std::time::Duration::from_secs(30))
         .timeout(std::time::Duration::from_secs(30 * 60))
+        .redirect(reqwest::redirect::Policy::custom(hf_redirect_policy))
         .build()
         .map_err(|e| ProviderError::ModelDownload {
             model: info.name.to_string(),
@@ -595,11 +604,12 @@ async fn download_model(
             })?;
         hasher.update(&chunk);
         downloaded += chunk.len() as u64;
-        // Cap stream size (disk-fill protection). Allow 25% slack over Content-Length / approx.
-        let max_allowed = total
-            .saturating_mul(5)
-            .saturating_div(4)
-            .max(info.approx_bytes);
+        // Hard cap from reviewed metadata only (JOE-1591). Content-Length cannot raise it.
+        let max_allowed = crate::download::download_byte_cap(
+            info.approx_bytes,
+            pinned_exact_bytes(info.filename),
+            3,
+        );
         if downloaded > max_allowed {
             let _ = fs::remove_file(&partial);
             return Err(ProviderError::ModelDownload {
@@ -623,37 +633,56 @@ async fn download_model(
     }
 
     file.flush().ok();
+    let _ = file.sync_all();
     drop(file);
-
-    fs::rename(&partial, dest).map_err(|e| EnvironmentError::DirectoryAccess {
-        path: dest.display().to_string(),
-        reason: e.to_string(),
-    })?;
-
-    if let Some(pb) = pb {
-        pb.finish_with_message(format!("Downloaded {} ({downloaded} bytes)", info.name));
-    }
 
     let digest = hex::encode(hasher.finalize());
     tracing::info!(
         model = info.name,
         sha256 = %digest,
         bytes = downloaded,
-        "model download complete"
+        "model download complete (pre-publish)"
     );
 
-    // Fail closed when we have a known-good pin for this filename.
+    // Verify-before-publish (JOE-1591): never expose a bad file at the final path.
     if let Some(expected) = pinned_sha256(info.filename) {
         if digest != expected {
-            let _ = fs::remove_file(dest);
+            let _ = fs::remove_file(&partial);
             return Err(ProviderError::ModelDownload {
                 model: info.name.to_string(),
                 reason: format!(
-                    "sha256 mismatch (got {digest}, expected {expected}) — refusing to cache"
+                    "sha256 mismatch (got {digest}, expected {expected}) — refusing to publish"
                 ),
             }
             .into());
         }
+    } else if let Some(exact) = pinned_exact_bytes(info.filename) {
+        if downloaded != exact {
+            let _ = fs::remove_file(&partial);
+            return Err(ProviderError::ModelDownload {
+                model: info.name.to_string(),
+                reason: format!(
+                    "size mismatch (got {downloaded}, expected {exact}) — refusing to publish"
+                ),
+            }
+            .into());
+        }
+    }
+
+    // Atomic publish after verification.
+    if dest.exists() {
+        let _ = fs::remove_file(dest);
+    }
+    fs::rename(&partial, dest).map_err(|e| {
+        let _ = fs::remove_file(&partial);
+        EnvironmentError::DirectoryAccess {
+            path: dest.display().to_string(),
+            reason: e.to_string(),
+        }
+    })?;
+
+    if let Some(pb) = pb {
+        pb.finish_with_message(format!("Downloaded {} ({downloaded} bytes)", info.name));
     }
 
     let checksum_path = dest.with_extension("bin.sha256");
@@ -665,9 +694,25 @@ async fn download_model(
     Ok(())
 }
 
-/// Independently pinned SHA-256 digests for models we have verified.
-/// Unlisted models still get magic + size checks and a self-written sidecar.
-/// Independently verified SHA-256 digests (HuggingFace ggerganov/whisper.cpp main).
+/// Allow HuggingFace CDN redirects; stop on anything else.
+fn hf_redirect_policy(attempt: reqwest::redirect::Attempt<'_>) -> reqwest::redirect::Action {
+    let url = attempt.url();
+    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
+    let allowed = host == "huggingface.co"
+        || host.ends_with(".huggingface.co")
+        || host.ends_with(".hf.co")
+        || host == "hf.co"
+        || host.ends_with(".cdn.hf.co");
+    if allowed && attempt.previous().len() < 8 {
+        attempt.follow()
+    } else {
+        attempt.stop()
+    }
+}
+
+/// Independently reviewed SHA-256 digests (JOE-1590).
+/// A missing pin still allows download but fails closed on publish when
+/// `require_reviewed_pin` is true; cache verify reports unpinned state.
 fn pinned_sha256(filename: &str) -> Option<&'static str> {
     match filename {
         "ggml-tiny.bin" => Some("be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"),
@@ -689,6 +734,50 @@ fn pinned_sha256(filename: &str) -> Option<&'static str> {
         }
         _ => None,
     }
+}
+
+/// Reviewed exact sizes when known (from HF package metadata / maintainer review).
+pub fn pinned_exact_bytes(filename: &str) -> Option<u64> {
+    match filename {
+        "ggml-tiny.bin" => Some(77_691_713),
+        "ggml-tiny-q5_1.bin" => Some(32_152_673),
+        "ggml-tiny-q8_0.bin" => Some(43_537_433),
+        "ggml-tiny.en.bin" => Some(77_704_715),
+        "ggml-tiny.en-q5_1.bin" => Some(32_166_155),
+        "ggml-base.bin" => Some(147_951_465),
+        "ggml-base-q5_1.bin" => Some(59_707_625),
+        "ggml-base-q8_0.bin" => Some(81_768_585),
+        "ggml-base.en.bin" => Some(147_964_211),
+        "ggml-base.en-q5_1.bin" => Some(59_721_011),
+        "ggml-small.bin" => Some(487_601_967),
+        "ggml-small-q5_1.bin" => Some(190_085_487),
+        "ggml-small-q8_0.bin" => Some(264_464_607),
+        "ggml-small.en.bin" => Some(487_614_201),
+        "ggml-small.en-q5_1.bin" => Some(190_098_681),
+        "ggml-medium.bin" => Some(1_533_763_059),
+        "ggml-medium.en.bin" => Some(1_533_774_781),
+        "ggml-large-v3.bin" => Some(3_095_033_483),
+        "ggml-large-v3-q5_0.bin" => Some(1_081_140_203),
+        "ggml-large-v3-turbo.bin" => Some(1_624_555_275),
+        "ggml-large-v3-turbo-q5_0.bin" => Some(574_041_195),
+        _ => None,
+    }
+}
+
+/// Diagnostic JSON for a catalogue entry (manifest provenance).
+pub fn artifact_manifest_json(info: &ModelInfo) -> serde_json::Value {
+    serde_json::json!({
+        "manifest_version": ARTIFACT_MANIFEST_VERSION,
+        "source": ARTIFACT_MANIFEST_SOURCE,
+        "id": info.name,
+        "filename": info.filename,
+        "approx_bytes": info.approx_bytes,
+        "exact_bytes": pinned_exact_bytes(info.filename),
+        "sha256": pinned_sha256(info.filename),
+        "license": "MIT (whisper.cpp weights via OpenAI Whisper terms)",
+        "family": "whisper",
+        "download_url_template": format!("{HF_BASE}/{}", info.filename),
+    })
 }
 
 fn sweep_stale_partials(dir: &Path) {
@@ -716,6 +805,11 @@ fn sweep_stale_partials(dir: &Path) {
     }
 }
 
+/// Public local-only verify used by cache inventory (no network).
+pub fn ensure_model_verified_local(path: &Path, info: &ModelInfo) -> Result<()> {
+    verify_model_basic(path, info)
+}
+
 /// Basic integrity check: file exists, is large enough, and starts with ggml magic-ish bytes.
 fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
     let meta = fs::metadata(path).map_err(|e| ProviderError::ModelDownload {
@@ -724,11 +818,11 @@ fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
     })?;
 
     if meta.len() < 1_000_000 {
-        let _ = fs::remove_file(path);
+        // Do not delete — cache verify quarantines; leave bytes for forensics.
         return Err(ProviderError::ModelDownload {
             model: info.name.to_string(),
             reason: format!(
-                "downloaded file is only {} bytes — likely truncated or HTML error page",
+                "model file is only {} bytes — likely truncated or HTML error page",
                 meta.len()
             ),
         }
@@ -762,7 +856,7 @@ fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
     );
 
     if !magic_ok {
-        let _ = fs::remove_file(path);
+        // Do not delete — cache verify quarantines; leave bytes for forensics.
         return Err(ProviderError::ModelDownload {
             model: info.name.to_string(),
             reason: format!(
@@ -773,13 +867,16 @@ fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
         .into());
     }
 
-    // When a pin exists, also enforce it on cache hits.
+    // When a pin exists, enforce it on cache hits. Do not delete — quarantine is
+    // the operator path (JOE-1592); here we fail closed for consumers.
     if let Some(expected) = pinned_sha256(info.filename) {
         if !verify_against_expected(path, expected) {
-            let _ = fs::remove_file(path);
             return Err(ProviderError::ModelDownload {
                 model: info.name.to_string(),
-                reason: format!("cached model failed pinned sha256 check ({expected})"),
+                reason: format!(
+                    "cached model failed pinned sha256 check ({expected}); \
+                     run `aurum cache verify` / quarantine repair"
+                ),
             }
             .into());
         }
@@ -835,5 +932,31 @@ mod tests {
         assert!(list.contains("tiny-q5_1"));
         assert!(list.contains("base-q5_1"));
         assert!(list.contains("first run"));
+    }
+
+    #[test]
+    fn every_catalogue_file_has_exact_size_metadata() {
+        // JOE-1590: exact size is required reviewed metadata for every unique file.
+        let mut missing = Vec::new();
+        for m in MODELS {
+            if pinned_exact_bytes(m.filename).is_none() {
+                missing.push(m.filename);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "missing exact_bytes pins for: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn reviewed_sha256_pins_cover_default_and_trial_models() {
+        for name in ["tiny", "tiny-q5_1", "base", "base-q5_1"] {
+            let info = lookup_model(name).unwrap();
+            assert!(
+                pinned_sha256(info.filename).is_some(),
+                "missing sha256 for default/trial model {name}"
+            );
+        }
     }
 }

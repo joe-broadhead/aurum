@@ -45,15 +45,18 @@
 //! ```
 
 pub mod audio;
+pub mod cache;
 pub mod cancel;
 pub mod cleanup;
 pub mod config;
+pub mod download;
 pub mod error;
 pub mod model;
 pub mod output;
 pub mod pcm;
 pub mod postprocess;
 pub mod providers;
+pub mod remote;
 #[cfg(feature = "tts")]
 pub mod tts;
 pub mod window;
@@ -74,9 +77,10 @@ pub use output::{
 };
 pub use pcm::PcmBuffer;
 pub use providers::{
-    LocalWhisperProvider, OpenRouterProvider, Segment, TranscriptionOptions, TranscriptionProvider,
-    TranscriptionResult,
+    LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,
+    TranscriptionProvider, TranscriptionResult,
 };
+pub use remote::{HardenedHttpClient, RemotePolicy};
 pub use window::{PartialClock, PartialWindowPolicy};
 
 #[cfg(feature = "tts")]

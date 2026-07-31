@@ -5,9 +5,9 @@
 
 use super::adapter::{
     list_adapters, preflight_manifest, AdapterDescriptor, ModelPackManifest, TrustMode,
-    ADAPTER_FAKE_SINE_V1, ADAPTER_KITTEN_ONNX_V1, MANIFEST_SCHEMA_VERSION,
+    ADAPTER_FAKE_SINE_V1, ADAPTER_KITTEN_ONNX_V1, ADAPTER_KOKORO_ONNX_V0, MANIFEST_SCHEMA_VERSION,
 };
-use super::catalogue::{lookup_model, DEFAULT_TTS_MODEL};
+use super::catalogue::{lookup_model, DEFAULT_TTS_MODEL, KOKORO_TTS_MODEL};
 use super::pack::{load_pack_dir, verify_pack_artifacts};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -191,10 +191,25 @@ pub fn run_kitten_catalogue_conformance() -> ConformanceReport {
 /// Ensure every registered adapter appears in the suite policy.
 pub fn adapter_registry_complete() -> Result<(), String> {
     let ids: Vec<_> = list_adapters().into_iter().map(|a| a.id).collect();
-    for need in [ADAPTER_KITTEN_ONNX_V1, ADAPTER_FAKE_SINE_V1] {
+    for need in [
+        ADAPTER_KITTEN_ONNX_V1,
+        ADAPTER_FAKE_SINE_V1,
+        ADAPTER_KOKORO_ONNX_V0,
+    ] {
         if !ids.contains(&need) {
             return Err(format!("missing adapter {need}"));
         }
+    }
+    let kokoro = list_adapters()
+        .into_iter()
+        .find(|a| a.id == ADAPTER_KOKORO_ONNX_V0)
+        .ok_or_else(|| "kokoro adapter missing".to_string())?;
+    if !kokoro.synthesis_supported {
+        return Err("kokoro-onnx-v0 must support synthesis after JOE-1618".into());
+    }
+    let info = lookup_model(KOKORO_TTS_MODEL).map_err(|e| e.to_string())?;
+    if !info.shipped || info.adapter != ADAPTER_KOKORO_ONNX_V0 {
+        return Err("kokoro-82m-int8 catalogue entry must be shipped with kokoro-onnx-v0".into());
     }
     Ok(())
 }

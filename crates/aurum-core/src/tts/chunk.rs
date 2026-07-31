@@ -4,8 +4,18 @@
 //! clauses/whitespace, so every chunk stays within the model token capacity.
 //! An unsplittable unit that exceeds the limit is rejected with size guidance.
 
-use super::tokenize::ipa_to_ids;
+use super::kokoro_vocab;
+use super::tokenize;
 use crate::error::{ProviderError, Result, UserError};
+
+/// Phoneme→id map selected by the active TTS adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PhonemeCodec {
+    /// KittenTTS / StyleTTS2 cleaner vocabulary.
+    Kitten,
+    /// Kokoro-82M config vocab (JOE-1618).
+    Kokoro,
+}
 
 /// One synthesis unit: source text + padded phoneme token ids.
 #[derive(Debug, Clone)]
@@ -14,11 +24,15 @@ pub(super) struct TtsChunk {
     pub(super) ids: Vec<i64>,
 }
 
-/// Split `text` into model-safe chunks.
+/// Split `text` into model-safe chunks for the given adapter codec.
 ///
 /// `max_tokens` is the maximum phoneme-token sequence length accepted by the
 /// loaded voice pack (including start/end pads).
-pub(super) fn prepare_tts_chunks(text: &str, max_tokens: usize) -> Result<Vec<TtsChunk>> {
+pub(super) fn prepare_tts_chunks_with(
+    text: &str,
+    max_tokens: usize,
+    codec: PhonemeCodec,
+) -> Result<Vec<TtsChunk>> {
     if max_tokens <= 2 {
         return Err(ProviderError::Other {
             message: format!("TTS model token capacity is too small ({max_tokens}); need > 2"),
@@ -32,18 +46,18 @@ pub(super) fn prepare_tts_chunks(text: &str, max_tokens: usize) -> Result<Vec<Tt
 
     for sentence in sentence_segments(text) {
         let candidate = join_text(&pending, sentence);
-        if phoneme_ids(&g2p, &candidate)?.len() <= max_tokens {
+        if phoneme_ids(&g2p, &candidate, codec)?.len() <= max_tokens {
             pending = candidate;
             continue;
         }
         if !pending.is_empty() {
-            chunks.push(make_chunk(&g2p, &pending, max_tokens)?);
+            chunks.push(make_chunk(&g2p, &pending, max_tokens, codec)?);
             pending.clear();
         }
-        chunks.extend(split_oversize_segment(&g2p, sentence, max_tokens)?);
+        chunks.extend(split_oversize_segment(&g2p, sentence, max_tokens, codec)?);
     }
     if !pending.is_empty() {
-        chunks.push(make_chunk(&g2p, &pending, max_tokens)?);
+        chunks.push(make_chunk(&g2p, &pending, max_tokens, codec)?);
     }
     if chunks.is_empty() {
         return Err(ProviderError::Other {
@@ -58,20 +72,21 @@ fn split_oversize_segment(
     g2p: &misaki_rs::G2P,
     text: &str,
     max_tokens: usize,
+    codec: PhonemeCodec,
 ) -> Result<Vec<TtsChunk>> {
     let mut chunks = Vec::new();
     let mut pending = String::new();
     for word in text.split_whitespace() {
         let candidate = join_text(&pending, word);
-        if phoneme_ids(g2p, &candidate)?.len() <= max_tokens {
+        if phoneme_ids(g2p, &candidate, codec)?.len() <= max_tokens {
             pending = candidate;
             continue;
         }
         if !pending.is_empty() {
-            chunks.push(make_chunk(g2p, &pending, max_tokens)?);
+            chunks.push(make_chunk(g2p, &pending, max_tokens, codec)?);
         }
         pending = word.to_string();
-        let word_len = phoneme_ids(g2p, &pending)?.len();
+        let word_len = phoneme_ids(g2p, &pending, codec)?.len();
         if word_len > max_tokens {
             return Err(UserError::Other {
                 message: format!(
@@ -85,13 +100,18 @@ fn split_oversize_segment(
         }
     }
     if !pending.is_empty() {
-        chunks.push(make_chunk(g2p, &pending, max_tokens)?);
+        chunks.push(make_chunk(g2p, &pending, max_tokens, codec)?);
     }
     Ok(chunks)
 }
 
-fn make_chunk(g2p: &misaki_rs::G2P, text: &str, max_tokens: usize) -> Result<TtsChunk> {
-    let ids = phoneme_ids(g2p, text)?;
+fn make_chunk(
+    g2p: &misaki_rs::G2P,
+    text: &str,
+    max_tokens: usize,
+    codec: PhonemeCodec,
+) -> Result<TtsChunk> {
+    let ids = phoneme_ids(g2p, text, codec)?;
     if ids.len() <= 2 || ids.len() > max_tokens {
         return Err(ProviderError::Other {
             message: format!(
@@ -107,12 +127,16 @@ fn make_chunk(g2p: &misaki_rs::G2P, text: &str, max_tokens: usize) -> Result<Tts
     })
 }
 
-fn phoneme_ids(g2p: &misaki_rs::G2P, text: &str) -> Result<Vec<i64>> {
+fn phoneme_ids(g2p: &misaki_rs::G2P, text: &str, codec: PhonemeCodec) -> Result<Vec<i64>> {
     let (ipa, _) = g2p.g2p(text).map_err(|e| ProviderError::Other {
         message: format!("G2P failed: {e}"),
     })?;
     // Strip unknown markers that misaki may emit without espeak fallback.
-    Ok(ipa_to_ids(&ipa.replace('❓', "")))
+    let cleaned = ipa.replace('❓', "");
+    Ok(match codec {
+        PhonemeCodec::Kitten => tokenize::ipa_to_ids(&cleaned),
+        PhonemeCodec::Kokoro => kokoro_vocab::ipa_to_ids(&cleaned),
+    })
 }
 
 fn sentence_segments(text: &str) -> Vec<&str> {
@@ -177,7 +201,7 @@ mod tests {
             to all-round cyclists such as Eddy Merckx and Bernard Hinault. Despite his youth, he \
             is considered one of the greatest cyclists of all time.";
 
-        let chunks = prepare_tts_chunks(text, 399).unwrap();
+        let chunks = prepare_tts_chunks_with(text, 399, PhonemeCodec::Kitten).unwrap();
 
         assert!(chunks.len() > 1);
         assert!(chunks.iter().all(|chunk| chunk.ids.len() <= 399));
@@ -200,7 +224,7 @@ mod tests {
     fn punctuation_free_text_falls_back_to_word_boundaries() {
         let text = "one two three four five six seven eight nine ten eleven twelve";
 
-        let chunks = prepare_tts_chunks(text, 25).unwrap();
+        let chunks = prepare_tts_chunks_with(text, 25, PhonemeCodec::Kitten).unwrap();
 
         assert!(chunks.len() > 1);
         assert!(chunks.iter().all(|chunk| chunk.ids.len() <= 25));
@@ -225,15 +249,29 @@ mod tests {
     #[test]
     fn unsplittable_unit_is_user_error() {
         // Force a tiny limit so a single word cannot fit.
-        let err = prepare_tts_chunks("supercalifragilisticexpialidocious", 3).unwrap_err();
+        let err = prepare_tts_chunks_with(
+            "supercalifragilisticexpialidocious",
+            3,
+            PhonemeCodec::Kitten,
+        )
+        .unwrap_err();
         assert_eq!(err.exit_code(), 2, "{err}");
         assert!(err.to_string().contains("exceeds"));
     }
 
     #[test]
     fn just_under_limit_single_chunk() {
-        let chunks = prepare_tts_chunks("Hello world.", 399).unwrap();
+        let chunks = prepare_tts_chunks_with("Hello world.", 399, PhonemeCodec::Kitten).unwrap();
         assert_eq!(chunks.len(), 1);
         assert!(chunks[0].ids.len() <= 399);
+    }
+
+    #[test]
+    fn kokoro_codec_produces_padded_ids() {
+        let chunks = prepare_tts_chunks_with("Hello world.", 509, PhonemeCodec::Kokoro).unwrap();
+        assert_eq!(chunks.len(), 1);
+        assert_eq!(chunks[0].ids[0], 0);
+        assert_eq!(*chunks[0].ids.last().unwrap(), 0);
+        assert!(chunks[0].ids.len() > 2);
     }
 }

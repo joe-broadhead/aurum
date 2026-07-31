@@ -11,7 +11,7 @@ Partials and hold-to-talk UX stay in the host.
 | Header | [`crates/aurum-ffi/include/aurum.h`](https://github.com/joe-broadhead/aurum/blob/master/crates/aurum-ffi/include/aurum.h) |
 | Crate | `aurum-ffi` (workspace; not required for CLI users) |
 | Sample rate | **16 000 Hz** mono `float32` |
-| ABI | `AURUM_ABI_VERSION` (currently `1`; additive status codes `BUSY`/`DEADLINE`/`OVERLOAD`) |
+| ABI | `AURUM_ABI_VERSION` **2** (jobs, capabilities, doctor, TTS jobs; v1 blocking surface kept) |
 
 ## Build
 
@@ -61,12 +61,39 @@ aurum_ffi::shutdown(); // before process exit (Metal-safe)
 
 Zero-initialize config/opts structs (`reserved` must be `0`).
 
-## Threading
+## Threading & jobs (ABI v2 / JOE-1577)
 
-- **One** exclusive op (`preload` or `transcribe_pcm`) **per engine** at a time.
-- **Distinct engines** may run concurrently.
-- Do **not** call blocking FFI from inside a host Tokio/async task (nested `block_on`).
-- `aurum_engine_last_error` pointer is valid only until the next call on the **same thread** — copy immediately.
+- **Blocking:** one exclusive op (`preload` / `transcribe_pcm`) **per engine** at a time.
+- **Jobs:** `aurum_job_start_*` returns immediately; poll/wait/cancel/free. Prefer jobs
+  from event-loop threads so you never nest Tokio.
+- **Distinct engines** may run concurrently; `aurum_engine_shutdown` drains one engine only.
+- Process `aurum_shutdown_ex` closes global admission and clears whisper caches only when idle.
+- Ownership: **engine → jobs → results** (transcript / string / audio). Result take is once.
+- `aurum_engine_last_error` is valid only until the next call on the **same thread** — copy it.
+
+### Job API (summary)
+
+| Call | Role |
+|------|------|
+| `aurum_job_start_preload` / `_transcribe` / `_cleanup` / `_tts` | Nonblocking start |
+| `aurum_job_poll` | State + progress (0–100) |
+| `aurum_job_wait` | Block until terminal or timeout (no auto-cancel) |
+| `aurum_job_cancel` | Cooperative cancel (other thread OK) |
+| `aurum_job_take_*` | Transfer result exactly once |
+| `aurum_job_free` | Drop handle (cancels if still running) |
+
+### Capabilities & doctor
+
+```c
+AurumCapabilities caps = {0};
+caps.struct_version = 1;
+aurum_capabilities(&caps);   /* has_stt/tts/jobs/doctor, sample rate */
+
+char *json = NULL;
+aurum_doctor_json(&json);    /* free with aurum_string_free */
+```
+
+CLI: `aurum doctor` / `aurum doctor --json`.
 
 ## Host checklist
 
@@ -77,7 +104,7 @@ Zero-initialize config/opts structs (`reserved` must be `0`).
 | Offline | `local_only = 1` |
 | Cancel | `aurum_engine_cancel` mid-hold |
 | Cleanup | Separate stage after ASR (`cleanup_rules`) |
-| Exit | `destroy` all engines, then `aurum_shutdown` / `aurum_shutdown_ex` (prefer the latter if you need `BUSY`) |
+| Exit | Free job results → `aurum_engine_shutdown` → `destroy` engines → `aurum_shutdown_ex` (jobs count toward drain) |
 | Partials | Host loop + rolling PCM window; see [Partials](partials.md) |
 
 ## Related

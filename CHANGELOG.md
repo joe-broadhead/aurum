@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1577** Native SDK, FFI v2 and operability:
+  - Explicit engine ownership with per-engine job drain
+    (`aurum_engine_shutdown`) that does not poison other engines (JOE-1622)
+  - Asynchronous job API: start/poll/wait/cancel/take/free for preload, STT,
+    cleanup, and local TTS (JOE-1623/1629)
+  - ABI v2: expanded status codes, `aurum_capabilities`, versioned snapshots,
+    pointer+length TTS text (JOE-1624)
+  - Documented ownership graph and thread-safety model (JOE-1625)
+  - C ABI smoke + layout tests for capabilities/jobs (JOE-1626)
+  - Process metrics + redacted diagnostic bundle (JOE-1627)
+  - `aurum doctor` / `aurum_doctor_json` read-only diagnostics (JOE-1628)
+
 - **JOE-1576** TTS model platform and safe BYOM:
   - Versioned adapter contract + `aurum-tts-manifest.json` pack schema
     (`kitten-onnx-v1`, `fake-sine-v1` conformance fixture, `kokoro-onnx-v0`

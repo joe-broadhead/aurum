@@ -1,7 +1,13 @@
 //! Public façade types (no raw pointers).
 
 /// Monotonic C ABI version. Bump on any breaking C/header change.
-pub const AURUM_ABI_VERSION: u32 = 1;
+///
+/// v2 adds jobs, capabilities, expanded statuses, doctor, and TTS jobs while
+/// keeping v1 blocking exports binary-compatible (JOE-1577).
+pub const AURUM_ABI_VERSION: u32 = 2;
+
+/// Oldest ABI still supported by this build (v1 blocking surface).
+pub const AURUM_ABI_MIN_VERSION: u32 = 1;
 
 /// Required PCM sample rate (Hz), mono f32.
 pub const AURUM_SAMPLE_RATE: u32 = 16_000;

@@ -25,7 +25,13 @@ name = "aurum_ffi"
 crate-type = ["cdylib", "staticlib", "rlib"]
 path = "src/lib.rs"
 
+[features]
+default = ["tts"]
+## Local TTS jobs via aurum-core (JOE-1629).
+tts = ["aurum-core/tts"]
+
 [dependencies]
+# Features come from workspace default (tts on) unless callers disable defaults.
 aurum-core = { workspace = true }
 once_cell = { workspace = true }
 tokio = { workspace = true }

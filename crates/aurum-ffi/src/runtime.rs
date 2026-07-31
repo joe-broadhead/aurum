@@ -45,6 +45,27 @@ where
     Ok(rt.handle().block_on(fut))
 }
 
+/// Tokio handle for nonblocking job spawn (JOE-1623).
+///
+/// Hosts should prefer [`crate::jobs`] over nested `block_on` inside another
+/// runtime; spawn + poll/wait does not require the caller to own a Tokio runtime.
+pub fn handle() -> Result<tokio::runtime::Handle, FfiError> {
+    Ok(runtime()?.handle().clone())
+}
+
+/// Whether the process lifecycle is still accepting work.
+pub fn is_running() -> bool {
+    LIFECYCLE.is_running()
+}
+
+/// Admit a long-lived job into the process lifecycle active count (JOE-1577).
+///
+/// Hold the ticket for the full job lifetime so `aurum_shutdown_ex` cannot
+/// clear whisper caches while jobs still run.
+pub fn begin_job() -> Result<OpAdmission<'static>, FfiError> {
+    begin_op()
+}
+
 /// Atomically admit one op if the lifecycle is still Running.
 ///
 /// Drop the returned ticket to unregister (panic-safe).

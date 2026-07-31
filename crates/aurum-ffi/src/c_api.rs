@@ -8,6 +8,7 @@
 
 use crate::error::{FfiError, FfiStatus};
 use crate::facade::{self, Engine};
+use crate::jobs::JobState;
 use crate::types::{
     CleanupStyle, EngineConfig, TranscribeOpts, Transcript, AURUM_ABI_VERSION, AURUM_SAMPLE_RATE,
 };
@@ -224,7 +225,12 @@ pub unsafe extern "C" fn aurum_engine_destroy(engine: *mut AurumEngine) {
         return;
     }
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
-        drop(Box::from_raw(engine));
+        // Cancel + best-effort short drain so jobs do not outlive the handle.
+        let eng = Box::from_raw(engine);
+        let _ = eng
+            .inner
+            .shutdown_engine(std::time::Duration::from_millis(250));
+        drop(eng);
     }));
 }
 
@@ -463,6 +469,500 @@ pub unsafe extern "C" fn aurum_string_free(s: *mut c_char) {
     }
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
         drop(CString::from_raw(s));
+    }));
+}
+
+/* ---------- ABI capabilities / doctor (JOE-1624 / JOE-1628) ---------- */
+
+#[repr(C)]
+pub struct AurumCapabilitiesC {
+    pub struct_size: u32,
+    pub struct_version: u32,
+    pub abi_version: u32,
+    pub abi_min_version: u32,
+    pub has_stt: u8,
+    pub has_tts: u8,
+    pub has_cleanup: u8,
+    pub has_jobs: u8,
+    pub has_doctor: u8,
+    pub sample_rate_hz: u32,
+    pub reserved: [u8; 16],
+}
+
+/// Fill `out` with supported features. `out->struct_size` must be set by host
+/// (or zero for "use sizeof this build"). Rejects unsupported struct_version.
+#[no_mangle]
+pub unsafe extern "C" fn aurum_capabilities(out: *mut AurumCapabilitiesC) -> i32 {
+    catch_status(|| {
+        if out.is_null() {
+            return Err(FfiError::invalid_arg("out must be non-null"));
+        }
+        let host_size = unsafe { (*out).struct_size };
+        let host_ver = unsafe { (*out).struct_version };
+        let caps = crate::jobs::AbiCapabilities::current();
+        if host_ver != 0 && host_ver != 1 {
+            return Err(FfiError::invalid_arg(format!(
+                "unsupported capabilities struct_version {host_ver} (need 1)"
+            )));
+        }
+        // Zero-fill out first (safe on failure paths).
+        unsafe {
+            ptr::write_bytes(out as *mut u8, 0, std::mem::size_of::<AurumCapabilitiesC>());
+            (*out).struct_size = caps.struct_size;
+            (*out).struct_version = caps.struct_version;
+            (*out).abi_version = caps.abi_version;
+            (*out).abi_min_version = caps.abi_min_version;
+            (*out).has_stt = caps.has_stt;
+            (*out).has_tts = caps.has_tts;
+            (*out).has_cleanup = caps.has_cleanup;
+            (*out).has_jobs = caps.has_jobs;
+            (*out).has_doctor = caps.has_doctor;
+            (*out).sample_rate_hz = caps.sample_rate_hz;
+            let _ = host_size; // accepted for forward compat
+        }
+        Ok(())
+    })
+}
+
+/// Run doctor checks; writes JSON to *out_json (free with aurum_string_free).
+#[no_mangle]
+pub unsafe extern "C" fn aurum_doctor_json(out_json: *mut *mut c_char) -> i32 {
+    catch_status(|| {
+        if out_json.is_null() {
+            return Err(FfiError::invalid_arg("out_json must be non-null"));
+        }
+        unsafe {
+            *out_json = ptr::null_mut();
+        }
+        let cfg = aurum_core::config::Config::load().map_err(FfiError::from)?;
+        let report = aurum_core::doctor::run_doctor(&cfg);
+        let json = report.to_json_pretty().map_err(FfiError::from)?;
+        let c = CString::new(json).map_err(|_| FfiError::internal("doctor json NUL"))?;
+        unsafe {
+            *out_json = c.into_raw();
+        }
+        Ok(())
+    })
+}
+
+/* ---------- engine shutdown + jobs (JOE-1622/1623) ---------- */
+
+/// Drain this engine's jobs. Does not affect other engines.
+#[no_mangle]
+pub unsafe extern "C" fn aurum_engine_shutdown(
+    engine: *mut AurumEngine,
+    timeout_ms: c_uint,
+) -> i32 {
+    catch_status_engine(engine, |inner| {
+        inner.shutdown_engine(std::time::Duration::from_millis(timeout_ms as u64))
+    })
+}
+
+/// Opaque job handle.
+pub struct AurumJob {
+    inner: crate::jobs::Job,
+}
+
+#[repr(C)]
+pub struct AurumJobSnapshotC {
+    pub struct_size: u32,
+    pub struct_version: u32,
+    pub job_id: u64,
+    pub kind: u8,
+    pub state: u8,
+    pub progress_pct: u32,
+    pub reserved: [u8; 16],
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_start_cleanup(
+    engine: *mut AurumEngine,
+    text: *const c_char,
+    style: u8,
+    out_job: *mut *mut AurumJob,
+) -> i32 {
+    catch_status_engine(engine, |inner| {
+        if out_job.is_null() {
+            return Err(FfiError::invalid_arg("out_job must be non-null"));
+        }
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+        let text = cstr(text)?;
+        let style = CleanupStyle::from_u8(style)
+            .ok_or_else(|| FfiError::invalid_arg("unknown cleanup style"))?;
+        let job = inner.start_cleanup_job(text, style)?;
+        unsafe {
+            *out_job = Box::into_raw(Box::new(AurumJob { inner: job }));
+        }
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_start_preload(
+    engine: *mut AurumEngine,
+    model: *const c_char,
+    out_job: *mut *mut AurumJob,
+) -> i32 {
+    catch_status_engine(engine, |inner| {
+        if out_job.is_null() {
+            return Err(FfiError::invalid_arg("out_job must be non-null"));
+        }
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+        let model = cstr(model)?;
+        let job = inner.start_preload_job(model)?;
+        unsafe {
+            *out_job = Box::into_raw(Box::new(AurumJob { inner: job }));
+        }
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_start_transcribe(
+    engine: *mut AurumEngine,
+    samples: *const c_float,
+    n_samples: usize,
+    opts: *const AurumTranscribeOptsC,
+    out_job: *mut *mut AurumJob,
+) -> i32 {
+    catch_status_engine(engine, |inner| {
+        if out_job.is_null() || opts.is_null() {
+            return Err(FfiError::invalid_arg("out_job and opts must be non-null"));
+        }
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+        if samples.is_null() && n_samples > 0 {
+            return Err(FfiError::invalid_arg("samples is null"));
+        }
+        let opts_c = unsafe { &*opts };
+        require_reserved_zero(&opts_c.reserved)?;
+        let model = cstr(opts_c.model)?.to_string();
+        let language = cstr_opt(opts_c.language)?.unwrap_or("auto").to_string();
+        let slice = if n_samples == 0 {
+            &[][..]
+        } else {
+            unsafe { std::slice::from_raw_parts(samples, n_samples) }
+        };
+        let job = inner.start_transcribe_job(
+            slice,
+            &TranscribeOpts {
+                model,
+                language,
+                timestamps: opts_c.timestamps != 0,
+            },
+        )?;
+        unsafe {
+            *out_job = Box::into_raw(Box::new(AurumJob { inner: job }));
+        }
+        Ok(())
+    })
+}
+
+#[cfg(feature = "tts")]
+#[repr(C)]
+pub struct AurumTtsOptsC {
+    pub struct_size: u32,
+    pub struct_version: u32,
+    pub model: *const c_char,
+    pub voice: *const c_char,
+    pub language: *const c_char,
+    pub speaking_rate: f32,
+    pub reserved: [u8; 16],
+}
+
+#[cfg(feature = "tts")]
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_start_tts(
+    engine: *mut AurumEngine,
+    text: *const c_char,
+    text_len: usize,
+    opts: *const AurumTtsOptsC,
+    out_job: *mut *mut AurumJob,
+) -> i32 {
+    catch_status_engine(engine, |inner| {
+        if out_job.is_null() || opts.is_null() {
+            return Err(FfiError::invalid_arg("out_job and opts must be non-null"));
+        }
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+        if text.is_null() {
+            return Err(FfiError::invalid_arg("text is null"));
+        }
+        let opts_c = unsafe { &*opts };
+        if opts_c.struct_version != 0 && opts_c.struct_version != 1 {
+            return Err(FfiError::invalid_arg("unsupported tts opts version"));
+        }
+        if opts_c.reserved.iter().any(|&b| b != 0) {
+            return Err(FfiError::invalid_arg("tts opts reserved must be zero"));
+        }
+        let bytes = unsafe { std::slice::from_raw_parts(text as *const u8, text_len) };
+        let text = std::str::from_utf8(bytes)
+            .map_err(|_| FfiError::invalid_arg("TTS text is not valid UTF-8"))?;
+        let model = cstr_opt(opts_c.model)?
+            .unwrap_or(aurum_core::tts::DEFAULT_TTS_MODEL)
+            .to_string();
+        let voice = cstr_opt(opts_c.voice)?
+            .unwrap_or(aurum_core::tts::DEFAULT_TTS_VOICE)
+            .to_string();
+        let language = cstr_opt(opts_c.language)?.unwrap_or("en").to_string();
+        let rate = if opts_c.speaking_rate == 0.0 {
+            1.0
+        } else {
+            opts_c.speaking_rate
+        };
+        let job = inner.start_tts_job(text, &model, &voice, &language, rate)?;
+        unsafe {
+            *out_job = Box::into_raw(Box::new(AurumJob { inner: job }));
+        }
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_poll(job: *const AurumJob, out: *mut AurumJobSnapshotC) -> i32 {
+    catch_status(|| {
+        if job.is_null() || out.is_null() {
+            return Err(FfiError::invalid_arg("job and out must be non-null"));
+        }
+        let j = unsafe { &*job };
+        let (state, prog) = j.inner.poll();
+        unsafe {
+            ptr::write_bytes(out as *mut u8, 0, std::mem::size_of::<AurumJobSnapshotC>());
+            (*out).struct_size = std::mem::size_of::<AurumJobSnapshotC>() as u32;
+            (*out).struct_version = 1;
+            (*out).job_id = j.inner.id();
+            (*out).kind = j.inner.kind() as u8;
+            (*out).state = state as u8;
+            (*out).progress_pct = prog;
+        }
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_wait(job: *const AurumJob, timeout_ms: c_uint) -> i32 {
+    catch_status(|| {
+        if job.is_null() {
+            return Err(FfiError::invalid_arg("job is null"));
+        }
+        let j = unsafe { &*job };
+        let timeout = if timeout_ms == 0 {
+            None
+        } else {
+            Some(std::time::Duration::from_millis(timeout_ms as u64))
+        };
+        let _ = j.inner.wait(timeout)?;
+        Ok(())
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_cancel(job: *mut AurumJob) {
+    if job.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| {
+        unsafe { &*job }.inner.cancel();
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_take_transcript(
+    job: *mut AurumJob,
+    out_transcript: *mut *mut AurumTranscript,
+) -> i32 {
+    catch_status(|| {
+        if job.is_null() || out_transcript.is_null() {
+            return Err(FfiError::invalid_arg("job and out must be non-null"));
+        }
+        unsafe {
+            *out_transcript = ptr::null_mut();
+        }
+        let j = unsafe { &*job };
+        match j.inner.take_result()? {
+            crate::jobs::JobResult::Transcript(t) => {
+                let boxed = transcript_to_c(t)?;
+                unsafe {
+                    *out_transcript = Box::into_raw(boxed);
+                }
+                Ok(())
+            }
+            _ => Err(FfiError::state("job result is not a transcript")),
+        }
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_take_string(
+    job: *mut AurumJob,
+    out_text: *mut *mut c_char,
+) -> i32 {
+    catch_status(|| {
+        if job.is_null() || out_text.is_null() {
+            return Err(FfiError::invalid_arg("job and out must be non-null"));
+        }
+        unsafe {
+            *out_text = ptr::null_mut();
+        }
+        let j = unsafe { &*job };
+        match j.inner.take_result()? {
+            crate::jobs::JobResult::Cleanup { text }
+            | crate::jobs::JobResult::Preload { model: text } => {
+                let c = CString::new(text)
+                    .map_err(|_| FfiError::internal("result string contains NUL"))?;
+                unsafe {
+                    *out_text = c.into_raw();
+                }
+                Ok(())
+            }
+            _ => Err(FfiError::state("job result is not a string payload")),
+        }
+    })
+}
+
+/// Owned mono PCM result for TTS jobs.
+pub struct AurumAudio {
+    pcm: Vec<i16>,
+    sample_rate_hz: u32,
+    channels: u16,
+    model: CString,
+    voice: CString,
+    duration_ms: u64,
+}
+
+#[cfg(feature = "tts")]
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_take_audio(
+    job: *mut AurumJob,
+    out_audio: *mut *mut AurumAudio,
+) -> i32 {
+    catch_status(|| {
+        if job.is_null() || out_audio.is_null() {
+            return Err(FfiError::invalid_arg("job and out must be non-null"));
+        }
+        unsafe {
+            *out_audio = ptr::null_mut();
+        }
+        let j = unsafe { &*job };
+        match j.inner.take_result()? {
+            crate::jobs::JobResult::Audio {
+                pcm_i16,
+                sample_rate_hz,
+                channels,
+                model,
+                voice,
+                duration_ms,
+            } => {
+                let boxed = Box::new(AurumAudio {
+                    pcm: pcm_i16,
+                    sample_rate_hz,
+                    channels,
+                    model: CString::new(model)
+                        .map_err(|_| FfiError::internal("model contains NUL"))?,
+                    voice: CString::new(voice)
+                        .map_err(|_| FfiError::internal("voice contains NUL"))?,
+                    duration_ms,
+                });
+                unsafe {
+                    *out_audio = Box::into_raw(boxed);
+                }
+                Ok(())
+            }
+            _ => Err(FfiError::state("job result is not audio")),
+        }
+    })
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_samples(a: *const AurumAudio) -> *const i16 {
+    if a.is_null() {
+        return ptr::null();
+    }
+    unsafe { &*a }.pcm.as_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_len(a: *const AurumAudio) -> usize {
+    if a.is_null() {
+        return 0;
+    }
+    unsafe { &*a }.pcm.len()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_sample_rate(a: *const AurumAudio) -> c_uint {
+    if a.is_null() {
+        return 0;
+    }
+    unsafe { &*a }.sample_rate_hz
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_channels(a: *const AurumAudio) -> u16 {
+    if a.is_null() {
+        return 0;
+    }
+    unsafe { &*a }.channels
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_duration_ms(a: *const AurumAudio) -> u64 {
+    if a.is_null() {
+        return 0;
+    }
+    unsafe { &*a }.duration_ms
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_model(a: *const AurumAudio) -> *const c_char {
+    if a.is_null() {
+        return ptr::null();
+    }
+    unsafe { &*a }.model.as_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_voice(a: *const AurumAudio) -> *const c_char {
+    if a.is_null() {
+        return ptr::null();
+    }
+    unsafe { &*a }.voice.as_ptr()
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_audio_free(a: *mut AurumAudio) {
+    if a.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
+        drop(Box::from_raw(a));
+    }));
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn aurum_job_free(job: *mut AurumJob) {
+    if job.is_null() {
+        return;
+    }
+    let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
+        // Cancel if still running so work does not outlive the handle forever.
+        let j = Box::from_raw(job);
+        if !matches!(
+            j.inner.state(),
+            JobState::Completed
+                | JobState::Failed
+                | JobState::Cancelled
+                | JobState::DeadlineExceeded
+        ) {
+            j.inner.cancel();
+        }
+        drop(j);
     }));
 }
 

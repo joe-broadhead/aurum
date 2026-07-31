@@ -4,31 +4,56 @@ Workflows live under `.github/workflows/`.
 
 | Workflow | Trigger | Purpose |
 |----------|---------|---------|
-| `ci.yml` | PR + push to master | fmt, clippy `-D warnings`, tests (ubuntu-24.04 / macOS / Windows), MSRV 1.89, docs strict, version sync, macOS integration |
+| `ci.yml` | PR + push to master | fmt, clippy `-D warnings`, tests (ubuntu-24.04 / macOS / Windows), MSRV 1.89, STT-only, security (audit+deny), docs strict, version sync, action pins, macOS integration |
 | `docs.yml` | docs paths / master | MkDocs build + GitHub Pages deploy |
 | `release-prepare.yml` | manual | Cut `release/x.y.z` PR |
 | `release-tag.yml` | merge release PR | Create `vX.Y.Z` after version_check + dispatch release |
-| `release.yml` | tag `v*` or manual | Multi-platform **CLI** binaries + SHA256SUMS + GitHub Release |
+| `release.yml` | tag `v*` or manual | Fail-closed tag checkout, security gate, multi-platform **CLI** binaries + SBOM + SHA256SUMS + PROVENANCE + GitHub Release |
 | `crates-publish.yml` | **manual only** | crates.io dry-run or publish (`aurum-core`, then `aurum-stt`, optional `aurum-ffi`) |
 
 Workspace members covered by CI: **`aurum-core`**, **`aurum-stt`**, **`aurum-ffi`**.
+
+### Security & quality jobs (JOE-1578)
+
+| Job | What |
+|-----|------|
+| `security` | `cargo audit` + `cargo deny check` (`deny.toml`) |
+| `stt-only` | `aurum-core --no-default-features` + adversarial/fault tests |
+| `lint` | also runs `scripts/check_action_pins.sh` (SHA-pinned Actions) |
+
+Third-party Actions are pinned to **full commit SHAs** with a nearby tag comment
+(JOE-1634). See [supply-chain.md](supply-chain.md).
+
+Adversarial suites (every PR via workspace test + explicit stt-only job):
+
+```bash
+cargo test -p aurum-core --test adversarial_parsers --locked
+cargo test -p aurum-core --test fault_injection --locked
+```
 
 ## Local parity
 
 ```bash
 make ci
 ./scripts/version_check.sh
+./scripts/check_action_pins.sh
 ./scripts/publish_dry_run.sh
 cargo test -p aurum-ffi --locked
+cargo deny check   # requires cargo-deny
+cargo audit        # requires cargo-audit
 # optional network/cache integration:
 cargo test -p aurum-core --test local_integration -- --ignored
 cargo test -p aurum-core --test tts_synth -- --ignored
+# full pre-tag gate:
+./scripts/release_gate.sh
 .venv/bin/mkdocs build --strict
 ```
 
 ## Branch protection
 
-`master` requires status checks: **Lint**, **test (ubuntu-24.04)**, **Docs**, **msrv (1.89)**. Force-push disabled.
+`master` requires status checks: **Lint**, **test (ubuntu-24.04)**, **Docs**, **msrv (1.89)**.
+Prefer also requiring **Security (audit + deny)** and **STT-only** once green on master.
+Force-push disabled.
 
 ## crates.io
 

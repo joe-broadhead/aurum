@@ -19,13 +19,26 @@ Must match:
 
 ## Checklist before prepare
 
+Prefer the automated gate (JOE-1640):
+
+```bash
+./scripts/release_gate.sh
+```
+
+Manual equivalent:
+
 1. `VERSION` set to intended release  
 2. `CHANGELOG.md` has `## [x.y.z] - YYYY-MM-DD` (nothing important left only under Unreleased)  
 3. `cargo test --workspace --locked`  
 4. `cargo clippy --workspace --all-targets --locked -- -D warnings`  
-5. `mkdocs build --strict`  
-6. Optional: `AURUM_INTEGRATION=1 cargo test -p aurum-core --test local_integration -- --ignored`  
-7. Optional: `./scripts/publish_dry_run.sh`  
+5. `cargo check -p aurum-core --no-default-features --locked`  
+6. `mkdocs build --strict`  
+7. `cargo audit` + `cargo deny check`  
+8. `./scripts/generate_sbom.sh dist/sbom`  
+9. Optional: `AURUM_INTEGRATION=1 cargo test -p aurum-core --test local_integration -- --ignored`  
+10. Optional: `./scripts/publish_dry_run.sh`  
+
+See also [release gate](../operations/release-gate.md) and [supply chain](supply-chain.md).
 
 ## Flow
 
@@ -33,7 +46,8 @@ Must match:
 1. workflow_dispatch → Prepare Release (version=x.y.z)
 2. Merge release/x.y.z PR into master
 3. release-tag creates vX.Y.Z (after version_check)
-4. release.yml builds platform CLI binaries + SHA256SUMS + GitHub Release
+4. release.yml: fail-closed tag checkout → test → audit/deny → SBOM
+   → platform CLI binaries → SHA256SUMS + PROVENANCE + GitHub Release
 ```
 
 ## Manual tag (fallback)
@@ -45,13 +59,23 @@ git push origin v0.0.2
 
 ## Assets (CLI)
 
-| Asset | Platform |
-|-------|----------|
-| `aurum-macos-arm64` | Apple Silicon |
-| *(Intel Mac)* | Build from source (`cargo install aurum-stt`) — no CI prebuilt |
-| `aurum-linux-x86_64` | Linux GNU |
-| `aurum-windows-x86_64.exe` | Windows |
-| `SHA256SUMS` | Checksums |
+| Asset | Platform / purpose |
+|-------|--------------------|
+| `aurum-macos-arm64` | Apple Silicon (Tier A) |
+| *(Intel Mac)* | Build from source (`cargo install aurum-stt`) — Tier B |
+| `aurum-linux-x86_64` | Linux GNU (Tier A) |
+| `aurum-windows-x86_64.exe` | Windows MSVC (Tier A) |
+| `SHA256SUMS` | Checksums for all attached assets |
+| `PROVENANCE.txt` | Tag, source commit, workflow run metadata |
+| `aurum-sbom-inventory.json` / `.md` | Rust dependency inventory (JOE-1635) |
+| `native-components.md` | whisper / ort / ffmpeg notes |
+| `cargo-metadata.json` | Full Cargo graph snapshot |
+
+Verify downloads:
+
+```bash
+./scripts/verify_release_assets.sh /path/to/downloaded-assets
+```
 
 `aurum-ffi` is **not** attached as a prebuilt dylib in v0.0.x — consumers build from source (`cargo build -p aurum-ffi --release`).
 

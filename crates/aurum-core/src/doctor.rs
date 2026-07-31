@@ -76,9 +76,10 @@ impl DoctorReport {
 /// Run the standard doctor suite using the effective config.
 pub fn run_doctor(cfg: &Config) -> DoctorReport {
     let mut checks = Vec::new();
-    let mut features = vec!["stt".into(), "cleanup".into()];
     #[cfg(feature = "tts")]
-    features.push("tts".into());
+    let features = vec!["stt".into(), "cleanup".into(), "tts".into()];
+    #[cfg(not(feature = "tts"))]
+    let features = vec!["stt".into(), "cleanup".into()];
 
     checks.push(DoctorCheck {
         id: "version".into(),

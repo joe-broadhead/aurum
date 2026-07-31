@@ -115,10 +115,20 @@ nav:
       - Native embeds (FFI): library/ffi.md
       - Partials & cancel: library/partials.md
   - Operations:
+      - Handbook: operations/handbook.md
       - Troubleshooting: operations/troubleshooting.md
       - Security: operations/security.md
+      - Threat model: operations/threat-model.md
+      - Hardening: operations/hardening.md
+      - Release gate: operations/release-gate.md
+      - Benchmarks: operations/benchmarks.md
+      - Evals: operations/evals.md
   - Development:
       - Contributing: development/contributing.md
       - Architecture: development/architecture.md
       - CI & Quality: development/ci.md
+      - Supply chain: development/supply-chain.md
+      - Compatibility: development/compatibility.md
+      - Migration 0.0.3: development/migration-0.0.3.md
       - Release: development/release.md
+      - ADR-001 Kokoro: development/adr-001-kokoro-tts-adapter.md

@@ -25,10 +25,9 @@ use super::validate::{
 };
 use super::wav::peak_guard_f32_to_i16;
 use crate::error::{ProviderError, Result, UserError};
-use crate::runtime::singleflight::BeginLoad;
 use crate::runtime::{
-    LoadKey, ModelRegistry, OpContext, RegistryConfig, ResidencyWeight, ResourceGovernor,
-    Singleflight,
+    LoadKey, ModelRegistry, OpContext, RegistryConfig, RegistryPin, ResidencyWeight,
+    ResourceGovernor, Singleflight,
 };
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
@@ -61,12 +60,14 @@ impl TtsSessionCache {
         ResidencyWeight { bytes }
     }
 
-    fn get_or_load<F>(
+    /// Load or reuse a pack and return an **active registry pin** for the full
+    /// synthesis operation (JOE-1646).
+    fn get_or_load_pin<F>(
         &self,
         key: LoadKey,
         weight: ResidencyWeight,
         loader: F,
-    ) -> Result<Arc<LoadedPack>>
+    ) -> Result<RegistryPin<LoadedPack>>
     where
         F: FnOnce() -> Result<LoadedPack>,
     {
@@ -81,48 +82,48 @@ impl TtsSessionCache {
             .into());
         }
         loop {
-            if let Some(entry) = self.registry.get(&key) {
-                return Ok(Arc::clone(&entry.value));
+            if let Some(pin) = self.registry.get_and_pin(&key) {
+                return Ok(pin);
             }
-            match self.flight.begin_or_wait(&key) {
-                BeginLoad::WaitDone => {
-                    if let Some(entry) = self.registry.get(&key) {
-                        return Ok(Arc::clone(&entry.value));
-                    }
-                    continue;
-                }
-                BeginLoad::Failed(message) => {
+            match self.flight.begin_or_wait_guard(key.clone()) {
+                Ok(None) => continue,
+                Err(message) => {
                     return Err(ProviderError::ModelLoad {
                         model: key.id.clone(),
                         reason: message,
                     }
                     .into());
                 }
-                BeginLoad::Leader => break,
-            }
-        }
-
-        let gov = ResourceGovernor::process_global();
-        let load_result = (|| -> Result<Arc<LoadedPack>> {
-            let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
-            Ok(Arc::new(loader()?))
-        })();
-
-        match load_result {
-            Ok(pack) => match self.registry.insert(key.clone(), Arc::clone(&pack), weight) {
-                Ok(entry) => {
-                    self.flight.finish_load_published(&key);
-                    Ok(Arc::clone(&entry.value))
+                Ok(Some(leader)) => {
+                    let gov = ResourceGovernor::process_global();
+                    let load_result = (|| -> Result<Arc<LoadedPack>> {
+                        let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
+                        Ok(Arc::new(loader()?))
+                    })();
+                    match load_result {
+                        Ok(pack) => {
+                            match self.registry.insert_and_pin(
+                                key.clone(),
+                                Arc::clone(&pack),
+                                weight,
+                            ) {
+                                Ok(pin) => {
+                                    leader.success();
+                                    return Ok(pin);
+                                }
+                                Err(e) => {
+                                    leader.fail(e.to_string());
+                                    drop(pack);
+                                    return Err(e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            leader.fail(e.to_string());
+                            return Err(e);
+                        }
+                    }
                 }
-                Err(e) => {
-                    self.flight.finish_load_failed(&key, e.to_string());
-                    drop(pack);
-                    Err(e)
-                }
-            },
-            Err(e) => {
-                self.flight.finish_load_failed(&key, e.to_string());
-                Err(e)
             }
         }
     }
@@ -194,10 +195,14 @@ impl LocalTtsProvider {
         TTS_SESSION_CACHE.clear();
     }
 
-    async fn ensure_loaded(&self, model: &str, local_only: bool) -> Result<Arc<LoadedPack>> {
+    async fn ensure_loaded_pin(
+        &self,
+        model: &str,
+        local_only: bool,
+    ) -> Result<RegistryPin<LoadedPack>> {
         let key = LoadKey::tts(model, self.cache_dir.join(model).display().to_string());
-        if let Some(entry) = TTS_SESSION_CACHE.registry.get(&key) {
-            return Ok(Arc::clone(&entry.value));
+        if let Some(pin) = TTS_SESSION_CACHE.registry.get_and_pin(&key) {
+            return Ok(pin);
         }
 
         let info = lookup_model(model)?;
@@ -218,9 +223,8 @@ impl LocalTtsProvider {
         let model_id = model.to_string();
         let weight = TtsSessionCache::weight_for(&onnx);
 
-        // Load on a blocking thread; process cache coalesces and registers.
-        let loaded = tokio::task::spawn_blocking(move || {
-            TTS_SESSION_CACHE.get_or_load(key_for_load, weight, || {
+        let pin = tokio::task::spawn_blocking(move || {
+            TTS_SESSION_CACHE.get_or_load_pin(key_for_load, weight, || {
                 load_pack(
                     &onnx,
                     &voices_file,
@@ -234,16 +238,16 @@ impl LocalTtsProvider {
         .await
         .map_err(|e| crate::error::TranscriptionError::internal(format!("TTS load join: {e}")))??;
 
-        Ok(loaded)
+        Ok(pin)
     }
 
     /// Load a verified (or explicitly unverified) local model pack for a supported
     /// adapter (JOE-1619). Cache key is isolated from built-in catalogue identities.
-    async fn ensure_loaded_from_pack(
+    async fn ensure_loaded_from_pack_pin(
         &self,
         pack_dir: &Path,
         allow_unverified: bool,
-    ) -> Result<(Arc<LoadedPack>, super::adapter::ModelPackManifest)> {
+    ) -> Result<(RegistryPin<LoadedPack>, super::adapter::ModelPackManifest)> {
         let (root, manifest) = load_pack_dir(pack_dir, allow_unverified)?;
         if manifest.adapter_id != ADAPTER_KITTEN_ONNX_V1
             && manifest.adapter_id != ADAPTER_KOKORO_ONNX_V0
@@ -280,8 +284,8 @@ impl LocalTtsProvider {
             format!("local-pack:{}", manifest.model_id),
             root.display().to_string(),
         );
-        if let Some(entry) = TTS_SESSION_CACHE.registry.get(&key) {
-            return Ok((Arc::clone(&entry.value), manifest));
+        if let Some(pin) = TTS_SESSION_CACHE.registry.get_and_pin(&key) {
+            return Ok((pin, manifest));
         }
         let key_for_load = key.clone();
         let speed_priors = load_speed_priors_from_path(
@@ -294,8 +298,8 @@ impl LocalTtsProvider {
         );
         let weight = TtsSessionCache::weight_for(&onnx);
 
-        let loaded = tokio::task::spawn_blocking(move || {
-            TTS_SESSION_CACHE.get_or_load(key_for_load, weight, || {
+        let pin = tokio::task::spawn_blocking(move || {
+            TTS_SESSION_CACHE.get_or_load_pin(key_for_load, weight, || {
                 load_pack(
                     &onnx,
                     &voices_file,
@@ -311,7 +315,7 @@ impl LocalTtsProvider {
             crate::error::TranscriptionError::internal(format!("TTS pack load join: {e}"))
         })??;
 
-        Ok((loaded, manifest))
+        Ok((pin, manifest))
     }
 }
 
@@ -692,8 +696,9 @@ impl SynthesisProvider for LocalTtsProvider {
             resolve_sample_rate(opts.sample_rate_hz, manifest.sample_rate_hz)?;
             let trust = manifest.trust;
             let adapter = manifest.adapter_id.clone();
-            let pack = self
-                .ensure_loaded_from_pack(&pack_dir, opts.allow_unverified)
+            // Registry pin held for the full synthesis (JOE-1646).
+            let lease = self
+                .ensure_loaded_from_pack_pin(&pack_dir, opts.allow_unverified)
                 .await?
                 .0;
 
@@ -708,14 +713,16 @@ impl SynthesisProvider for LocalTtsProvider {
             let text_owned = prepared.text.clone();
             let text_chars = prepared.text_chars;
             let opts_owned = opts.clone();
-            let pack_clone = Arc::clone(&pack);
             let op_for_worker = op.clone();
             let join = tokio::task::spawn_blocking(move || {
+                // Move registry pin into the worker so soft outer deadlines cannot
+                // release residency while ONNX is still running (JOE-1646).
+                let _lease = lease;
                 let gov = ResourceGovernor::process_global();
                 let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
                 op_for_worker.check()?;
                 synthesize_with_pack(
-                    pack_clone.as_ref(),
+                    _lease.value().as_ref(),
                     &text_owned,
                     &opts_owned,
                     &voice_internal,
@@ -743,7 +750,7 @@ impl SynthesisProvider for LocalTtsProvider {
         resolve_sample_rate(opts.sample_rate_hz, model_info.sample_rate_hz)?;
 
         let local_only = opts.local_only || self.local_only;
-        let pack = self.ensure_loaded(&opts.model, local_only).await?;
+        let lease = self.ensure_loaded_pin(&opts.model, local_only).await?;
 
         let timeout = Duration::from_millis(if opts.timeout_ms == 0 {
             super::validate::DEFAULT_TIMEOUT_MS
@@ -757,22 +764,21 @@ impl SynthesisProvider for LocalTtsProvider {
         let text_owned = prepared.text.clone();
         let text_chars = prepared.text_chars;
         let opts_owned = opts.clone();
-        let pack_clone = Arc::clone(&pack);
         let voice_internal = voice_info.internal_key.to_string();
         let voice_canonical = voice_info.id.to_string();
         let model_canonical = model_info.id.to_string();
         let op_for_worker = op.clone();
         let adapter = model_info.adapter.to_string();
 
-        // Hold the TTS + blocking permit for the entire native job lifetime —
-        // even if the caller times out. That keeps concurrency bounded and
-        // prevents unlimited background native work accumulation (JOE-1600).
+        // Hold the TTS + blocking permit and registry pin for the entire native
+        // job lifetime — even if the caller soft-times out (JOE-1600 / JOE-1646).
         let join = tokio::task::spawn_blocking(move || {
+            let _lease = lease;
             let gov = ResourceGovernor::process_global();
             let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
             op_for_worker.check()?;
             synthesize_with_pack(
-                pack_clone.as_ref(),
+                _lease.value().as_ref(),
                 &text_owned,
                 &opts_owned,
                 &voice_internal,
@@ -816,7 +822,10 @@ impl SynthesisProvider for LocalTtsProvider {
     async fn preload(&self, model: &str, voice: &str) -> Result<()> {
         // Same contract as synthesize: model-scoped voice validation first.
         let (model_info, _) = resolve_voice_for_model(model, voice)?;
-        let _ = self.ensure_loaded(model_info.id, self.local_only).await?;
+        let pin = self
+            .ensure_loaded_pin(model_info.id, self.local_only)
+            .await?;
+        drop(pin);
         Ok(())
     }
 }

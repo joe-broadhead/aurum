@@ -22,9 +22,20 @@ use aurum_core::providers::local::clear_context_cache;
 use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
 use aurum_core::runtime::OpAdmission;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+
+/// RAII: one exported C call is using this engine (JOE-1647).
+pub struct ExportGuard<'a> {
+    engine: &'a Engine,
+}
+
+impl Drop for ExportGuard<'_> {
+    fn drop(&mut self) {
+        self.engine.export_depth.fetch_sub(1, Ordering::SeqCst);
+    }
+}
 
 /// RAII guard: sets engine `busy` and process lifecycle active count; clears on
 /// drop (including panic unwinds through `block_on`).
@@ -100,6 +111,10 @@ pub struct Engine {
     metrics: Arc<Metrics>,
     /// Engine closed for new jobs (after [`Self::shutdown_engine`]).
     closed: AtomicBool,
+    /// Count of in-flight **exported** C calls that still touch this engine
+    /// (including post-façade last_error writes). Close/destroy must wait for
+    /// this to reach zero (JOE-1647).
+    export_depth: AtomicU32,
 }
 
 impl Engine {
@@ -133,7 +148,38 @@ impl Engine {
             jobs,
             metrics,
             closed: AtomicBool::new(false),
+            export_depth: AtomicU32::new(0),
         })
+    }
+
+    /// Enter an exported C call boundary (JOE-1647).
+    pub fn begin_export(&self) -> Result<ExportGuard<'_>, FfiError> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "engine is shut down; create a new engine",
+            ));
+        }
+        if !runtime::is_running() {
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "process lifecycle is stopped",
+            ));
+        }
+        self.export_depth.fetch_add(1, Ordering::SeqCst);
+        // Re-check closed after increment so close cannot free while we are "in".
+        if self.closed.load(Ordering::SeqCst) {
+            self.export_depth.fetch_sub(1, Ordering::SeqCst);
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "engine is shut down; create a new engine",
+            ));
+        }
+        Ok(ExportGuard { engine: self })
+    }
+
+    pub fn export_depth(&self) -> u32 {
+        self.export_depth.load(Ordering::SeqCst)
     }
 
     /// Engine-local metrics snapshot (also feeds process counters).
@@ -145,7 +191,8 @@ impl Engine {
     ///
     /// Sets `closed` first so new blocking calls and jobs are rejected. Cancels
     /// the in-flight exclusive op, drains async jobs, then waits until `busy` is
-    /// clear (or `timeout` elapses).
+    /// clear **and** `export_depth == 0` (full C boundary has exited), or
+    /// `timeout` elapses.
     pub fn shutdown_engine(&self, timeout: Duration) -> Result<(), FfiError> {
         self.closed.store(true, Ordering::SeqCst);
         self.jobs.close();
@@ -154,13 +201,15 @@ impl Engine {
         let deadline = std::time::Instant::now() + timeout;
         // Drain jobs with remaining budget.
         let jobs_ok = self.jobs.drain(timeout);
-        // Wait for exclusive busy (preload/transcribe) to finish.
-        while self.busy.load(Ordering::SeqCst) {
+        // Wait for exclusive busy (preload/transcribe) and full export boundary.
+        while self.busy.load(Ordering::SeqCst) || self.export_depth.load(Ordering::SeqCst) > 0 {
             if std::time::Instant::now() >= deadline {
-                return Err(FfiError::new(
-                    FfiStatus::Busy,
-                    "engine still has an exclusive blocking operation in progress",
-                ));
+                let reason = if self.busy.load(Ordering::SeqCst) {
+                    "engine still has an exclusive blocking operation in progress"
+                } else {
+                    "engine still has an in-flight exported C call (including error-path writes)"
+                };
+                return Err(FfiError::new(FfiStatus::Busy, reason));
             }
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -683,5 +732,25 @@ mod tests {
         engine.cancel(); // must not poison a future op
         let err = engine.preload("tiny-q5_1").unwrap_err();
         assert_eq!(err.status, FfiStatus::ModelNotReady);
+    }
+
+    #[test]
+    fn shutdown_waits_for_export_depth() {
+        let dir = tempdir().unwrap();
+        let engine = Engine::new(EngineConfig {
+            cache_dir: dir.path().display().to_string(),
+            local_only: true,
+            progress_logging: false,
+        })
+        .unwrap();
+        let guard = engine.begin_export().unwrap();
+        assert_eq!(engine.export_depth(), 1);
+        let err = engine
+            .shutdown_engine(Duration::from_millis(60))
+            .unwrap_err();
+        assert_eq!(err.status, FfiStatus::Busy);
+        drop(guard);
+        assert_eq!(engine.export_depth(), 0);
+        engine.shutdown_engine(Duration::from_secs(1)).unwrap();
     }
 }

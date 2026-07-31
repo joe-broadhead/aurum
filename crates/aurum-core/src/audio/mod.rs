@@ -748,11 +748,14 @@ async fn supervise_ffmpeg_encode(
             reason: "ffmpeg stderr missing".into(),
         })?;
 
-    let stderr_task = async {
+    // Concurrent stderr drain from process start (JOE-1648). Never wait for the
+    // child first — a full stderr pipe would deadlock FFmpeg before exit.
+    let cancel_stderr = cancel.clone();
+    let stderr_join = tokio::spawn(async move {
         let mut tail: Vec<u8> = Vec::new();
         let mut buf = [0u8; 4 * 1024];
         loop {
-            if let Some(flag) = &cancel {
+            if let Some(flag) = &cancel_stderr {
                 if flag.is_cancelled() {
                     return Err(crate::error::ProviderError::Cancelled.into());
                 }
@@ -777,80 +780,96 @@ async fn supervise_ffmpeg_encode(
             tail.extend_from_slice(&buf[..n]);
         }
         Ok::<Vec<u8>, crate::error::TranscriptionError>(tail)
-    };
+    });
 
-    // Poll output size while encoding so growth is capped mid-flight.
-    let size_watch = async {
-        loop {
-            if let Some(flag) = &cancel {
-                if flag.is_cancelled() {
-                    return Err(crate::error::ProviderError::Cancelled.into());
-                }
-            }
-            if let Ok(meta) = std::fs::metadata(mp3_path) {
-                if meta.len() as usize > max_bytes {
-                    return Err(UserError::AudioTooLarge {
-                        decoded_bytes: meta.len() as usize,
-                        max_bytes,
-                    }
-                    .into());
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        }
-        #[allow(unreachable_code)]
-        Ok::<(), crate::error::TranscriptionError>(())
-    };
-
-    let drain = tokio::time::timeout(timeout, async {
-        tokio::select! {
-            biased;
-            r = size_watch => {
-                let _ = child.kill().await;
-                let _ = child.wait().await;
-                Err(match r {
-                    Ok(()) => EnvironmentError::FfmpegFailed {
-                        reason: "encode size watch ended unexpectedly".into(),
-                    }
-                    .into(),
-                    Err(e) => e,
-                })
-            }
-            status = child.wait() => {
-                let _ = stderr_task.await;
-                match status {
-                    Ok(s) => Ok(s),
-                    Err(e) => Err(EnvironmentError::FfmpegFailed {
-                        reason: format!("ffmpeg encode wait failed: {e}"),
-                    }
-                    .into()),
-                }
-            }
-        }
-    })
-    .await;
-
-    match drain {
-        Ok(Ok(status)) => {
-            if !status.success() {
-                return Err(EnvironmentError::FfmpegFailed {
-                    reason: format!("ffmpeg encode exited with {status}"),
-                }
-                .into());
-            }
-            Ok(())
-        }
-        Ok(Err(e)) => Err(e),
-        Err(_elapsed) => {
-            // Child was dropped with kill_on_drop when the timeout cancelled the select.
-            Err(EnvironmentError::FfmpegFailed {
+    // Manual deadline so we keep ownership of `child` for explicit kill/reap.
+    let deadline = tokio::time::Instant::now() + timeout;
+    let result: crate::error::Result<(std::process::ExitStatus, Vec<u8>)> = loop {
+        if tokio::time::Instant::now() >= deadline {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            stderr_join.abort();
+            let _ = stderr_join.await;
+            break Err(EnvironmentError::FfmpegFailed {
                 reason: format!(
                     "ffmpeg encode exceeded wall-clock deadline ({}s)",
                     timeout.as_secs()
                 ),
             }
-            .into())
+            .into());
         }
+        if let Some(flag) = &cancel {
+            if flag.is_cancelled() {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                stderr_join.abort();
+                let _ = stderr_join.await;
+                break Err(crate::error::ProviderError::Cancelled.into());
+            }
+        }
+        if let Ok(meta) = std::fs::metadata(mp3_path) {
+            if meta.len() as usize > max_bytes {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                stderr_join.abort();
+                let _ = stderr_join.await;
+                break Err(UserError::AudioTooLarge {
+                    decoded_bytes: meta.len() as usize,
+                    max_bytes,
+                }
+                .into());
+            }
+        }
+        // Poll child without blocking the concurrent stderr drain task.
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                let tail = match stderr_join.await {
+                    Ok(Ok(t)) => t,
+                    Ok(Err(e)) => break Err(e),
+                    Err(e) => {
+                        break Err(EnvironmentError::FfmpegFailed {
+                            reason: format!("stderr join: {e}"),
+                        }
+                        .into());
+                    }
+                };
+                break Ok((status, tail));
+            }
+            Ok(None) => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            Err(e) => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                stderr_join.abort();
+                let _ = stderr_join.await;
+                break Err(EnvironmentError::FfmpegFailed {
+                    reason: format!("ffmpeg encode wait failed: {e}"),
+                }
+                .into());
+            }
+        }
+    };
+
+    match result {
+        Ok((status, tail)) => {
+            if !status.success() {
+                let diag = String::from_utf8_lossy(&tail);
+                let short = diag
+                    .lines()
+                    .last()
+                    .unwrap_or("ffmpeg encode failed")
+                    .chars()
+                    .take(400)
+                    .collect::<String>();
+                return Err(EnvironmentError::FfmpegFailed {
+                    reason: format!("ffmpeg encode exited with {status}: {short}"),
+                }
+                .into());
+            }
+            Ok(())
+        }
+        Err(e) => Err(e),
     }
 }
 

@@ -28,7 +28,8 @@ name = "aurum"
 path = "src/main.rs"
 
 [dependencies]
-aurum-core = { workspace = true }
+# CLI includes local TTS (ORT); aurum-core workspace defaults are off.
+aurum-core = { workspace = true, features = ["tts"] }
 clap = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

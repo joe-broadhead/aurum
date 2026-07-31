@@ -103,6 +103,45 @@ jobs:
       - name: release build CLI
         run: cargo build -p aurum-stt --release --locked
 
+      # JOE-1647: compile/link/run downstream C11 + C++17 clients against release aurum-ffi.
+      # STT/cleanup only (--no-default-features) so host link does not need ORT.
+      - name: native C11/C++17 FFI examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            echo "Windows: C/C++ example host link deferred (MSVC wiring); covered on ubuntu/macos"
+            exit 0
+          fi
+          cargo build -p aurum-ffi --release --locked --no-default-features
+          INC=crates/aurum-ffi/include
+          LIB=target/release
+          # Staticlib needs whisper/ggml system deps + C++ runtime.
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            cc -std=c11 -I "$INC" crates/aurum-ffi/examples/job_cleanup.c \
+              "$LIB/libaurum_ffi.a" \
+              -lpthread -ldl -lm -lc++ \
+              -framework Security -framework CoreFoundation \
+              -framework Metal -framework Foundation -framework Accelerate \
+              -o /tmp/aurum_job_cleanup
+            c++ -std=c++17 -I "$INC" crates/aurum-ffi/examples/engine_raii.cpp \
+              "$LIB/libaurum_ffi.a" \
+              -lpthread -ldl -lm -lc++ \
+              -framework Security -framework CoreFoundation \
+              -framework Metal -framework Foundation -framework Accelerate \
+              -o /tmp/aurum_engine_raii
+          else
+            # Linux: staticlib pulls whisper + C++ deps
+            cc -std=c11 -I "$INC" crates/aurum-ffi/examples/job_cleanup.c \
+              "$LIB/libaurum_ffi.a" \
+              -lpthread -ldl -lm -lstdc++ -o /tmp/aurum_job_cleanup
+            c++ -std=c++17 -I "$INC" crates/aurum-ffi/examples/engine_raii.cpp \
+              "$LIB/libaurum_ffi.a" \
+              -lpthread -ldl -lm -lstdc++ -o /tmp/aurum_engine_raii
+          fi
+          /tmp/aurum_job_cleanup
+          /tmp/aurum_engine_raii
+
   msrv:
     name: msrv (1.89)
     runs-on: ubuntu-24.04

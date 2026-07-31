@@ -93,6 +93,9 @@ impl<T> ModelRegistry<T> {
     }
 
     /// Insert or refresh an entry. Evicts idle entries if needed.
+    ///
+    /// New inserts start with `active_refs == 0`. Prefer [`Self::insert_and_pin`]
+    /// when the caller will immediately use the value (JOE-1646).
     pub fn insert(
         &self,
         key: LoadKey,
@@ -118,6 +121,36 @@ impl<T> ModelRegistry<T> {
         Ok(entry)
     }
 
+    /// Insert (or refresh) and return a pin under one lock — no eviction window
+    /// between publication and active lease (JOE-1646).
+    pub fn insert_and_pin(
+        &self,
+        key: LoadKey,
+        value: Arc<T>,
+        weight: ResidencyWeight,
+    ) -> Result<RegistryPin<T>> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(existing) = guard.get(&key) {
+            existing.touch();
+            existing.active_refs.fetch_add(1, Ordering::SeqCst);
+            return Ok(RegistryPin {
+                entry: Arc::clone(existing),
+            });
+        }
+        self.evict_locked(&mut guard, weight.bytes, 1)?;
+        let entry = Arc::new(RegistryEntry {
+            key: key.clone(),
+            value,
+            weight,
+            last_used_ms: AtomicU64::new(now_ms()),
+            active_refs: AtomicU64::new(1), // already leased to caller
+            pinned: false,
+        });
+        guard.insert(key, Arc::clone(&entry));
+        self.total_weight.fetch_add(weight.bytes, Ordering::SeqCst);
+        Ok(RegistryPin { entry })
+    }
+
     pub fn get(&self, key: &LoadKey) -> Option<Arc<RegistryEntry<T>>> {
         let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.get(key).map(|e| {
@@ -127,10 +160,25 @@ impl<T> ModelRegistry<T> {
     }
 
     /// Pin for an active operation (prevents eviction).
+    ///
+    /// Prefer [`Self::get_and_pin`] when the caller needs the value only while
+    /// pinned (atomic lookup+lease).
     pub fn pin(&self, key: &LoadKey) -> Option<RegistryPin<T>> {
-        let entry = self.get(key)?;
+        self.get_and_pin(key)
+    }
+
+    /// Atomic lookup + pin under the registry lock (JOE-1646).
+    ///
+    /// There is no window where the entry can be evicted after the caller has
+    /// observed it but before `active_refs` is incremented.
+    pub fn get_and_pin(&self, key: &LoadKey) -> Option<RegistryPin<T>> {
+        let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let entry = guard.get(key)?;
+        entry.touch();
         entry.active_refs.fetch_add(1, Ordering::SeqCst);
-        Some(RegistryPin { entry })
+        Some(RegistryPin {
+            entry: Arc::clone(entry),
+        })
     }
 
     pub fn clear(&self) {
@@ -338,5 +386,49 @@ mod tests {
         assert!(reg.get(&key("a")).is_none());
         assert!(reg.get(&key("b")).is_some());
         assert!(reg.get(&key("c")).is_some());
+    }
+
+    #[test]
+    fn get_and_pin_prevents_eviction() {
+        let reg = ModelRegistry::new(RegistryConfig {
+            max_entries: 1,
+            max_resident_bytes: 10_000,
+            idle_ttl: None,
+        });
+        let pin = reg
+            .insert_and_pin(key("a"), Arc::new(1u32), ResidencyWeight { bytes: 100 })
+            .unwrap();
+        assert_eq!(**pin.value(), 1);
+        let err = reg
+            .insert(key("b"), Arc::new(2u32), ResidencyWeight { bytes: 100 })
+            .unwrap_err();
+        assert!(err.to_string().contains("residency") || err.to_string().contains("overload"));
+        drop(pin);
+        reg.insert(key("b"), Arc::new(2u32), ResidencyWeight { bytes: 100 })
+            .unwrap();
+        assert!(reg.get(&key("a")).is_none());
+    }
+
+    #[test]
+    fn insert_and_pin_existing_increments_active() {
+        let reg = ModelRegistry::new(RegistryConfig::default());
+        reg.insert(key("a"), Arc::new(7u32), ResidencyWeight { bytes: 100 })
+            .unwrap();
+        let p1 = reg
+            .insert_and_pin(key("a"), Arc::new(999u32), ResidencyWeight { bytes: 100 })
+            .unwrap();
+        // Existing value retained (not replaced with 999).
+        assert_eq!(**p1.value(), 7);
+        let p2 = reg.get_and_pin(&key("a")).unwrap();
+        assert_eq!(p1.entry().active_refs.load(Ordering::SeqCst), 2);
+        drop(p1);
+        drop(p2);
+        assert_eq!(
+            reg.get(&key("a"))
+                .unwrap()
+                .active_refs
+                .load(Ordering::SeqCst),
+            0
+        );
     }
 }

@@ -96,6 +96,10 @@ fn catch_status(f: impl FnOnce() -> Result<(), FfiError>) -> i32 {
 }
 
 /// Like [`catch_status`], but records panic / error on the engine's last_error.
+///
+/// Holds [`ExportGuard`] for the **entire** exported call — including last_error
+/// writes after the façade returns — so close/destroy cannot free the engine
+/// while this wrapper still touches it (JOE-1647).
 fn catch_status_engine(
     engine: *mut AurumEngine,
     f: impl FnOnce(&Engine) -> Result<(), FfiError>,
@@ -104,7 +108,12 @@ fn catch_status_engine(
         return FfiStatus::InvalidArg.as_i32();
     }
     let eng = unsafe { &*engine };
-    match catch_unwind(AssertUnwindSafe(|| f(&eng.inner))) {
+    let export = match eng.inner.begin_export() {
+        Ok(g) => g,
+        Err(e) => return status_err(&e),
+    };
+    let result = catch_unwind(AssertUnwindSafe(|| f(&eng.inner)));
+    let code = match result {
         Ok(Ok(())) => status_ok(),
         Ok(Err(e)) => {
             // façade methods usually already store; ensure message is set
@@ -117,7 +126,9 @@ fn catch_status_engine(
             );
             FfiStatus::Internal.as_i32()
         }
-    }
+    };
+    drop(export);
+    code
 }
 
 pub(crate) fn transcript_to_c(t: Transcript) -> Result<Box<AurumTranscript>, FfiError> {
@@ -199,6 +210,12 @@ pub unsafe extern "C" fn aurum_engine_create(
     cfg: *const AurumEngineConfigC,
     out: *mut *mut AurumEngine,
 ) -> i32 {
+    // Initialize out before work (JOE-1647).
+    if !out.is_null() {
+        unsafe {
+            *out = std::ptr::null_mut();
+        }
+    }
     catch_status(|| {
         if cfg.is_null() || out.is_null() {
             return Err(FfiError::invalid_arg("cfg and out must be non-null"));
@@ -250,25 +267,33 @@ pub unsafe extern "C" fn aurum_engine_close(engine: *mut AurumEngine, timeout_ms
 /// Destroy an engine handle (void legacy API).
 ///
 /// **Contract (JOE-1647):** closes admission, cancels work, and waits up to 30s
-/// for exclusive blocking ops and jobs to finish before free. If drain cannot
-/// complete, the engine is still freed (host must not call into it after destroy);
-/// prefer [`aurum_engine_close`] for status-returning teardown.
+/// for exclusive blocking ops, export-boundary calls, and jobs. **Only frees on
+/// successful drain.** If still BUSY after the wait, the pointer remains valid
+/// and the host must retry [`aurum_engine_close`] (or process shutdown). This
+/// avoids use-after-free of in-flight exported calls.
 ///
-/// **Unsupported:** concurrent use of `engine` after destroy begins is
-/// use-after-free. Hosts must serialize destroy with all other calls on the
-/// same handle (mutex or single-threaded ownership).
+/// Prefer [`aurum_engine_close`] for status-returning teardown.
+///
+/// **Unsupported:** concurrent use of `engine` after a successful free; hosts
+/// must serialize destroy/close with all other calls on the same handle.
 #[no_mangle]
 pub unsafe extern "C" fn aurum_engine_destroy(engine: *mut AurumEngine) {
     if engine.is_null() {
         return;
     }
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
-        let eng = Box::from_raw(engine);
-        // Deterministic wait for blocking ops + jobs (not a token 250ms).
-        let _ = eng
+        let eng = &*engine;
+        match eng
             .inner
-            .shutdown_engine(std::time::Duration::from_secs(30));
-        drop(eng);
+            .shutdown_engine(std::time::Duration::from_secs(30))
+        {
+            Ok(()) => {
+                drop(Box::from_raw(engine));
+            }
+            Err(_) => {
+                // Leave the box allocated; pointer remains valid for retry.
+            }
+        }
     }));
 }
 
@@ -335,6 +360,11 @@ pub unsafe extern "C" fn aurum_engine_transcribe_pcm(
     opts: *const AurumTranscribeOptsC,
     out_transcript: *mut *mut AurumTranscript,
 ) -> i32 {
+    if !out_transcript.is_null() {
+        unsafe {
+            *out_transcript = ptr::null_mut();
+        }
+    }
     catch_status_engine(engine, |inner| {
         if out_transcript.is_null() {
             return Err(FfiError::invalid_arg("out_transcript must be non-null"));
@@ -586,13 +616,21 @@ pub unsafe extern "C" fn aurum_doctor_json(out_json: *mut *mut c_char) -> i32 {
 /* ---------- engine shutdown + jobs (JOE-1622/1623) ---------- */
 
 /// Drain this engine's jobs. Does not affect other engines.
+///
+/// Does **not** hold `ExportGuard` for the full wait — otherwise close would
+/// deadlock waiting for its own export_depth (JOE-1647).
 #[no_mangle]
 pub unsafe extern "C" fn aurum_engine_shutdown(
     engine: *mut AurumEngine,
     timeout_ms: c_uint,
 ) -> i32 {
-    catch_status_engine(engine, |inner| {
-        inner.shutdown_engine(std::time::Duration::from_millis(timeout_ms as u64))
+    if engine.is_null() {
+        return FfiStatus::InvalidArg.as_i32();
+    }
+    let eng = unsafe { &*engine };
+    catch_status(|| {
+        eng.inner
+            .shutdown_engine(std::time::Duration::from_millis(timeout_ms as u64))
     })
 }
 

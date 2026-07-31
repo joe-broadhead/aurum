@@ -154,6 +154,25 @@ impl<T> Singleflight<T> {
             }
         }
     }
+
+    /// Acquire leadership for `key` and return a panic-safe [`LeaderGuard`].
+    ///
+    /// `Ok(None)` means another load finished — re-check the registry.
+    /// `Err` is a cached failure message still within TTL.
+    pub fn begin_or_wait_guard(
+        &self,
+        key: LoadKey,
+    ) -> std::result::Result<Option<LeaderGuard<'_, T>>, String> {
+        match self.begin_or_wait(&key) {
+            BeginLoad::Leader => Ok(Some(LeaderGuard {
+                flight: self,
+                key,
+                finished: false,
+            })),
+            BeginLoad::WaitDone => Ok(None),
+            BeginLoad::Failed(m) => Err(m),
+        }
+    }
 }
 
 /// Result of [`Singleflight::begin_or_wait`].
@@ -165,6 +184,43 @@ pub enum BeginLoad {
     WaitDone,
     /// A recent failure is still cached.
     Failed(String),
+}
+
+/// RAII leader for registry-publication loads (JOE-1646).
+///
+/// If dropped without [`LeaderGuard::success`] or [`LeaderGuard::fail`], the key is
+/// marked Failed so waiters are not stuck in Loading forever (including panic unwind).
+pub struct LeaderGuard<'a, T> {
+    flight: &'a Singleflight<T>,
+    key: LoadKey,
+    finished: bool,
+}
+
+impl<'a, T> LeaderGuard<'a, T> {
+    pub fn key(&self) -> &LoadKey {
+        &self.key
+    }
+
+    pub fn success(mut self) {
+        self.flight.finish_load_published(&self.key);
+        self.finished = true;
+    }
+
+    pub fn fail(mut self, message: impl Into<String>) {
+        self.flight.finish_load_failed(&self.key, message.into());
+        self.finished = true;
+    }
+}
+
+impl<T> Drop for LeaderGuard<'_, T> {
+    fn drop(&mut self) {
+        if !self.finished {
+            self.flight.finish_load_failed(
+                &self.key,
+                "loader panicked or abandoned before publish".into(),
+            );
+        }
+    }
 }
 
 impl<T> Default for Singleflight<T> {
@@ -320,5 +376,42 @@ mod tests {
         thread::sleep(Duration::from_millis(60));
         let v = sf.get_or_load(key, || Ok(7)).unwrap();
         assert_eq!(*v, 7);
+    }
+
+    #[test]
+    fn leader_guard_drop_unblocks_waiters() {
+        let sf = Arc::new(Singleflight::<u32>::new(Duration::from_millis(80)));
+        let key = LoadKey::stt("abandon", "/tmp/a");
+        let sf2 = Arc::clone(&sf);
+        let key2 = key.clone();
+        let leader = thread::spawn(move || {
+            let g = sf2.begin_or_wait_guard(key2).unwrap().expect("leader");
+            // Simulate panic/abandon: drop guard without success/fail.
+            drop(g);
+        });
+        thread::sleep(Duration::from_millis(10));
+        let waiter = thread::spawn({
+            let sf = Arc::clone(&sf);
+            let key = key.clone();
+            move || sf.begin_or_wait(&key)
+        });
+        leader.join().unwrap();
+        match waiter.join().unwrap() {
+            BeginLoad::Failed(m) => assert!(m.contains("abandon") || m.contains("panic")),
+            other => panic!("expected Failed after abandon, got {other:?}"),
+        }
+        // After TTL a new leader can proceed and publish successfully.
+        thread::sleep(Duration::from_millis(100));
+        let g = sf
+            .begin_or_wait_guard(key.clone())
+            .unwrap()
+            .expect("leader2");
+        g.success();
+        // Key removed after publish — next caller becomes leader again (or WaitDone
+        // if a concurrent waiter saw the wake). Either is fine; not Loading.
+        match sf.begin_or_wait(&key) {
+            BeginLoad::Leader | BeginLoad::WaitDone => {}
+            BeginLoad::Failed(m) => panic!("unexpected Failed: {m}"),
+        }
     }
 }

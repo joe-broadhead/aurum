@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JOE-1646/1647/1648 re-audit** (post PR #33 re-review):
+  - STT/TTS registry **atomic pin** for full operation lifetime (`get_and_pin` /
+    `insert_and_pin`); TTS holds pin inside the synth worker
+  - Panic-safe singleflight `LeaderGuard` (abandoned loads unblock waiters)
+  - FFI `export_depth` spans full C call including last_error; destroy frees
+    only on successful drain; C11/C++17 examples run in CI on Linux/macOS
+  - FFmpeg encode drains stderr **concurrently** with child poll; explicit kill/reap
+
 - **JOE-1643 / JOE-1644–1650** v0.0.3 audit remediation:
   - **JOE-1644** Output `NoClobber` uses Unix hard-link publish (race-safe vs
     rename-overwrite); file and parent-dir sync errors propagate; temp files

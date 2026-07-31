@@ -451,7 +451,9 @@ async fn run_tts_cli(cli: TtsCli) -> Result<()> {
             } else {
                 println!(
                     "adapter={} model={} ok={}",
-                    report.adapter_id, report.model_id, report.ok()
+                    report.adapter_id,
+                    report.model_id,
+                    report.ok()
                 );
                 if !report.passed.is_empty() {
                     println!("passed: {}", report.passed.join(", "));
@@ -621,20 +623,27 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         .with_local_only(cli.local_only)
         .with_max_chars(cfg.tts_max_chars);
 
-    let pack_dir = cli
-        .pack_dir
-        .clone()
-        .or_else(|| cfg.tts_pack_dir.clone());
-    let allow_unverified = cli.allow_unverified || cfg.tts_allow_unverified;
-    // Custom model id → pack_dir resolution (JOE-1620).
+    let pack_dir = cli.pack_dir.clone().or_else(|| cfg.tts_pack_dir.clone());
+    // Custom model id → pack_dir resolution (JOE-1620). Case-insensitive match.
+    let custom_entry = cfg
+        .tts_custom_models
+        .iter()
+        .find(|m| m.id.eq_ignore_ascii_case(&model));
+    let from_custom = pack_dir.is_none() && custom_entry.is_some();
     let pack_dir = if pack_dir.is_none() {
-        cfg.tts_custom_models
-            .iter()
-            .find(|m| m.id == model)
-            .and_then(|m| m.pack_dir.as_ref().map(PathBuf::from))
+        custom_entry.and_then(|m| m.pack_dir.as_ref().map(PathBuf::from))
     } else {
         pack_dir
     };
+    // Entry trust=local_unverified is itself the opt-in (still marked unsupported).
+    let entry_unverified = custom_entry
+        .map(|m| {
+            m.trust.eq_ignore_ascii_case("local_unverified")
+                || m.trust.eq_ignore_ascii_case("unverified")
+                || m.trust.eq_ignore_ascii_case("local-unverified")
+        })
+        .unwrap_or(false);
+    let allow_unverified = cli.allow_unverified || cfg.tts_allow_unverified || entry_unverified;
 
     let opts = aurum_core::SynthesisOptions {
         model,
@@ -648,6 +657,7 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         pack_dir,
         allow_unverified,
     };
+    let custom_provenance = from_custom;
 
     let result = provider.synthesize(&body, &opts).await?;
 
@@ -696,7 +706,12 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
             if let Some(t) = &result.trust {
                 obj.insert("trust".into(), serde_json::json!(t));
             }
-            if let Some(p) = &result.provenance {
+            let provenance = if custom_provenance {
+                Some("custom".to_string())
+            } else {
+                result.provenance.clone()
+            };
+            if let Some(p) = provenance {
                 obj.insert("provenance".into(), serde_json::json!(p));
             }
         }

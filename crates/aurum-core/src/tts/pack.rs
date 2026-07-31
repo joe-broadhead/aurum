@@ -1,7 +1,7 @@
 //! Local TTS model-pack loading, trust modes, and digest verification (JOE-1619).
 
 use super::adapter::{
-    preflight_manifest, lookup_adapter, ModelPackManifest, TrustMode, MANIFEST_SCHEMA_VERSION,
+    lookup_adapter, preflight_manifest, ModelPackManifest, TrustMode, MANIFEST_SCHEMA_VERSION,
 };
 use crate::error::{EnvironmentError, Result, UserError};
 use sha2::{Digest, Sha256};
@@ -21,7 +21,10 @@ pub fn custom_pack_cache_dir(cache_dir: &Path) -> PathBuf {
 }
 
 /// Resolve a pack directory → validated manifest + absolute pack root.
-pub fn load_pack_dir(pack_dir: &Path, allow_unverified: bool) -> Result<(PathBuf, ModelPackManifest)> {
+pub fn load_pack_dir(
+    pack_dir: &Path,
+    allow_unverified: bool,
+) -> Result<(PathBuf, ModelPackManifest)> {
     let root = canonicalize_local(pack_dir)?;
     let manifest_path = root.join(MANIFEST_FILENAME);
     if !manifest_path.is_file() {
@@ -37,8 +40,9 @@ pub fn load_pack_dir(pack_dir: &Path, allow_unverified: bool) -> Result<(PathBuf
     let mut manifest = ModelPackManifest::load_path(&manifest_path)?;
     if matches!(manifest.trust, TrustMode::LocalUnverified) && !allow_unverified {
         return Err(UserError::InvalidConfig {
-            reason: "local_unverified pack requires explicit opt-in (--allow-unverified / trust mode)"
-                .into(),
+            reason:
+                "local_unverified pack requires explicit opt-in (--allow-unverified / trust mode)"
+                    .into(),
         }
         .into());
     }
@@ -90,9 +94,11 @@ fn canonicalize_local(path: &Path) -> Result<PathBuf> {
 pub fn verify_pack_artifacts(root: &Path, manifest: &ModelPackManifest) -> Result<()> {
     let adapter = lookup_adapter(&manifest.adapter_id)?;
     for role in adapter.required_artifact_roles {
-        let art = manifest.artifact(role).ok_or_else(|| UserError::InvalidConfig {
-            reason: format!("missing artifact role '{role}'"),
-        })?;
+        let art = manifest
+            .artifact(role)
+            .ok_or_else(|| UserError::InvalidConfig {
+                reason: format!("missing artifact role '{role}'"),
+            })?;
         let path = root.join(&art.filename);
         // Reject path escape.
         if art.filename.contains("..") || Path::new(&art.filename).is_absolute() {
@@ -182,7 +188,9 @@ pub fn write_fake_sine_pack(dir: &Path, model_id: &str) -> Result<ModelPackManif
     let config_path = dir.join("config.json");
     fs::write(&config_path, config).map_err(EnvironmentError::Io)?;
     let sha = sha256_file(&config_path)?;
-    let size = fs::metadata(&config_path).map_err(EnvironmentError::Io)?.len();
+    let size = fs::metadata(&config_path)
+        .map_err(EnvironmentError::Io)?
+        .len();
     let manifest = ModelPackManifest {
         schema_version: MANIFEST_SCHEMA_VERSION,
         adapter_id: super::adapter::ADAPTER_FAKE_SINE_V1.into(),

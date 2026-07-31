@@ -182,12 +182,14 @@ impl LocalTtsProvider {
         }
         let key_for_load = key.clone();
         let sessions = Arc::clone(&self.sessions);
-        let speed_priors = load_speed_priors_from_path(&root.join(
-            manifest
-                .artifact("config")
-                .map(|a| a.filename.as_str())
-                .unwrap_or("config.json"),
-        ));
+        let speed_priors = load_speed_priors_from_path(
+            &root.join(
+                manifest
+                    .artifact("config")
+                    .map(|a| a.filename.as_str())
+                    .unwrap_or("config.json"),
+            ),
+        );
 
         let loaded = tokio::task::spawn_blocking(move || {
             let gov = ResourceGovernor::process_global();
@@ -204,7 +206,9 @@ impl LocalTtsProvider {
             })
         })
         .await
-        .map_err(|e| crate::error::TranscriptionError::internal(format!("TTS pack load join: {e}")))??;
+        .map_err(|e| {
+            crate::error::TranscriptionError::internal(format!("TTS pack load join: {e}"))
+        })??;
 
         Ok((loaded, manifest))
     }
@@ -529,8 +533,7 @@ impl SynthesisProvider for LocalTtsProvider {
                 } else {
                     opts.model.clone()
                 };
-                if opts.voice.trim().is_empty()
-                    || opts.voice == super::catalogue::DEFAULT_TTS_VOICE
+                if opts.voice.trim().is_empty() || opts.voice == super::catalogue::DEFAULT_TTS_VOICE
                 {
                     if let Some(v) = manifest.voices.first() {
                         opts.voice = v.id.clone();
@@ -554,7 +557,8 @@ impl SynthesisProvider for LocalTtsProvider {
                         "adapter '{}' is not enabled for local pack synthesis",
                         manifest.adapter_id
                     ),
-                    hint: "use kitten-onnx-v1 or fake-sine-v1 packs; see `aurum tts adapters`".into(),
+                    hint: "use kitten-onnx-v1 or fake-sine-v1 packs; see `aurum tts adapters`"
+                        .into(),
                 }
                 .into());
             }
@@ -568,8 +572,7 @@ impl SynthesisProvider for LocalTtsProvider {
             };
             // Resolve voice against the built-in Kitten voice table when possible;
             // otherwise require a manifest voice id and use internal_key from pack.
-            let (voice_canonical, voice_internal) =
-                resolve_pack_voice(&manifest, &opts.voice)?;
+            let (voice_canonical, voice_internal) = resolve_pack_voice(&manifest, &opts.voice)?;
             validate_speaking_rate(opts.speaking_rate)?;
             resolve_sample_rate(opts.sample_rate_hz, manifest.sample_rate_hz)?;
             let trust = manifest.trust;
@@ -583,8 +586,8 @@ impl SynthesisProvider for LocalTtsProvider {
             } else {
                 opts.timeout_ms
             });
-            let op =
-                OpContext::from_optional_cancel(opts.cancel.clone()).with_deadline_from_now(timeout);
+            let op = OpContext::from_optional_cancel(opts.cancel.clone())
+                .with_deadline_from_now(timeout);
             op.check()?;
             let text_owned = prepared.text.clone();
             let text_chars = prepared.text_chars;

@@ -408,26 +408,34 @@ impl Config {
     }
 
     /// Load config file from the default location (if present) and merge with env vars.
+    ///
+    /// Always validates `[[tts.custom_models]]` so reserved/builtin IDs cannot
+    /// silently shadow the catalogue (JOE-1576/1620).
     pub fn load() -> Result<Self> {
         let path = Self::default_config_path();
         let file = match &path {
             Some(p) if p.exists() => Some(load_config_file(p)?),
             _ => None,
         };
-        Ok(Self::from_parts(file, path))
+        let cfg = Self::from_parts(file, path);
+        cfg.validate_tts_custom_models()?;
+        Ok(cfg)
     }
 
     /// Load from an explicit config file path (used in tests / CLI `--config`).
     ///
     /// When the path does not exist, returns defaults (historical behavior).
     /// Prefer [`Self::load_from_required`] when a missing file must be an error.
+    /// Validates custom TTS catalogue entries when present.
     pub fn load_from(path: &Path) -> Result<Self> {
         let file = if path.exists() {
             Some(load_config_file(path)?)
         } else {
             None
         };
-        Ok(Self::from_parts(file, Some(path.to_path_buf())))
+        let cfg = Self::from_parts(file, Some(path.to_path_buf()));
+        cfg.validate_tts_custom_models()?;
+        Ok(cfg)
     }
 
     /// Load from an explicit path; **error** if the file is missing (JOE-1608).
@@ -608,10 +616,7 @@ impl Config {
             tts_language: self.tts_language.clone(),
             tts_max_chars: self.tts_max_chars,
             tts_timeout_ms: self.tts_timeout_ms,
-            tts_pack_dir: self
-                .tts_pack_dir
-                .as_ref()
-                .map(|p| p.display().to_string()),
+            tts_pack_dir: self.tts_pack_dir.as_ref().map(|p| p.display().to_string()),
             tts_allow_unverified: self.tts_allow_unverified,
             tts_custom_model_ids: self
                 .tts_custom_models
@@ -1017,6 +1022,43 @@ provider = "rules"
         assert_eq!(
             cfg.cleanup_openrouter_model.as_deref(),
             Some("openai/gpt-audio-mini")
+        );
+    }
+
+    #[test]
+    fn custom_tts_model_cannot_shadow_builtin_on_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let default_id = {
+            #[cfg(feature = "tts")]
+            {
+                crate::tts::DEFAULT_TTS_MODEL
+            }
+            #[cfg(not(feature = "tts"))]
+            {
+                "kitten-nano-int8"
+            }
+        };
+        fs::write(
+            &path,
+            format!(
+                r#"
+[tts]
+model = "{default_id}"
+
+[[tts.custom_models]]
+id = "{default_id}"
+adapter = "fake-sine-v1"
+pack_dir = "/tmp/does-not-matter"
+trust = "verified"
+"#
+            ),
+        )
+        .unwrap();
+        let err = Config::load_from(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("collides") || err.to_string().contains("reserved"),
+            "got: {err}"
         );
     }
 

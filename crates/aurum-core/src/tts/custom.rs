@@ -1,7 +1,7 @@
 //! Validated custom TTS catalogue registration (JOE-1620).
 
 use super::adapter::{lookup_adapter, ModelPackManifest, TrustMode};
-use super::pack::{load_pack_dir, custom_pack_cache_dir};
+use super::pack::{custom_pack_cache_dir, load_pack_dir};
 use crate::error::{Result, UserError};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -171,8 +171,8 @@ pub fn format_custom_list(models: &[CustomTtsModel]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::pack::write_fake_sine_pack;
+    use super::*;
     use tempfile::tempdir;
 
     #[test]

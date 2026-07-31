@@ -69,7 +69,9 @@ pub fn run_pack_conformance(pack_dir: &Path) -> ConformanceReport {
     check(
         &mut report,
         "adapter_preflight",
-        preflight_manifest(&manifest).map(|_| ()).map_err(|e| e.to_string()),
+        preflight_manifest(&manifest)
+            .map(|_| ())
+            .map_err(|e| e.to_string()),
     );
     check(
         &mut report,
@@ -285,8 +287,8 @@ pub fn describe_adapter(a: &AdapterDescriptor) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::pack::write_fake_sine_pack;
+    use super::*;
     use tempfile::tempdir;
 
     #[test]

@@ -48,7 +48,7 @@ pub mod wav;
 
 #[cfg(feature = "tts")]
 pub use adapter::{
-    list_adapters, lookup_adapter, preflight_manifest, known_adapter_id, AdapterDescriptor,
+    known_adapter_id, list_adapters, lookup_adapter, preflight_manifest, AdapterDescriptor,
     ManifestArtifact, ManifestVoice, ModelPackManifest, TrustMode, ADAPTER_FAKE_SINE_V1,
     ADAPTER_KITTEN_ONNX_V1, ADAPTER_KOKORO_ONNX_V0, MANIFEST_SCHEMA_VERSION,
 };
@@ -59,9 +59,9 @@ pub use byom::{
 };
 #[cfg(feature = "tts")]
 pub use catalogue::{
-    ensure_voice_pack, format_model_list, format_voice_list, list_models, list_voices, lookup_model,
-    lookup_voice, resolve_voice_for_model, tts_cache_dir, ModelStatus, VoiceInfo, VoiceStatus,
-    DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE, PLACEHOLDER_ADAPTER_MODEL,
+    ensure_voice_pack, format_model_list, format_voice_list, list_models, list_voices,
+    lookup_model, lookup_voice, resolve_voice_for_model, tts_cache_dir, ModelStatus, VoiceInfo,
+    VoiceStatus, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE, PLACEHOLDER_ADAPTER_MODEL,
 };
 #[cfg(feature = "tts")]
 pub use conformance::{

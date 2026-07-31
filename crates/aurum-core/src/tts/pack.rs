@@ -90,7 +90,10 @@ fn canonicalize_local(path: &Path) -> Result<PathBuf> {
     })
 }
 
-/// Verify digests/sizes for pack artifacts relative to `root`.
+/// Verify digests/sizes for pack artifacts relative to `root` (JOE-1649).
+///
+/// Every artifact path is resolved with symlink rejection and proven to remain
+/// under the canonical pack root before open/hash.
 pub fn verify_pack_artifacts(root: &Path, manifest: &ModelPackManifest) -> Result<()> {
     let adapter = lookup_adapter(&manifest.adapter_id)?;
     for role in adapter.required_artifact_roles {
@@ -99,17 +102,26 @@ pub fn verify_pack_artifacts(root: &Path, manifest: &ModelPackManifest) -> Resul
             .ok_or_else(|| UserError::InvalidConfig {
                 reason: format!("missing artifact role '{role}'"),
             })?;
-        let path = root.join(&art.filename);
-        // Reject path escape.
-        if art.filename.contains("..") || Path::new(&art.filename).is_absolute() {
+        let path = resolve_pack_artifact(root, &art.filename)?;
+        // Size check uses symlink_metadata (no follow) then open for hash.
+        let meta = fs::symlink_metadata(&path).map_err(|e| UserError::InvalidConfig {
+            reason: format!("artifact {} missing: {e}", path.display()),
+        })?;
+        if meta.file_type().is_symlink() {
             return Err(UserError::InvalidConfig {
-                reason: format!("illegal artifact filename '{}'", art.filename),
+                reason: format!(
+                    "artifact {} is a symlink (refused); pack artifacts must be regular files",
+                    art.filename
+                ),
             }
             .into());
         }
-        let meta = fs::metadata(&path).map_err(|e| UserError::InvalidConfig {
-            reason: format!("artifact {} missing: {e}", path.display()),
-        })?;
+        if !meta.is_file() {
+            return Err(UserError::InvalidConfig {
+                reason: format!("artifact {} is not a regular file", art.filename),
+            }
+            .into());
+        }
         if meta.len() > MAX_ARTIFACT_BYTES {
             return Err(UserError::InvalidConfig {
                 reason: format!(
@@ -152,6 +164,81 @@ pub fn verify_pack_artifacts(root: &Path, manifest: &ModelPackManifest) -> Resul
     Ok(())
 }
 
+/// Resolve `filename` under `root` with containment and symlink policy (JOE-1649).
+///
+/// Rejects absolute paths, `..` components, nested symlinks, and any canonical
+/// target outside the pack root.
+pub fn resolve_pack_artifact(root: &Path, filename: &str) -> Result<PathBuf> {
+    if filename.is_empty() {
+        return Err(UserError::InvalidConfig {
+            reason: "empty artifact filename".into(),
+        }
+        .into());
+    }
+    let rel = Path::new(filename);
+    if rel.is_absolute() {
+        return Err(UserError::InvalidConfig {
+            reason: format!("illegal absolute artifact path '{filename}'"),
+        }
+        .into());
+    }
+    for c in rel.components() {
+        use std::path::Component;
+        match c {
+            Component::Normal(_) => {}
+            Component::CurDir => {}
+            _ => {
+                return Err(UserError::InvalidConfig {
+                    reason: format!("illegal artifact path component in '{filename}'"),
+                }
+                .into());
+            }
+        }
+    }
+
+    // Walk component-by-component; reject any intermediate symlink.
+    let mut cur = root.to_path_buf();
+    for c in rel.components() {
+        use std::path::Component;
+        let Component::Normal(part) = c else {
+            continue;
+        };
+        cur.push(part);
+        let meta = fs::symlink_metadata(&cur).map_err(|e| UserError::InvalidConfig {
+            reason: format!("artifact path {}: {e}", cur.display()),
+        })?;
+        if meta.file_type().is_symlink() {
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "refusing symlink in pack path: {}\n  Hint: packs must be self-contained regular files",
+                    cur.display()
+                ),
+            }
+            .into());
+        }
+    }
+
+    // Canonical containment check (root already canonical from load_pack_dir).
+    let canon_root = fs::canonicalize(root).map_err(|e| EnvironmentError::DirectoryAccess {
+        path: root.display().to_string(),
+        reason: e.to_string(),
+    })?;
+    let canon_file = fs::canonicalize(&cur).map_err(|e| UserError::InvalidConfig {
+        reason: format!("cannot canonicalize artifact {}: {e}", cur.display()),
+    })?;
+    if !canon_file.starts_with(&canon_root) {
+        return Err(UserError::InvalidConfig {
+            reason: format!(
+                "artifact escapes pack root: {} (root {})",
+                canon_file.display(),
+                canon_root.display()
+            ),
+        }
+        .into());
+    }
+    Ok(cur)
+}
+
 pub fn sha256_file(path: &Path) -> Result<String> {
     let mut f = fs::File::open(path).map_err(EnvironmentError::Io)?;
     let mut hasher = Sha256::new();
@@ -167,6 +254,10 @@ pub fn sha256_file(path: &Path) -> Result<String> {
 }
 
 /// Write a reviewable manifest into a pack directory (does not download).
+///
+/// Uses the shared secure output transaction (JOE-1644/1649): no predictable
+/// shared `.tmp` path; replace mode so updates keep the previous file intact
+/// until successful commit.
 pub fn write_manifest(pack_dir: &Path, manifest: &ModelPackManifest) -> Result<PathBuf> {
     manifest.validate_schema()?;
     fs::create_dir_all(pack_dir).map_err(EnvironmentError::Io)?;
@@ -174,10 +265,12 @@ pub fn write_manifest(pack_dir: &Path, manifest: &ModelPackManifest) -> Result<P
     let json = serde_json::to_string_pretty(manifest).map_err(|e| {
         crate::error::TranscriptionError::internal(format!("manifest serialize: {e}"))
     })?;
-    // Exclusive write via temp rename.
-    let tmp = pack_dir.join(format!(".{MANIFEST_FILENAME}.tmp"));
-    fs::write(&tmp, json.as_bytes()).map_err(EnvironmentError::Io)?;
-    fs::rename(&tmp, &path).map_err(EnvironmentError::Io)?;
+    let mut body = json;
+    if !body.ends_with('\n') {
+        body.push('\n');
+    }
+    crate::output::OutputTransaction::new(&path, crate::output::CommitMode::Replace)
+        .commit_bytes(body.as_bytes())?;
     Ok(path)
 }
 
@@ -253,5 +346,50 @@ mod tests {
         m.artifacts[0].sha256 = Some("ab".repeat(32));
         write_manifest(&pack, &m).unwrap();
         assert!(load_pack_dir(&pack, false).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn artifact_symlink_rejected() {
+        let dir = tempdir().unwrap();
+        let pack = dir.path().join("pack");
+        write_fake_sine_pack(&pack, "sym").unwrap();
+        let outside = dir.path().join("secret.bin");
+        fs::write(&outside, b"escaped-bytes").unwrap();
+        // Replace config.json with a symlink escaping the pack.
+        let config = pack.join("config.json");
+        fs::remove_file(&config).unwrap();
+        std::os::unix::fs::symlink(&outside, &config).unwrap();
+        let err = load_pack_dir(&pack, false).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("symlink") || msg.contains("escape"),
+            "expected symlink/escape rejection, got: {msg}"
+        );
+    }
+
+    #[test]
+    fn path_traversal_filename_rejected() {
+        let dir = tempdir().unwrap();
+        let pack = dir.path().join("pack");
+        write_fake_sine_pack(&pack, "trav").unwrap();
+        let err = resolve_pack_artifact(&pack, "../etc/passwd").unwrap_err();
+        assert!(err.to_string().contains("illegal") || err.to_string().contains("component"));
+    }
+
+    #[test]
+    fn manifest_write_is_transactional_replace() {
+        let dir = tempdir().unwrap();
+        let pack = dir.path().join("pack");
+        let m = write_fake_sine_pack(&pack, "tx").unwrap();
+        // Second write should replace without leaving predictable .tmp
+        write_manifest(&pack, &m).unwrap();
+        let leftovers: Vec<_> = fs::read_dir(&pack)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().contains(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "tmp left behind: {leftovers:?}");
+        assert!(pack.join(MANIFEST_FILENAME).is_file());
     }
 }

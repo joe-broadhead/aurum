@@ -219,17 +219,55 @@ pub unsafe extern "C" fn aurum_engine_create(
     })
 }
 
+/// Close an engine: reject new work, cancel in-flight ops, drain jobs, wait for
+/// exclusive blocking ops, then free. Returns a status code (JOE-1647).
+///
+/// Preferred over [`aurum_engine_destroy`] when the host can handle failure.
+/// On success the pointer is freed and must not be reused. On `AURUM_BUSY` the
+/// engine remains valid and the host may retry close after waiting.
+#[no_mangle]
+pub unsafe extern "C" fn aurum_engine_close(engine: *mut AurumEngine, timeout_ms: u32) -> i32 {
+    if engine.is_null() {
+        return FfiStatus::InvalidArg.as_i32();
+    }
+    let timeout = std::time::Duration::from_millis(u64::from(timeout_ms.max(1)));
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        let eng = unsafe { &*engine };
+        eng.inner.shutdown_engine(timeout)
+    }));
+    match result {
+        Ok(Ok(())) => {
+            let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
+                drop(Box::from_raw(engine));
+            }));
+            FfiStatus::Ok.as_i32()
+        }
+        Ok(Err(e)) => e.status.as_i32(),
+        Err(_) => FfiStatus::Internal.as_i32(),
+    }
+}
+
+/// Destroy an engine handle (void legacy API).
+///
+/// **Contract (JOE-1647):** closes admission, cancels work, and waits up to 30s
+/// for exclusive blocking ops and jobs to finish before free. If drain cannot
+/// complete, the engine is still freed (host must not call into it after destroy);
+/// prefer [`aurum_engine_close`] for status-returning teardown.
+///
+/// **Unsupported:** concurrent use of `engine` after destroy begins is
+/// use-after-free. Hosts must serialize destroy with all other calls on the
+/// same handle (mutex or single-threaded ownership).
 #[no_mangle]
 pub unsafe extern "C" fn aurum_engine_destroy(engine: *mut AurumEngine) {
     if engine.is_null() {
         return;
     }
     let _ = catch_unwind(AssertUnwindSafe(|| unsafe {
-        // Cancel + best-effort short drain so jobs do not outlive the handle.
         let eng = Box::from_raw(engine);
+        // Deterministic wait for blocking ops + jobs (not a token 250ms).
         let _ = eng
             .inner
-            .shutdown_engine(std::time::Duration::from_millis(250));
+            .shutdown_engine(std::time::Duration::from_secs(30));
         drop(eng);
     }));
 }

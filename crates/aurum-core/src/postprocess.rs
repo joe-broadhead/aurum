@@ -68,11 +68,76 @@ pub fn normalize_result(result: TranscriptionResult) -> TranscriptionResult {
     normalize_result_with_report(result).0
 }
 
+/// Conservative transcript degeneration detector (JOE-1650).
+///
+/// Flags unbounded n-gram loops (e.g. whisper hallucination of a short phrase
+/// repeated dozens of times). Thresholds are intentionally high to avoid
+/// flagging lyrics, stutters, or legitimate short repetitions.
+///
+/// Returns `Some(detail)` when the transcript looks degenerate.
+pub fn detect_repetition_degeneration(text: &str) -> Option<String> {
+    let words: Vec<&str> = text.split_whitespace().filter(|w| !w.is_empty()).collect();
+    if words.len() < 40 {
+        return None;
+    }
+    // Count max run of identical 5-grams.
+    const N: usize = 5;
+    const MAX_SAME_NGRAM: usize = 12; // ~60 words of pure loop
+    if words.len() < N + MAX_SAME_NGRAM {
+        return None;
+    }
+    let mut best = 0usize;
+    let mut best_phrase = String::new();
+    let mut i = 0usize;
+    while i + N <= words.len() {
+        let phrase = &words[i..i + N];
+        let mut count = 1usize;
+        let mut j = i + N;
+        while j + N <= words.len() && &words[j..j + N] == phrase {
+            count += 1;
+            j += N;
+        }
+        if count > best {
+            best = count;
+            best_phrase = phrase.join(" ");
+        }
+        if count >= MAX_SAME_NGRAM {
+            return Some(format!(
+                "repeated 5-gram {count}× (\"{best_phrase}\") — possible model degeneration"
+            ));
+        }
+        i += 1;
+    }
+    // Also flag when a single 5-gram occupies >40% of the transcript via non-adjacent counts.
+    use std::collections::HashMap;
+    let mut freq: HashMap<String, usize> = HashMap::new();
+    for w in words.windows(N) {
+        *freq.entry(w.join(" ")).or_default() += 1;
+    }
+    if let Some((phrase, c)) = freq.into_iter().max_by_key(|(_, c)| *c) {
+        if c >= MAX_SAME_NGRAM && (c * N * 100 / words.len()) >= 40 {
+            return Some(format!(
+                "5-gram occupies large fraction of transcript ({c}× \"{phrase}\") — possible model degeneration"
+            ));
+        }
+    }
+    let _ = best_phrase;
+    let _ = best;
+    None
+}
+
 /// Like [`normalize_result`] but returns an explicit repair report.
 pub fn normalize_result_with_report(
     mut result: TranscriptionResult,
 ) -> (TranscriptionResult, NormalizationReport) {
     let mut report = NormalizationReport::default();
+
+    if let Some(detail) = detect_repetition_degeneration(&result.text) {
+        report.events.push(NormalizationEvent {
+            code: "degeneration_repetition".into(),
+            detail,
+        });
+    }
 
     // Backend / reliability consistency.
     if matches!(result.backend_kind, BackendKind::LlmAssisted) && result.timestamps_reliable {
@@ -231,6 +296,29 @@ pub fn validated_segment(start: f64, end: f64, text: impl Into<String>) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_extreme_ngram_loop() {
+        let phrase = "feature and i think it's ";
+        let text = phrase.repeat(40);
+        let detail = detect_repetition_degeneration(&text).expect("should flag loop");
+        assert!(detail.contains("repeated") || detail.contains("fraction"));
+    }
+
+    #[test]
+    fn ordinary_text_not_flagged() {
+        let text = "There's something that a lot of people do when they're working with AI \
+                    to write code that totally drives me crazy and it's sort of something \
+                    that I've been railing against for a while now. The thing that I've \
+                    noticed is people tend to think I need to create a spec for AI.";
+        assert!(detect_repetition_degeneration(text).is_none());
+    }
+
+    #[test]
+    fn short_legitimate_repetition_ok() {
+        let text = "no no no I said yes yes yes please please please thank you thank you";
+        assert!(detect_repetition_degeneration(text).is_none());
+    }
 
     #[test]
     fn drops_nan_segments() {

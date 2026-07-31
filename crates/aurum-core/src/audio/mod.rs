@@ -605,15 +605,27 @@ pub fn write_temp_wav(samples: &[f32], dest: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Encode samples to a compressed temp file for remote upload.
+/// Encode samples to a compressed temp file for remote upload (JOE-1648).
 ///
 /// Returns `(path, format)` where format is `"mp3"` or `"wav"`.
 /// Caller must delete `path` when done.
 ///
-/// Uses `tempfile` (O_EXCL + random name) to avoid `/tmp` symlink races.
+/// MP3 encoding uses the same supervised FFmpeg lifecycle as decode: `-nostdin`,
+/// concurrent stderr drain, wall-clock deadline, kill+reap on failure. Destination
+/// is exclusively created (no `-y` clobber). Falls back to WAV if FFmpeg/mp3 fails.
 pub async fn encode_for_upload(
     samples: &[f32],
     max_bytes: usize,
+) -> Result<(PathBuf, &'static str)> {
+    encode_for_upload_with_timeout(samples, max_bytes, DEFAULT_FFMPEG_TIMEOUT, None).await
+}
+
+/// Supervised upload encode with explicit deadline and optional cancel flag.
+pub async fn encode_for_upload_with_timeout(
+    samples: &[f32],
+    max_bytes: usize,
+    timeout: std::time::Duration,
+    cancel: Option<crate::cancel::CancelFlag>,
 ) -> Result<(PathBuf, &'static str)> {
     let wav_tmp = tempfile::Builder::new()
         .prefix("aurum-upload-")
@@ -629,38 +641,56 @@ pub async fn encode_for_upload(
     write_temp_wav(samples, &wav_path)?;
 
     if let Ok(ffmpeg) = require_ffmpeg() {
-        let mp3_tmp = tempfile::Builder::new()
-            .prefix("aurum-upload-")
-            .suffix(".mp3")
-            .tempfile()
-            .map_err(|e| EnvironmentError::Other {
-                message: format!("temp mp3: {e}"),
-            })?;
-        let mp3_path = mp3_tmp.path().to_path_buf();
-        let (_f, mp3_kept) = mp3_tmp.keep().map_err(|e| EnvironmentError::Other {
-            message: format!("persist mp3: {e}"),
-        })?;
+        if let Some(flag) = &cancel {
+            if flag.is_cancelled() {
+                let _ = std::fs::remove_file(&wav_path);
+                return Err(crate::error::ProviderError::Cancelled.into());
+            }
+        }
 
-        let output = Command::new(&ffmpeg)
-            .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
-            .arg(&wav_path)
-            .args(["-codec:a", "libmp3lame", "-b:a", "64k"])
-            .arg(&mp3_path)
-            .output()
-            .await;
+        // Reserve a unique path (O_EXCL), then remove so FFmpeg creates the file
+        // without `-y` clobber semantics. `-n` refuses to overwrite if something
+        // else appears at the path (JOE-1648).
+        let mp3_path = {
+            let t = tempfile::Builder::new()
+                .prefix("aurum-upload-")
+                .suffix(".mp3")
+                .tempfile()
+                .map_err(|e| EnvironmentError::Other {
+                    message: format!("temp mp3: {e}"),
+                })?;
+            let p = t.path().to_path_buf();
+            drop(t);
+            let _ = std::fs::remove_file(&p);
+            p
+        };
+
+        let encode = supervise_ffmpeg_encode(
+            &ffmpeg,
+            &wav_path,
+            &mp3_path,
+            max_bytes,
+            timeout,
+            cancel.clone(),
+        )
+        .await;
 
         let _ = std::fs::remove_file(&wav_path);
 
-        if let Ok(output) = output {
-            if output.status.success() {
+        match encode {
+            Ok(()) => {
                 if let Ok(meta) = std::fs::metadata(&mp3_path) {
                     if meta.len() > 0 && (meta.len() as usize) <= max_bytes {
-                        return Ok((mp3_kept, "mp3"));
+                        return Ok((mp3_path, "mp3"));
                     }
                 }
+                let _ = std::fs::remove_file(&mp3_path);
+            }
+            Err(e) => {
+                let _ = std::fs::remove_file(&mp3_path);
+                tracing::debug!(error = %e, "supervised mp3 encode failed; falling back to wav");
             }
         }
-        let _ = std::fs::remove_file(&mp3_path);
         // Fall through to recreate wav
         write_temp_wav(samples, &wav_path)?;
     }
@@ -677,6 +707,151 @@ pub async fn encode_for_upload(
         .into());
     }
     Ok((wav_path, "wav"))
+}
+
+/// Run FFmpeg encode with concurrent stderr drain, deadline, cancel, and file-size cap.
+async fn supervise_ffmpeg_encode(
+    ffmpeg: &Path,
+    wav_path: &Path,
+    mp3_path: &Path,
+    max_bytes: usize,
+    timeout: std::time::Duration,
+    cancel: Option<crate::cancel::CancelFlag>,
+) -> Result<()> {
+    let mut child = Command::new(ffmpeg)
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-n", // never overwrite an unexpected existing path
+            "-protocol_whitelist",
+            "file,crypto,data",
+            "-i",
+        ])
+        .arg(wav_path)
+        .args(["-codec:a", "libmp3lame", "-b:a", "64k"])
+        .arg(mp3_path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|e| EnvironmentError::FfmpegFailed {
+            reason: format!("failed to spawn ffmpeg encode: {e}"),
+        })?;
+
+    let mut stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| EnvironmentError::FfmpegFailed {
+            reason: "ffmpeg stderr missing".into(),
+        })?;
+
+    let stderr_task = async {
+        let mut tail: Vec<u8> = Vec::new();
+        let mut buf = [0u8; 4 * 1024];
+        loop {
+            if let Some(flag) = &cancel {
+                if flag.is_cancelled() {
+                    return Err(crate::error::ProviderError::Cancelled.into());
+                }
+            }
+            let n = stderr
+                .read(&mut buf)
+                .await
+                .map_err(|e| EnvironmentError::FfmpegFailed {
+                    reason: format!("reading ffmpeg stderr: {e}"),
+                })?;
+            if n == 0 {
+                break;
+            }
+            if tail.len() + n > STDERR_TAIL_CAP {
+                let drop_n = (tail.len() + n).saturating_sub(STDERR_TAIL_CAP);
+                if drop_n < tail.len() {
+                    tail.drain(..drop_n);
+                } else {
+                    tail.clear();
+                }
+            }
+            tail.extend_from_slice(&buf[..n]);
+        }
+        Ok::<Vec<u8>, crate::error::TranscriptionError>(tail)
+    };
+
+    // Poll output size while encoding so growth is capped mid-flight.
+    let size_watch = async {
+        loop {
+            if let Some(flag) = &cancel {
+                if flag.is_cancelled() {
+                    return Err(crate::error::ProviderError::Cancelled.into());
+                }
+            }
+            if let Ok(meta) = std::fs::metadata(mp3_path) {
+                if meta.len() as usize > max_bytes {
+                    return Err(UserError::AudioTooLarge {
+                        decoded_bytes: meta.len() as usize,
+                        max_bytes,
+                    }
+                    .into());
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        #[allow(unreachable_code)]
+        Ok::<(), crate::error::TranscriptionError>(())
+    };
+
+    let drain = tokio::time::timeout(timeout, async {
+        tokio::select! {
+            biased;
+            r = size_watch => {
+                let _ = child.kill().await;
+                let _ = child.wait().await;
+                Err(match r {
+                    Ok(()) => EnvironmentError::FfmpegFailed {
+                        reason: "encode size watch ended unexpectedly".into(),
+                    }
+                    .into(),
+                    Err(e) => e,
+                })
+            }
+            status = child.wait() => {
+                let _ = stderr_task.await;
+                match status {
+                    Ok(s) => Ok(s),
+                    Err(e) => Err(EnvironmentError::FfmpegFailed {
+                        reason: format!("ffmpeg encode wait failed: {e}"),
+                    }
+                    .into()),
+                }
+            }
+        }
+    })
+    .await;
+
+    match drain {
+        Ok(Ok(status)) => {
+            if !status.success() {
+                return Err(EnvironmentError::FfmpegFailed {
+                    reason: format!("ffmpeg encode exited with {status}"),
+                }
+                .into());
+            }
+            Ok(())
+        }
+        Ok(Err(e)) => Err(e),
+        Err(_elapsed) => {
+            // Child was dropped with kill_on_drop when the timeout cancelled the select.
+            Err(EnvironmentError::FfmpegFailed {
+                reason: format!(
+                    "ffmpeg encode exceeded wall-clock deadline ({}s)",
+                    timeout.as_secs()
+                ),
+            }
+            .into())
+        }
+    }
 }
 
 /// Infer a reasonable audio format label from a path extension.

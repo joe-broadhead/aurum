@@ -58,24 +58,55 @@ impl ContextCache {
 
     fn get_or_load(&self, model_path: &Path, model_name: &str) -> Result<Arc<WhisperContext>> {
         let key = Self::load_key(model_path, model_name);
+        // Registry is the sole long-lived owner of ready contexts (JOE-1646).
         if let Some(entry) = self.registry.get(&key) {
             return Ok(Arc::clone(&entry.value));
         }
-        if let Some(ready) = self.flight.get_ready(&key) {
-            // Re-register if registry dropped it while singleflight still has Ready.
-            let weight = Self::weight_for(model_path);
-            let _ = self
-                .registry
-                .insert(key.clone(), Arc::clone(&ready), weight);
-            return Ok(ready);
+
+        let weight = Self::weight_for(model_path);
+        // Reject exclusive oversize models before native load when possible.
+        if weight.bytes > self.registry.config().max_resident_bytes {
+            return Err(ProviderError::Overload {
+                reason: format!(
+                    "model weight {} exceeds residency budget {}",
+                    weight.bytes,
+                    self.registry.config().max_resident_bytes
+                ),
+            }
+            .into());
+        }
+
+        use crate::runtime::singleflight::BeginLoad;
+        // Coalesce concurrent cold loads; registry remains the only Ready owner.
+        loop {
+            if let Some(entry) = self.registry.get(&key) {
+                return Ok(Arc::clone(&entry.value));
+            }
+            match self.flight.begin_or_wait(&key) {
+                BeginLoad::WaitDone => {
+                    // Leader finished — re-check registry.
+                    if let Some(entry) = self.registry.get(&key) {
+                        return Ok(Arc::clone(&entry.value));
+                    }
+                    // Load failed or was evicted; retry (may become leader).
+                    continue;
+                }
+                BeginLoad::Failed(message) => {
+                    return Err(ProviderError::ModelLoad {
+                        model: model_name.to_string(),
+                        reason: message,
+                    }
+                    .into());
+                }
+                BeginLoad::Leader => break,
+            }
         }
 
         let gov = ResourceGovernor::process_global();
         let path_owned = model_path.to_path_buf();
         let name_owned = model_name.to_string();
-        let weight = Self::weight_for(model_path);
 
-        let ctx = self.flight.get_or_load(key.clone(), || {
+        let load_result = (|| -> Result<Arc<WhisperContext>> {
             let _permit = gov.acquire(PermitKind::ModelLoad, None)?;
 
             LOGGING_HOOKS.get_or_init(|| {
@@ -89,23 +120,31 @@ impl ContextCache {
                         model: name_owned.clone(),
                         reason: e.to_string(),
                     })?;
-            Ok(ctx)
-        })?;
+            Ok(Arc::new(ctx))
+        })();
 
-        // Evict idle peers if needed; on failure keep the loaded context (still in
-        // singleflight) so callers are not left without a working model after a
-        // successful native load. Over-budget is reported only when no room exists.
-        match self.registry.insert(key, Arc::clone(&ctx), weight) {
-            Ok(_) => {}
+        match load_result {
+            Ok(ctx) => {
+                // Publish into registry first (authoritative residency).
+                match self.registry.insert(key.clone(), Arc::clone(&ctx), weight) {
+                    Ok(entry) => {
+                        self.flight.finish_load_published(&key);
+                        Ok(Arc::clone(&entry.value))
+                    }
+                    Err(e) => {
+                        // Budget exhausted: drop the native context (do not hide in flight).
+                        self.flight.finish_load_failed(&key, e.to_string());
+                        // Drop ctx: no hidden Ready owner.
+                        drop(ctx);
+                        Err(e)
+                    }
+                }
+            }
             Err(e) => {
-                tracing::warn!(
-                    model = %model_name,
-                    error = %e,
-                    "STT context loaded but residency insert failed; keeping in singleflight"
-                );
+                self.flight.finish_load_failed(&key, e.to_string());
+                Err(e)
             }
         }
-        Ok(ctx)
     }
 
     fn clear(&self) {
@@ -115,7 +154,13 @@ impl ContextCache {
 
     fn contains(&self, model_path: &Path, model_name: &str) -> bool {
         let key = Self::load_key(model_path, model_name);
-        self.registry.get(&key).is_some() || self.flight.contains_ready(&key)
+        self.registry.get(&key).is_some()
+    }
+
+    /// Snapshot residency diagnostics (registry only — no hidden flight Ready).
+    #[allow(dead_code)]
+    fn residency_len(&self) -> usize {
+        self.registry.len()
     }
 }
 

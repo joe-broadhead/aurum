@@ -174,6 +174,18 @@ AurumStatus aurum_doctor_json(char **out_json);
 
 /* engine lifecycle */
 AurumStatus aurum_engine_create(const AurumEngineConfig *cfg, AurumEngine **out);
+/**
+ * Close + free with status (preferred). Waits up to timeout_ms for exclusive
+ * blocking ops and jobs. On AURUM_OK the pointer is freed. On AURUM_ERR_BUSY the
+ * engine remains valid — retry later. Hosts must not use the pointer concurrently
+ * with close/destroy.
+ */
+AurumStatus aurum_engine_close(AurumEngine *engine, uint32_t timeout_ms);
+/**
+ * Free an engine. Closes admission, cancels work, waits up to 30s for drain, then
+ * frees. Concurrent use after destroy begins is unsupported (use-after-free).
+ * Prefer aurum_engine_close when status is needed.
+ */
 void aurum_engine_destroy(AurumEngine *engine);
 /**
  * Drain this engine's jobs (does not poison other engines).

@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1578** Quality engineering, supply chain and v1.0 release gates:
+  - `deny.toml` + CI `cargo audit` / `cargo deny check` security job (JOE-1630)
+  - Continuous adversarial parser suite (`adversarial_parsers`) for config, JSON
+    formatting, remote bounds, PCM, and TTS manifests (JOE-1631)
+  - Deterministic fault / fail-closed I/O suite (`fault_injection`) for output
+    transactions, cleanup, normalization, and oversized config (JOE-1632)
+  - STT-only (`--no-default-features`) CI job + adversarial tests on every PR
+    (JOE-1633)
+  - Third-party GitHub Actions pinned to full commit SHAs; `check_action_pins.sh`
+    policy gate; fail-closed tag checkout on release (JOE-1634)
+  - SBOM inventory script (`generate_sbom.sh`), `PROVENANCE.txt`, SHA256SUMS
+    verification (`verify_release_assets.sh`) attached to GitHub Releases
+    (JOE-1635)
+  - Supported platform tiers + release/reproducibility docs (JOE-1636)
+  - Threat model, deployment profiles, hardening baseline (JOE-1637)
+  - Disclosure rehearsal procedure in SECURITY.md (JOE-1638)
+  - Operator/integrator handbook map (JOE-1639)
+  - `scripts/release_gate.sh` fail-closed pre-tag gate toward 1.0 (JOE-1640)
+
 - **JOE-1577** Native SDK, FFI v2 and operability:
   - Explicit engine ownership with per-engine job drain
     (`aurum_engine_shutdown`) that does not poison other engines (JOE-1622)

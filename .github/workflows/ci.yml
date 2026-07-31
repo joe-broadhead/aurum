@@ -25,13 +25,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           persist-credentials: false
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
         with:
+          toolchain: stable
           components: rustfmt, clippy
 
       - name: Install build deps
@@ -39,7 +40,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:
           prefix-key: v2-aurum
 
@@ -54,6 +55,11 @@ jobs:
           chmod +x scripts/version_check.sh
           ./scripts/version_check.sh
 
+      - name: action pin policy (JOE-1634)
+        run: |
+          chmod +x scripts/check_action_pins.sh
+          ./scripts/check_action_pins.sh
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -63,11 +69,13 @@ jobs:
       matrix:
         os: [ubuntu-24.04, macos-14, windows-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
 
       - name: Install deps (Linux)
         if: runner.os == 'Linux'
@@ -85,7 +93,7 @@ jobs:
           choco install cmake ffmpeg -y --no-progress
           echo "C:\Program Files\CMake\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:
           prefix-key: v2-aurum
 
@@ -100,28 +108,76 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@1.89.0
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: "1.89.0"
       - name: Install build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:
           prefix-key: v2-aurum-msrv
       - run: cargo check --workspace --locked
+
+  # STT-only matrix (JOE-1633): ensure default TTS feature is optional for core consumers.
+  stt-only:
+    name: STT-only (no default features)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-stt-only
+      - name: check aurum-core without default features
+        run: cargo check -p aurum-core --no-default-features --locked
+      - name: test fault injection + adversarial (default features)
+        run: |
+          cargo test -p aurum-core --test fault_injection --locked
+          cargo test -p aurum-core --test adversarial_parsers --locked
+
+  security:
+    name: Security (audit + deny)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - name: Install cargo-audit and cargo-deny
+        run: |
+          cargo install cargo-audit --locked --version 0.21.2 || cargo install cargo-audit --locked
+          cargo install cargo-deny --locked --version 0.18.2 || cargo install cargo-deny --locked
+      - name: cargo audit
+        run: cargo audit
+      - name: cargo deny
+        run: cargo deny check
 
   docs:
     name: Docs
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38  # v5.4.0
         with:
           python-version: "3.12"
           cache: pip
@@ -139,11 +195,13 @@ jobs:
     needs: test
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:
           prefix-key: v2-aurum
       - run: brew install cmake ffmpeg || true

@@ -37,3 +37,7 @@ ci: fmt lint test version-check
 
 release-dry-run: version-check build
 	@echo "Release dry-run OK (no tag, no publish)"
+
+# Full fail-closed pre-tag gate (JOE-1640). May install Python deps for mkdocs.
+release-gate:
+	@./scripts/release_gate.sh

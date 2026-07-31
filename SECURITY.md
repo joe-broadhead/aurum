@@ -9,6 +9,26 @@ the repository owner's GitHub profile before opening a public issue.
 Do **not** include vulnerability details, exploit steps, or private logs in
 public issues or pull requests.
 
+## Disclosure rehearsal (JOE-1638)
+
+Before 1.0, maintainers rehearse the vulnerability response path at least once
+per major line (tabletop is acceptable when no live issue exists):
+
+1. **Receive** — private advisory or maintainer-only channel; acknowledge within
+   a working day when possible.
+2. **Triage** — severity, affected versions, exploitability on default local path
+   vs remote/FFI surfaces; assign owner.
+3. **Fix** — private branch if needed; prefer fail-closed patches; add regression
+   fixtures under `adversarial_parsers` / `fault_injection` when applicable.
+4. **Verify** — `cargo test --workspace --locked`, `cargo audit`, `cargo deny
+   check`, and `./scripts/release_gate.sh` on the fix commit.
+5. **Publish** — coordinated release notes + SECURITY advisory; never force-push
+   release tags; yank crates.io only for safety-critical broken builds.
+6. **Postmortem** — update threat model / hardening docs if assumptions changed.
+
+Sensitive fuzz or adversarial findings follow the same private path until a fix
+or public advisory is ready.
+
 ## Scope notes
 
 Aurum is an on-device speech I/O CLI and library (STT + TTS). Reports are especially welcome for:
@@ -96,6 +116,18 @@ published release and the default branch.
 - Singleflight coalesces concurrent cold loads of the same model key.
 - TTS caller timeouts are soft deadlines: native ONNX work remains tracked and
   holds permits until it returns (hard-kill requires an outer process sandbox).
+
+## Quality & supply-chain gates (JOE-1578)
+
+- CI runs `cargo audit` and `cargo deny check` (`deny.toml`) on every PR.
+- Third-party GitHub Actions are pinned to full commit SHAs; mutable `@vN` tags
+  are rejected by `scripts/check_action_pins.sh`.
+- Release workflow checks out the **exact tag object** (fail-closed) and attaches
+  SBOM inventory + `SHA256SUMS` + `PROVENANCE.txt`.
+- Continuous adversarial suites: `cargo test -p aurum-core --test adversarial_parsers`
+  and `--test fault_injection`.
+- Pre-tag local gate: `./scripts/release_gate.sh`.
+- Operator docs: threat model, hardening, release gate, supply chain (MkDocs).
 
 ## Output file commits
 

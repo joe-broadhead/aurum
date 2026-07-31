@@ -1,0 +1,66 @@
+# cargo-deny policy (JOE-1630). Fail closed on advisories, banned licenses,
+# and unexpected sources. Temporary exceptions must record owner + rationale.
+
+[graph]
+all-features = false
+no-default-features = false
+targets = [
+  "x86_64-unknown-linux-gnu",
+  "aarch64-apple-darwin",
+  "x86_64-pc-windows-msvc",
+]
+
+[advisories]
+version = 2
+yanked = "deny"
+# Unmaintained crates: warn so we track them, but do not block release on
+# transitive UI helpers until a safe upgrade path exists. Vulnerabilities still deny.
+unmaintained = "workspace"
+ignore = [
+  # Example (keep empty until a reviewed exception is required):
+  # { id = "RUSTSEC-0000-0000", reason = "…", # owner = "@maintainer" }
+]
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+allow = [
+  "MIT",
+  "Apache-2.0",
+  "Apache-2.0 WITH LLVM-exception",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "ISC",
+  "Unicode-3.0",
+  "Unicode-DFS-2016",
+  "Zlib",
+  "CC0-1.0",
+  "OpenSSL",
+  "MPL-2.0",
+  # whisper-rs / whisper-rs-sys (local STT)
+  "Unlicense",
+  # webpki-roots (TLS trust anchors via rustls stack)
+  "CDLA-Permissive-2.0",
+  # language-tokenizer (transitive via misaki-rs G2P). Reviewed: permissive
+  # WTFPL text from LICENSE.md; no copyleft. Owner: @joe-broadhead (JOE-1630).
+  "WTFPL",
+]
+exceptions = []
+
+[licenses.private]
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+highlight = "all"
+allow-wildcard-paths = false
+deny = []
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/crates.io-index", "https://github.com/rust-lang/crates.io-index"]
+allow-git = []

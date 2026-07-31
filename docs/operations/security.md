@@ -24,9 +24,17 @@ See also root [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/S
 
 ## Reporting
 
-Use GitHub Security Advisories.
+Use GitHub Security Advisories. See root [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md)
+for the disclosure rehearsal procedure (JOE-1638).
 
 TTS downloads voice packs only when missing (pinned SHA-256). Local synthesis does not use OpenRouter.
+
+## Supply chain & CI (JOE-1578)
+
+- `cargo audit` / `cargo deny` on every PR (`deny.toml`)
+- Actions pinned to commit SHAs (`scripts/check_action_pins.sh`)
+- Release SBOM + checksums + provenance — [supply chain](../development/supply-chain.md)
+- Threat model / hardening — [threat model](threat-model.md), [hardening](hardening.md)
 
 ### TTS BYOM (JOE-1576)
 

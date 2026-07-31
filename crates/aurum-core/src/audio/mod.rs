@@ -383,21 +383,17 @@ pub async fn load_via_ffmpeg_with_timeout(
         }
     }
 
-    // Stream s16le → f32 on the fly (JOE-1602): never keep a full raw s16 buffer
-    // and a full f32 buffer alive at the same time. Carry at most one trailing
-    // odd byte across reads.
+    // Concurrent pipe drains. Cancellation is raced *outside* the read futures
+    // so a stalled read does not delay cancel until the wall-clock timeout
+    // (JOE-1648 fourth-pass residual).
     let stdout_task = async {
+        // Stream s16le → f32 on the fly (JOE-1602).
         let max_samples = max_decoded_bytes / std::mem::size_of::<f32>();
         let mut samples: Vec<f32> = Vec::with_capacity(max_samples.min(64 * 1024));
         let mut buf = [0u8; 64 * 1024];
         let mut carry: Option<u8> = None;
         let mut raw_bytes_seen: usize = 0;
         loop {
-            if let Some(flag) = &cancel {
-                if flag.is_cancelled() {
-                    return Err(crate::error::ProviderError::Cancelled.into());
-                }
-            }
             let n = stdout
                 .read(&mut buf)
                 .await
@@ -418,10 +414,6 @@ pub async fn load_via_ffmpeg_with_timeout(
 
             let mut offset = 0usize;
             if let Some(lo) = carry.take() {
-                if n == 0 {
-                    carry = Some(lo);
-                    break;
-                }
                 let hi = buf[0];
                 offset = 1;
                 let s = i16::from_le_bytes([lo, hi]);
@@ -480,91 +472,173 @@ pub async fn load_via_ffmpeg_with_timeout(
         Ok::<Vec<u8>, crate::error::TranscriptionError>(tail)
     };
 
-    let drain = tokio::time::timeout(timeout, async {
-        tokio::try_join!(stdout_task, stderr_task)
-    })
-    .await;
-
-    match drain {
-        Ok(Ok((samples_vec, stderr_bytes))) => {
-            // Bound the final wait so a stuck child after pipe close cannot hang forever.
-            let status = match tokio::time::timeout(
-                std::time::Duration::from_secs(30),
-                child.wait(),
-            )
-            .await
-            {
-                Ok(Ok(s)) => s,
-                Ok(Err(e)) => {
-                    return Err(EnvironmentError::FfmpegFailed {
-                        reason: format!("ffmpeg wait failed: {e}"),
-                    }
-                    .into());
+    let drains = async { tokio::try_join!(stdout_task, stderr_task) };
+    let cancel_flag = cancel.clone();
+    let cancel_watch = async move {
+        match cancel_flag {
+            Some(flag) => loop {
+                if flag.is_cancelled() {
+                    return;
                 }
-                Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            },
+            None => std::future::pending::<()>().await,
+        }
+    };
+
+    let drain_outcome: Result<(Vec<f32>, Vec<u8>)> = tokio::select! {
+        biased;
+        _ = cancel_watch => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            Err(crate::error::ProviderError::Cancelled.into())
+        }
+        timed = tokio::time::timeout(timeout, drains) => {
+            match timed {
+                Ok(Ok(pair)) => Ok(pair),
+                Ok(Err(e)) => {
                     let _ = child.kill().await;
                     let _ = child.wait().await;
-                    return Err(EnvironmentError::FfmpegFailed {
-                        reason: "ffmpeg hung after decode pipes closed".into(),
-                    }
-                    .into());
+                    Err(e)
                 }
-            };
-            if !status.success() {
-                let stderr = String::from_utf8_lossy(&stderr_bytes);
-                let reason = stderr.trim();
-                let short = reason
-                    .lines()
-                    .last()
-                    .unwrap_or("ffmpeg failed")
-                    .chars()
-                    .take(400)
-                    .collect::<String>();
-                return Err(UserError::InvalidAudio { reason: short }.into());
-            }
-            if samples_vec.is_empty() {
-                return Err(UserError::InvalidAudio {
-                    reason: "ffmpeg produced no audio data (empty or corrupt file?)".into(),
+                Err(_elapsed) => {
+                    let _ = child.kill().await;
+                    let _ = child.wait().await;
+                    Err(crate::error::ProviderError::DeadlineExceeded.into())
                 }
-                .into());
             }
-            let samples: Arc<[f32]> = samples_vec.into();
-            let duration_secs = samples.len() as f64 / 16_000.0;
-            if duration_secs + 0.05 >= max_duration_secs {
-                return Err(UserError::AudioTooLong {
-                    duration_secs: max_duration_secs,
-                    max_secs: max_duration_secs,
-                }
-                .into());
-            }
-            if samples.is_empty() {
-                return Err(UserError::InvalidAudio {
-                    reason: "audio contains no samples".into(),
-                }
-                .into());
-            }
-            Ok(AudioInput {
-                source_path: path.to_path_buf(),
-                samples,
-                sample_rate: 16_000,
-                duration_secs,
-            })
         }
+    };
+
+    let (samples_vec, stderr_bytes) = drain_outcome?;
+
+    // Bound the final wait so a stuck child after pipe close cannot hang forever.
+    let status = match tokio::time::timeout(std::time::Duration::from_secs(30), child.wait()).await
+    {
+        Ok(Ok(s)) => s,
         Ok(Err(e)) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            Err(e)
-        }
-        Err(_elapsed) => {
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-            Err(EnvironmentError::FfmpegFailed {
-                reason: format!(
-                    "ffmpeg decode exceeded wall-clock deadline ({}s)",
-                    timeout.as_secs()
-                ),
+            return Err(EnvironmentError::FfmpegFailed {
+                reason: format!("ffmpeg wait failed: {e}"),
             }
-            .into())
+            .into());
+        }
+        Err(_) => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            return Err(EnvironmentError::FfmpegFailed {
+                reason: "ffmpeg hung after decode pipes closed".into(),
+            }
+            .into());
+        }
+    };
+    if !status.success() {
+        let stderr = String::from_utf8_lossy(&stderr_bytes);
+        let reason = stderr.trim();
+        let short = reason
+            .lines()
+            .last()
+            .unwrap_or("ffmpeg failed")
+            .chars()
+            .take(400)
+            .collect::<String>();
+        return Err(UserError::InvalidAudio { reason: short }.into());
+    }
+    if samples_vec.is_empty() {
+        return Err(UserError::InvalidAudio {
+            reason: "ffmpeg produced no audio data (empty or corrupt file?)".into(),
+        }
+        .into());
+    }
+    let samples: Arc<[f32]> = samples_vec.into();
+    let duration_secs = samples.len() as f64 / 16_000.0;
+    if duration_secs + 0.05 >= max_duration_secs {
+        return Err(UserError::AudioTooLong {
+            duration_secs: max_duration_secs,
+            max_secs: max_duration_secs,
+        }
+        .into());
+    }
+    if samples.is_empty() {
+        return Err(UserError::InvalidAudio {
+            reason: "audio contains no samples".into(),
+        }
+        .into());
+    }
+    Ok(AudioInput {
+        source_path: path.to_path_buf(),
+        samples,
+        sample_rate: 16_000,
+        duration_secs,
+    })
+}
+
+/// Test helper: race cancel against stalled pipe reads on an arbitrary child
+/// (JOE-1648 fourth-pass). Production decode uses the same `select!` pattern.
+#[cfg(test)]
+async fn race_cancel_against_stalled_pipes(
+    child: &mut tokio::process::Child,
+    cancel: crate::cancel::CancelFlag,
+    poll_ms: u64,
+) -> Result<()> {
+    let mut stdout = child.stdout.take().ok_or_else(|| EnvironmentError::Other {
+        message: "stdout missing".into(),
+    })?;
+    let mut stderr = child.stderr.take().ok_or_else(|| EnvironmentError::Other {
+        message: "stderr missing".into(),
+    })?;
+
+    let stdout_task = async {
+        let mut buf = [0u8; 1024];
+        loop {
+            let n = stdout
+                .read(&mut buf)
+                .await
+                .map_err(|e| EnvironmentError::Other {
+                    message: format!("stdout read: {e}"),
+                })?;
+            if n == 0 {
+                break;
+            }
+        }
+        Ok::<(), crate::error::TranscriptionError>(())
+    };
+    let stderr_task = async {
+        let mut buf = [0u8; 1024];
+        loop {
+            let n = stderr
+                .read(&mut buf)
+                .await
+                .map_err(|e| EnvironmentError::Other {
+                    message: format!("stderr read: {e}"),
+                })?;
+            if n == 0 {
+                break;
+            }
+        }
+        Ok::<(), crate::error::TranscriptionError>(())
+    };
+
+    let drains = async { tokio::try_join!(stdout_task, stderr_task) };
+    let flag = cancel.clone();
+    let cancel_watch = async move {
+        loop {
+            if flag.is_cancelled() {
+                return;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(poll_ms)).await;
+        }
+    };
+
+    tokio::select! {
+        biased;
+        _ = cancel_watch => {
+            let _ = child.kill().await;
+            let _ = child.wait().await;
+            Err(crate::error::ProviderError::Cancelled.into())
+        }
+        r = drains => {
+            let _ = child.wait().await;
+            r.map(|_| ())
         }
     }
 }
@@ -1063,6 +1137,42 @@ mod tests {
         )
         .await
         .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::TranscriptionError::Provider(crate::error::ProviderError::Cancelled)
+        ));
+    }
+
+    /// Stalled pipe reads must not delay cancellation until a long timeout
+    /// (JOE-1648 fourth-pass). `sleep` keeps stdout/stderr open without data.
+    #[tokio::test]
+    async fn stalled_pipe_cancel_kills_child_promptly() {
+        use std::process::Stdio;
+        use std::time::Instant;
+        use tokio::process::Command;
+
+        let mut child = Command::new("sleep")
+            .arg("60")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn sleep");
+        let cancel = crate::cancel::CancelFlag::new();
+        let cancel_for_task = cancel.clone();
+        let start = Instant::now();
+        // Start drains first so reads park on empty pipes, then cancel.
+        let join = tokio::spawn(async move {
+            race_cancel_against_stalled_pipes(&mut child, cancel_for_task, 15).await
+        });
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        cancel.cancel();
+        let err = join.await.expect("join").unwrap_err();
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "cancel must not wait for long timeout; elapsed {:?}",
+            start.elapsed()
+        );
         assert!(matches!(
             err,
             crate::error::TranscriptionError::Provider(crate::error::ProviderError::Cancelled)

@@ -513,6 +513,12 @@ pub unsafe extern "C" fn aurum_cleanup_rules(
     style: u8,
     out_text: *mut *mut c_char,
 ) -> i32 {
+    // Null out before any fallible work (JOE-1647 third-pass).
+    if !out_text.is_null() {
+        unsafe {
+            *out_text = ptr::null_mut();
+        }
+    }
     catch_status(|| {
         if out_text.is_null() {
             return Err(FfiError::invalid_arg("out_text must be non-null"));
@@ -657,12 +663,15 @@ pub unsafe extern "C" fn aurum_job_start_cleanup(
     style: u8,
     out_job: *mut *mut AurumJob,
 ) -> i32 {
+    // Before export admission / any fallible path (JOE-1647 third-pass).
+    if !out_job.is_null() {
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+    }
     catch_status_engine(engine, |inner| {
         if out_job.is_null() {
             return Err(FfiError::invalid_arg("out_job must be non-null"));
-        }
-        unsafe {
-            *out_job = ptr::null_mut();
         }
         let text = cstr(text)?;
         let style = CleanupStyle::from_u8(style)
@@ -681,12 +690,14 @@ pub unsafe extern "C" fn aurum_job_start_preload(
     model: *const c_char,
     out_job: *mut *mut AurumJob,
 ) -> i32 {
+    if !out_job.is_null() {
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+    }
     catch_status_engine(engine, |inner| {
         if out_job.is_null() {
             return Err(FfiError::invalid_arg("out_job must be non-null"));
-        }
-        unsafe {
-            *out_job = ptr::null_mut();
         }
         let model = cstr(model)?;
         let job = inner.start_preload_job(model)?;
@@ -705,12 +716,14 @@ pub unsafe extern "C" fn aurum_job_start_transcribe(
     opts: *const AurumTranscribeOptsC,
     out_job: *mut *mut AurumJob,
 ) -> i32 {
+    if !out_job.is_null() {
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+    }
     catch_status_engine(engine, |inner| {
         if out_job.is_null() || opts.is_null() {
             return Err(FfiError::invalid_arg("out_job and opts must be non-null"));
-        }
-        unsafe {
-            *out_job = ptr::null_mut();
         }
         if samples.is_null() && n_samples > 0 {
             return Err(FfiError::invalid_arg("samples is null"));
@@ -760,12 +773,14 @@ pub unsafe extern "C" fn aurum_job_start_tts(
     opts: *const AurumTtsOptsC,
     out_job: *mut *mut AurumJob,
 ) -> i32 {
+    if !out_job.is_null() {
+        unsafe {
+            *out_job = ptr::null_mut();
+        }
+    }
     catch_status_engine(engine, |inner| {
         if out_job.is_null() || opts.is_null() {
             return Err(FfiError::invalid_arg("out_job and opts must be non-null"));
-        }
-        unsafe {
-            *out_job = ptr::null_mut();
         }
         if text.is_null() {
             return Err(FfiError::invalid_arg("text is null"));

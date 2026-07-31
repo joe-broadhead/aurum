@@ -17,21 +17,33 @@
  *     (nested Tokio). Prefer jobs from event-loop threads.
  *   - Ownership graph: engine -> jobs -> results (transcript/audio/string).
  *   - Result take transfers ownership exactly once; free invalidates pointers.
- *   - Engine destroy cancels jobs and best-effort drains briefly; prefer
- *     aurum_engine_shutdown for a defined wait. Jobs participate in process
- *     active-op accounting so aurum_shutdown_ex waits for them before cache clear.
+ *   - Prefer aurum_engine_close (status-returning) for teardown. It waits for
+ *     exclusive blocking ops, export-boundary calls (including last_error writes),
+ *     and jobs. On AURUM_OK the pointer is freed; on AURUM_ERR_BUSY the pointer
+ *     remains valid and the host must retry (do not free on BUSY).
+ *   - aurum_engine_destroy is the void legacy API: same drain, frees only after
+ *     a successful drain; if still BUSY the allocation is left intact for retry.
+ *     Concurrent use of the handle after a successful free is unsupported.
+ *   - aurum_engine_shutdown drains jobs without holding ExportGuard (avoids
+ *     self-deadlock). Jobs participate in process active-op accounting so
+ *     aurum_shutdown_ex waits for them before cache clear.
  *   - aurum_job_wait returns BUSY on timeout if the job is not yet terminal.
  *   - aurum_engine_last_error: valid only until the next last_error call on
  *     the SAME thread — copy immediately.
+ *   - Out pointers/lengths are set to NULL/0 before engine admission, argument
+ *     validation, or any other fallible work so closed-engine / invalid-arg
+ *     paths never leave a stale foreign pointer.
  *
  * =============================================================================
  * ABI evolution (JOE-1624)
  * =============================================================================
  *   - AURUM_ABI_VERSION is monotonic. This build speaks v2 and still accepts
- *     v1 blocking structs (no struct_size field).
+ *     v1 blocking structs (no struct_size field). ABI v2 is pre-1.0/provisional.
  *   - Versioned structs begin with struct_size + struct_version; zero-initialize
  *     reserved fields. Unsupported versions return AURUM_ERR_INVALID_ARG.
- *   - Out pointers are set to NULL/0 before fallible work where applicable.
+ *   - Downstream C11/C++17 examples are CI-qualified on Linux and macOS.
+ *     Windows MSVC host-link of the staticlib examples is deferred; Unix matrices
+ *     cover the lifecycle smoke.
  */
 #pragma once
 
@@ -182,9 +194,12 @@ AurumStatus aurum_engine_create(const AurumEngineConfig *cfg, AurumEngine **out)
  */
 AurumStatus aurum_engine_close(AurumEngine *engine, uint32_t timeout_ms);
 /**
- * Free an engine. Closes admission, cancels work, waits up to 30s for drain, then
- * frees. Concurrent use after destroy begins is unsupported (use-after-free).
- * Prefer aurum_engine_close when status is needed.
+ * Free an engine (void legacy API). Closes admission, cancels work, and waits
+ * up to 30s for exclusive blocking ops, export-boundary calls, and jobs.
+ * Frees only after a successful drain. If still BUSY the pointer remains valid
+ * for retry via aurum_engine_close (or process shutdown) — destroy does not free
+ * on BUSY. Concurrent use after a successful free is unsupported.
+ * Prefer aurum_engine_close when the host can handle a status code.
  */
 void aurum_engine_destroy(AurumEngine *engine);
 /**

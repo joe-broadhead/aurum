@@ -9,13 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JOE-1646/1647/1648 third-pass residuals** (post PR #34 re-audit):
+  - Registry `clear` / TTS `clear_sessions` only drop **idle** entries; active
+    pins keep residency accounting so same-key reload cannot multiply sessions
+  - Every fallible C out-pointer is nulled **before** export admission /
+    validation; header + FFI README match destroy-only-on-success and TTS jobs
+  - Upload encode propagates cancel / deadline / size-cap errors (no WAV success
+    fallback for control-plane failures); OpenRouter passes cancel into encode
 - **JOE-1646/1647/1648 re-audit** (post PR #33 re-review):
   - STT/TTS registry **atomic pin** for full operation lifetime (`get_and_pin` /
-    `insert_and_pin`); TTS holds pin inside the synth worker
+    `insert_and_pin`); TTS holds pin inside the synth worker (active clear is
+    pin-aware — see third-pass residual above)
   - Panic-safe singleflight `LeaderGuard` (abandoned loads unblock waiters)
   - FFI `export_depth` spans full C call including last_error; destroy frees
     only on successful drain; C11/C++17 examples run in CI on Linux/macOS
-  - FFmpeg encode drains stderr **concurrently** with child poll; explicit kill/reap
+    (Windows MSVC host-link of examples deferred)
+  - FFmpeg encode drains stderr **concurrently** with child poll; explicit kill/reap;
+    cancel/deadline are not swallowed by WAV fallback (third-pass)
 
 - **JOE-1643 / JOE-1644–1650** v0.0.3 audit remediation:
   - **JOE-1644** Output `NoClobber` uses Unix hard-link publish (race-safe vs

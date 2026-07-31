@@ -12,6 +12,10 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_TTS_MODEL: &str = "kitten-nano-int8";
 /// Default friendly voice name.
 pub const DEFAULT_TTS_VOICE: &str = "Luna";
+/// Opt-in curated Kokoro-82M int8 model (JOE-1618). Not the default.
+pub const KOKORO_TTS_MODEL: &str = "kokoro-82m-int8";
+/// Default friendly voice for the Kokoro catalogue entry.
+pub const KOKORO_DEFAULT_VOICE: &str = "Heart";
 
 const HF_BASE: &str = "https://huggingface.co";
 
@@ -21,6 +25,9 @@ pub struct PackFile {
     pub filename: &'static str,
     pub sha256: &'static str,
     pub approx_bytes: u64,
+    /// Absolute download URL. When `None`, resolved via Hugging Face
+    /// `{HF_BASE}/{hf_repo}/resolve/main/{filename}`.
+    pub url: Option<&'static str>,
 }
 
 /// Catalogue entry for a TTS model pack.
@@ -72,16 +79,19 @@ pub const MODELS: &[TtsModelInfo] = &[
             filename: "kitten_tts_nano_v0_8.onnx",
             sha256: "f7b0afcbee92870b32b8e0276d855b954dc25470c9f051b376ac7eee537c76fc",
             approx_bytes: 24_369_971,
+            url: None,
         },
         voices: PackFile {
             filename: "voices.npz",
             sha256: "8aa7cee235abb0739cb51e6559685f65a4dacd95568833d05699b1633f519b3f",
             approx_bytes: 3_278_902,
+            url: None,
         },
         config: PackFile {
             filename: "config.json",
             sha256: "b66006ccbeccd4de5fc3c9272059c47f5725df7215fd889785c03602652fab64",
             approx_bytes: 688,
+            url: None,
         },
         sample_rate_hz: 24_000,
         // KittenTTS voice matrices expose ~400 style rows (seq length index).
@@ -91,8 +101,48 @@ pub const MODELS: &[TtsModelInfo] = &[
         license: "Apache-2.0",
         shipped: true,
     },
+    // Curated Kokoro-82M int8 (JOE-1618). Opt-in; Kitten remains default.
+    // Pins verified 2026-07-31 against kokoro-onnx model-files-v1.0 + hexgrad config.
+    TtsModelInfo {
+        id: KOKORO_TTS_MODEL,
+        notes: "Kokoro-82M int8 ~88MB ONNX — opt-in higher-quality English (not default)",
+        hf_repo: "hexgrad/Kokoro-82M",
+        onnx: PackFile {
+            filename: "kokoro-v1.0.int8.onnx",
+            sha256: "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb",
+            approx_bytes: 92_361_271,
+            url: Some(concat!(
+                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/",
+                "model-files-v1.0/kokoro-v1.0.int8.onnx"
+            )),
+        },
+        voices: PackFile {
+            filename: "voices-v1.0.bin",
+            sha256: "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+            approx_bytes: 28_214_398,
+            url: Some(concat!(
+                "https://github.com/thewh1teagle/kokoro-onnx/releases/download/",
+                "model-files-v1.0/voices-v1.0.bin"
+            )),
+        },
+        config: PackFile {
+            filename: "config.json",
+            sha256: "5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f",
+            approx_bytes: 2_351,
+            url: Some(
+                "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/config.json?download=true",
+            ),
+        },
+        sample_rate_hz: 24_000,
+        // Kokoro voice matrices are (510, 1, 256) — style rows by sequence length.
+        max_phoneme_tokens: 509,
+        languages: &["en", "en-US", "en-GB"],
+        adapter: "kokoro-onnx-v0",
+        license: "Apache-2.0",
+        shipped: true,
+    },
     // Multi-adapter catalogue slot (no weights). Enables model-scoped voice
-    // rejection tests and future adapter registration without Kokoro yet.
+    // rejection tests.
     TtsModelInfo {
         id: PLACEHOLDER_ADAPTER_MODEL,
         notes: "Catalogue placeholder for multi-adapter prep (not downloadable)",
@@ -101,16 +151,19 @@ pub const MODELS: &[TtsModelInfo] = &[
             filename: "not-shipped.onnx",
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
             approx_bytes: 1,
+            url: None,
         },
         voices: PackFile {
             filename: "not-shipped.npz",
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
             approx_bytes: 1,
+            url: None,
         },
         config: PackFile {
             filename: "not-shipped.json",
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
             approx_bytes: 1,
+            url: None,
         },
         sample_rate_hz: 24_000,
         max_phoneme_tokens: 400,
@@ -186,6 +239,203 @@ pub const VOICES: &[VoiceInfo] = &[
         notes: "catalogue-only; not for synthesis",
         model: PLACEHOLDER_ADAPTER_MODEL,
         language: "en",
+    },
+    // --- Kokoro-82M English catalogue (JOE-1618); internal keys match voices-v1.0.bin ---
+    VoiceInfo {
+        id: "Heart",
+        internal_key: "af_heart",
+        notes: "female — Kokoro default",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Alloy",
+        internal_key: "af_alloy",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Aoede",
+        internal_key: "af_aoede",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "KokoroBella",
+        internal_key: "af_bella",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Jessica",
+        internal_key: "af_jessica",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Kore",
+        internal_key: "af_kore",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Nicole",
+        internal_key: "af_nicole",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Nova",
+        internal_key: "af_nova",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "River",
+        internal_key: "af_river",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Sarah",
+        internal_key: "af_sarah",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Sky",
+        internal_key: "af_sky",
+        notes: "female",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Adam",
+        internal_key: "am_adam",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Echo",
+        internal_key: "am_echo",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Eric",
+        internal_key: "am_eric",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Fenrir",
+        internal_key: "am_fenrir",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Liam",
+        internal_key: "am_liam",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Michael",
+        internal_key: "am_michael",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Onyx",
+        internal_key: "am_onyx",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Puck",
+        internal_key: "am_puck",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Santa",
+        internal_key: "am_santa",
+        notes: "male",
+        model: KOKORO_TTS_MODEL,
+        language: "en-US",
+    },
+    VoiceInfo {
+        id: "Alice",
+        internal_key: "bf_alice",
+        notes: "female — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
+    },
+    VoiceInfo {
+        id: "Emma",
+        internal_key: "bf_emma",
+        notes: "female — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
+    },
+    VoiceInfo {
+        id: "Isabella",
+        internal_key: "bf_isabella",
+        notes: "female — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
+    },
+    VoiceInfo {
+        id: "Lily",
+        internal_key: "bf_lily",
+        notes: "female — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
+    },
+    VoiceInfo {
+        id: "Daniel",
+        internal_key: "bm_daniel",
+        notes: "male — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
+    },
+    VoiceInfo {
+        id: "Fable",
+        internal_key: "bm_fable",
+        notes: "male — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
+    },
+    VoiceInfo {
+        id: "George",
+        internal_key: "bm_george",
+        notes: "male — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
+    },
+    VoiceInfo {
+        id: "Lewis",
+        internal_key: "bm_lewis",
+        notes: "male — British",
+        model: KOKORO_TTS_MODEL,
+        language: "en-GB",
     },
 ];
 
@@ -479,9 +729,11 @@ pub fn format_model_list(cache_dir: &Path) -> String {
         ));
     }
     out.push_str(&format!(
-        "\nDefault model: `{DEFAULT_TTS_MODEL}` (trust=builtin). Engine: ONNX Runtime + KittenTTS.\n\
+        "\nDefault model: `{DEFAULT_TTS_MODEL}` (trust=builtin, KittenTTS).\n\
+         Opt-in higher quality: `{KOKORO_TTS_MODEL}` (Kokoro-82M int8, adapter kokoro-onnx-v0).\n\
          Custom models use [[tts.custom_models]] and never shadow built-ins (see `aurum tts adapters`).\n\
-         Bare .onnx paths are not supported — use a pack + manifest + known adapter.\n"
+         Bare .onnx paths are not supported — use a pack + manifest + known adapter.\n\
+         Licenses: Kitten/Kokoro weights Apache-2.0; G2P via MIT misaki-rs (no GPL espeak).\n"
     ));
     out
 }
@@ -599,10 +851,13 @@ pub async fn ensure_voice_pack(
         if dest.exists() && verify_against_expected(&dest, file.sha256) {
             continue;
         }
-        let url = format!(
-            "{HF_BASE}/{}/resolve/main/{}?download=true",
-            info.hf_repo, file.filename
-        );
+        let url = match file.url {
+            Some(absolute) => absolute.to_string(),
+            None => format!(
+                "{HF_BASE}/{}/resolve/main/{}?download=true",
+                info.hf_repo, file.filename
+            ),
+        };
         if let Err(e) = download_pinned(
             info.id,
             &url,

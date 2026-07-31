@@ -1,6 +1,6 @@
 # ADR-001: Kokoro-82M TTS adapter feasibility (JOE-1617)
 
-**Status:** Accepted (scaffold only; not product-shipped)  
+**Status:** Accepted — product-shipped as **opt-in** catalogue model (JOE-1618)  
 **Date:** 2026-07-31  
 **Epic:** JOE-1576 / GitHub #16  
 **Related:** JOE-1615 (adapter contract), JOE-1616 (conformance), JOE-1618 (implementation)
@@ -15,8 +15,8 @@ adapter that defines tokenizer/G2P, tensors, voices, limits, and output policy.
 
 1. **Platform first:** Ship the versioned adapter + model-pack manifest contract
    (`kitten-onnx-v1`, `fake-sine-v1` for conformance, `kokoro-onnx-v0` scaffold).
-2. **Kokoro is scaffold, not catalogue-shipped** until pins, licenses, and a full
-   conformance pass land (JOE-1618).
+2. **Kokoro ships as opt-in catalogue model** `kokoro-82m-int8` with adapter
+   `kokoro-onnx-v0`, immutable digests, and English voice catalogue (JOE-1618).
 3. **No bare ONNX path** is ever treated as a supported model.
 4. **Default remains Kitten** (`kitten-nano-int8` / `kitten-onnx-v1`) until a
    separate release decision promotes Kokoro based on measured quality, size,
@@ -36,13 +36,17 @@ adapter that defines tokenizer/G2P, tensors, voices, limits, and output policy.
 
 ## Adapter mapping (JOE-1615)
 
-| Field | Kokoro scaffold (`kokoro-onnx-v0`) |
-|-------|-------------------------------------|
+| Field | Kokoro (`kokoro-onnx-v0`) |
+|-------|---------------------------|
 | Adapter id / version | `kokoro-onnx-v0` / 0 |
 | Required roles | `onnx`, `voices`, `config` |
-| Synthesis supported | **false** until JOE-1618 |
-| Languages (planned) | `en` first |
-| Trust | never auto-builtin |
+| Synthesis supported | **true** (catalogue + local pack) |
+| Model id | `kokoro-82m-int8` (int8 ONNX ~88 MB) |
+| Languages | `en` / `en-US` / `en-GB` (G2P English) |
+| Trust | `builtin` for catalogue; verified digests |
+| Sample rate | 24 kHz mono |
+| Style shape | `(510, 1, 256)` length-indexed |
+| G2P | MIT `misaki-rs` + Kokoro config vocab |
 
 ## License matrix (go / no-go)
 
@@ -78,17 +82,36 @@ JOE-1618 with rationale if license/G2P/ORT constraints fail.
 - Auto-trust of Hugging Face model cards  
 - Shipping Kokoro as default in this ADR  
 
+## Pinned artifacts (JOE-1618)
+
+| File | Approx size | Source |
+|------|-------------|--------|
+| `kokoro-v1.0.int8.onnx` | ~88 MB | thewh1teagle/kokoro-onnx `model-files-v1.0` |
+| `voices-v1.0.bin` | ~28 MB | same release (NPZ of per-voice styles) |
+| `config.json` | ~2 KB | hexgrad/Kokoro-82M (vocab + model metadata) |
+
+SHA-256 pins live in `crates/aurum-core/src/tts/catalogue.rs` and fail closed on mismatch.
+
+### Tensor contract (local ORT)
+
+| Input | Shape | Type |
+|-------|-------|------|
+| `tokens` | `[1, sequence_length]` | int64 |
+| `style` | `[1, 256]` | float32 |
+| `speed` | `[1]` | float32 |
+| Output `audio` | `[audio_length]` | float32 @ 24 kHz |
+
 ## Evidence checklist
 
-- [ ] Local ORT run with recorded tensor metadata  
-- [ ] Digest/size pins for all artifacts  
-- [ ] License file paths + attribution text  
-- [ ] Cold/warm latency and peak RSS notes  
-- [ ] Quality corpus comparison vs Kitten  
-- [ ] Cross-platform smoke (macOS / Linux; Windows as release allows)  
+- [x] Local ORT run with recorded tensor metadata  
+- [x] Digest/size pins for all artifacts  
+- [x] License/attribution in docs + `aurum tts models`  
+- [x] Integration smoke (`kokoro_real_synth_from_cache`)  
+- [ ] Broader quality corpus vs Kitten (follow-up evals)  
+- [ ] Full multi-platform release dogfood  
 
 ## Consequences
 
-- Users can `aurum tts adapters` and see Kokoro as scaffold-only.  
-- Custom/local packs use known adapters + trust modes only.  
-- GitHub #16 should link this ADR after human review.
+- Users select `aurum tts --model kokoro-82m-int8 --voice Heart` (opt-in).  
+- Kitten remains default; Kokoro download is first-use only.  
+- Custom/local packs may use `kokoro-onnx-v0` with verified digests.

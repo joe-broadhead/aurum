@@ -3,7 +3,7 @@
 //! ## Commit protocol
 //!
 //! 1. Resolve destination (reject symlink destinations, directories, empty paths).
-//! 2. Create a randomized same-directory temporary file with exclusive create and
+//! 2. Create a unique same-directory temporary file with exclusive create and
 //!    owner-only permissions (0o600 on Unix at create time).
 //! 3. Write payload, flush, and `sync_all` the file — **errors are propagated**.
 //! 4. Publish:
@@ -18,8 +18,9 @@
 //!    that reject directory fsync).
 //!
 //! A failure before successful publish leaves the prior destination intact and
-//! removes our temp file. Temp names include PID + random bytes so concurrent
-//! writers never share a path.
+//! removes our temp file. Temp names include a collision-resistant suffix
+//! (PID + wall-clock nanoseconds); exclusive `create_new` is the safety gate
+//! so concurrent writers never share a path.
 //!
 //! ## Durability
 //!
@@ -273,7 +274,7 @@ fn create_exclusive_temp(dest: &Path) -> Result<PathBuf> {
         .map(|c| if c == '/' || c == '\\' { '_' } else { c })
         .collect();
 
-    // Retry on collision (extremely unlikely with random suffix).
+    // Retry on collision (extremely unlikely with unique suffix).
     for _ in 0..32 {
         let suffix = random_suffix();
         let name = format!(".{}.{}-{}.aurum.tmp", safe_stem, std::process::id(), suffix);
@@ -533,10 +534,6 @@ fn map_io_sync(dest: &Path, e: std::io::Error) -> crate::error::TranscriptionErr
     }
     .into()
 }
-
-// Patch sync_parent_dir ENOTSUP handling properly by rewriting the match.
-// The function above used a broken helper — replace with clean version below
-// via a follow-up fix in this same write... actually I'll fix in-place now.
 
 #[cfg(test)]
 mod tests {

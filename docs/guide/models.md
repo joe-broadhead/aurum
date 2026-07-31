@@ -43,9 +43,10 @@ as a production WER budget.
 
 Marked experimental after a pathological repetition loop in dogfood (~21% WER
 vs reference with a short phrase repeating dozens of times). Prefer
-`large-v3-turbo` or `large-v3-turbo-q5_0` instead. Aurum also emits a
-`degeneration_repetition` normalization warning when transcripts show extreme
-n-gram loops.
+`large-v3-turbo` or `large-v3-turbo-q5_0` instead. Aurum’s normalization
+report API can detect extreme n-gram loops as `degeneration_repetition`;
+ordinary CLI/JSON transcript output does not currently surface that event
+unless hosts consume `NormalizationReport` directly.
 
 ## Catalogue (aliases)
 

@@ -9,11 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JOE-1647/1648 fourth-pass residuals** (post PR #35 re-audit):
+  - `aurum_job_take_*`, `aurum_job_poll`, `aurum_transcript_segment`, and
+    `aurum_capabilities` zero/null outputs **before** argument validation
+  - FFmpeg **decode** races cancellation against pipe drains so stalled reads
+    cannot delay cancel until the wall-clock timeout; kill+reap on cancel
 - **JOE-1646/1647/1648 third-pass residuals** (post PR #34 re-audit):
   - Registry `clear` / TTS `clear_sessions` only drop **idle** entries; active
     pins keep residency accounting so same-key reload cannot multiply sessions
-  - Every fallible C out-pointer is nulled **before** export admission /
-    validation; header + FFI README match destroy-only-on-success and TTS jobs
+  - Fallible C out-pointers for create/job-start/cleanup are nulled before
+    export admission; take/poll/segment/capabilities completed in fourth-pass
   - Upload encode propagates cancel / deadline / size-cap errors (no WAV success
     fallback for control-plane failures); OpenRouter passes cancel into encode
 - **JOE-1646/1647/1648 re-audit** (post PR #33 re-review):

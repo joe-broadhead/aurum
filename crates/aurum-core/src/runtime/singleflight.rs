@@ -380,28 +380,36 @@ mod tests {
 
     #[test]
     fn leader_guard_drop_unblocks_waiters() {
-        let sf = Arc::new(Singleflight::<u32>::new(Duration::from_millis(80)));
+        // Long enough fail_ttl that scheduling noise cannot expire Failed mid-test.
+        let sf = Arc::new(Singleflight::<u32>::new(Duration::from_millis(500)));
         let key = LoadKey::stt("abandon", "/tmp/a");
+        let held = Arc::new(std::sync::Barrier::new(2));
         let sf2 = Arc::clone(&sf);
         let key2 = key.clone();
+        let held2 = Arc::clone(&held);
         let leader = thread::spawn(move || {
             let g = sf2.begin_or_wait_guard(key2).unwrap().expect("leader");
+            // Publish that Loading is held before any waiter starts (avoids race where
+            // the waiter becomes Leader first on a loaded CI runner).
+            held2.wait();
             // Simulate panic/abandon: drop guard without success/fail.
             drop(g);
         });
-        thread::sleep(Duration::from_millis(10));
+        held.wait();
         let waiter = thread::spawn({
             let sf = Arc::clone(&sf);
             let key = key.clone();
             move || sf.begin_or_wait(&key)
         });
+        // Let the waiter park on Loading before the leader abandons.
+        thread::sleep(Duration::from_millis(30));
         leader.join().unwrap();
         match waiter.join().unwrap() {
             BeginLoad::Failed(m) => assert!(m.contains("abandon") || m.contains("panic")),
             other => panic!("expected Failed after abandon, got {other:?}"),
         }
         // After TTL a new leader can proceed and publish successfully.
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(520));
         let g = sf
             .begin_or_wait_guard(key.clone())
             .unwrap()

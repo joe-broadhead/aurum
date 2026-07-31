@@ -5,9 +5,10 @@ use aurum_ffi::{
     aurum_engine_create, aurum_engine_destroy, aurum_engine_is_model_ready,
     aurum_engine_last_error, aurum_engine_preload, aurum_engine_shutdown,
     aurum_engine_transcribe_pcm, aurum_job_free, aurum_job_poll, aurum_job_start_cleanup,
-    aurum_job_take_string, aurum_job_wait, aurum_sample_rate, aurum_string_free, aurum_version,
-    AurumCapabilitiesC, AurumEngine, AurumEngineConfigC, AurumJobSnapshotC, AurumTranscribeOptsC,
-    AURUM_ABI_VERSION, AURUM_SAMPLE_RATE,
+    aurum_job_take_audio, aurum_job_take_string, aurum_job_take_transcript, aurum_job_wait,
+    aurum_sample_rate, aurum_string_free, aurum_transcript_segment, aurum_version,
+    AurumCapabilitiesC, AurumEngine, AurumEngineConfigC, AurumJobSnapshotC, AurumSegmentC,
+    AurumTranscribeOptsC, AURUM_ABI_VERSION, AURUM_SAMPLE_RATE,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -171,4 +172,69 @@ fn job_start_nulls_out_on_closed_engine() {
     assert!(out.is_null(), "out_text must be nulled on invalid style");
 
     unsafe { aurum_engine_destroy(engine) };
+}
+
+/// take/poll/segment/capabilities must clear stale sentinels before validation (JOE-1647).
+#[test]
+fn take_poll_segment_capabilities_null_before_validation() {
+    let mut tr = ptr::dangling_mut::<aurum_ffi::AurumTranscript>();
+    let st = unsafe { aurum_job_take_transcript(ptr::null_mut(), &mut tr) };
+    assert_ne!(st, 0);
+    assert!(tr.is_null());
+
+    let mut s = ptr::dangling_mut::<c_char>();
+    let st = unsafe { aurum_job_take_string(ptr::null_mut(), &mut s) };
+    assert_ne!(st, 0);
+    assert!(s.is_null());
+
+    let mut audio = ptr::dangling_mut::<aurum_ffi::AurumAudio>();
+    let st = unsafe { aurum_job_take_audio(ptr::null_mut(), &mut audio) };
+    assert_ne!(st, 0);
+    assert!(audio.is_null());
+
+    let mut snap = AurumJobSnapshotC {
+        struct_size: 0xDEAD,
+        struct_version: 0xBEEF,
+        job_id: 99,
+        kind: 7,
+        state: 3,
+        progress_pct: 100,
+        reserved: [1; 16],
+    };
+    let st = unsafe { aurum_job_poll(ptr::null(), &mut snap) };
+    assert_ne!(st, 0);
+    assert_eq!(snap.struct_size, 0);
+    assert_eq!(snap.struct_version, 0);
+    assert_eq!(snap.job_id, 0);
+    assert_eq!(snap.state, 0);
+
+    let mut seg = AurumSegmentC {
+        start_s: 1.0,
+        end_s: 2.0,
+        text: ptr::dangling_mut::<c_char>() as *const c_char,
+    };
+    let st = unsafe { aurum_transcript_segment(ptr::null(), 0, &mut seg) };
+    assert_ne!(st, 0);
+    assert!(seg.text.is_null());
+    assert_eq!(seg.start_s, 0.0);
+
+    let mut caps = AurumCapabilitiesC {
+        struct_size: 64,
+        struct_version: 99,
+        abi_version: 1,
+        abi_min_version: 1,
+        has_stt: 1,
+        has_tts: 1,
+        has_cleanup: 1,
+        has_jobs: 1,
+        has_doctor: 1,
+        sample_rate_hz: 16_000,
+        reserved: [9; 16],
+    };
+    let st = unsafe { aurum_capabilities(&mut caps) };
+    assert_ne!(st, 0);
+    assert_eq!(caps.has_stt, 0);
+    assert_eq!(caps.has_tts, 0);
+    assert_eq!(caps.sample_rate_hz, 0);
+    assert_eq!(caps.struct_version, 0);
 }

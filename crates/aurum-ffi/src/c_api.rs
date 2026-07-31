@@ -469,6 +469,12 @@ pub unsafe extern "C" fn aurum_transcript_segment(
     index: usize,
     out: *mut AurumSegmentC,
 ) -> i32 {
+    // Zero complete output before any validation (JOE-1647 fourth-pass).
+    if !out.is_null() {
+        unsafe {
+            ptr::write_bytes(out as *mut u8, 0, std::mem::size_of::<AurumSegmentC>());
+        }
+    }
     catch_status(|| {
         if t.is_null() || out.is_null() {
             return Err(FfiError::invalid_arg("t and out must be non-null"));
@@ -567,21 +573,29 @@ pub struct AurumCapabilitiesC {
 /// (or zero for "use sizeof this build"). Rejects unsupported struct_version.
 #[no_mangle]
 pub unsafe extern "C" fn aurum_capabilities(out: *mut AurumCapabilitiesC) -> i32 {
+    // Snapshot host fields, then zero the full structure before validation so
+    // unsupported-version failure never leaves stale capability bits (JOE-1647).
+    let (host_size, host_ver) = if out.is_null() {
+        (0u32, 0u32)
+    } else {
+        unsafe {
+            let size = (*out).struct_size;
+            let ver = (*out).struct_version;
+            ptr::write_bytes(out as *mut u8, 0, std::mem::size_of::<AurumCapabilitiesC>());
+            (size, ver)
+        }
+    };
     catch_status(|| {
         if out.is_null() {
             return Err(FfiError::invalid_arg("out must be non-null"));
         }
-        let host_size = unsafe { (*out).struct_size };
-        let host_ver = unsafe { (*out).struct_version };
         let caps = crate::jobs::AbiCapabilities::current();
         if host_ver != 0 && host_ver != 1 {
             return Err(FfiError::invalid_arg(format!(
                 "unsupported capabilities struct_version {host_ver} (need 1)"
             )));
         }
-        // Zero-fill out first (safe on failure paths).
         unsafe {
-            ptr::write_bytes(out as *mut u8, 0, std::mem::size_of::<AurumCapabilitiesC>());
             (*out).struct_size = caps.struct_size;
             (*out).struct_version = caps.struct_version;
             (*out).abi_version = caps.abi_version;
@@ -817,6 +831,12 @@ pub unsafe extern "C" fn aurum_job_start_tts(
 
 #[no_mangle]
 pub unsafe extern "C" fn aurum_job_poll(job: *const AurumJob, out: *mut AurumJobSnapshotC) -> i32 {
+    // Zero snapshot before validating job (JOE-1647 fourth-pass).
+    if !out.is_null() {
+        unsafe {
+            ptr::write_bytes(out as *mut u8, 0, std::mem::size_of::<AurumJobSnapshotC>());
+        }
+    }
     catch_status(|| {
         if job.is_null() || out.is_null() {
             return Err(FfiError::invalid_arg("job and out must be non-null"));
@@ -824,7 +844,6 @@ pub unsafe extern "C" fn aurum_job_poll(job: *const AurumJob, out: *mut AurumJob
         let j = unsafe { &*job };
         let (state, prog) = j.inner.poll();
         unsafe {
-            ptr::write_bytes(out as *mut u8, 0, std::mem::size_of::<AurumJobSnapshotC>());
             (*out).struct_size = std::mem::size_of::<AurumJobSnapshotC>() as u32;
             (*out).struct_version = 1;
             (*out).job_id = j.inner.id();
@@ -868,12 +887,15 @@ pub unsafe extern "C" fn aurum_job_take_transcript(
     job: *mut AurumJob,
     out_transcript: *mut *mut AurumTranscript,
 ) -> i32 {
+    // Null out before validating job (JOE-1647 fourth-pass).
+    if !out_transcript.is_null() {
+        unsafe {
+            *out_transcript = ptr::null_mut();
+        }
+    }
     catch_status(|| {
         if job.is_null() || out_transcript.is_null() {
             return Err(FfiError::invalid_arg("job and out must be non-null"));
-        }
-        unsafe {
-            *out_transcript = ptr::null_mut();
         }
         let j = unsafe { &*job };
         match j.inner.take_result()? {
@@ -894,12 +916,14 @@ pub unsafe extern "C" fn aurum_job_take_string(
     job: *mut AurumJob,
     out_text: *mut *mut c_char,
 ) -> i32 {
+    if !out_text.is_null() {
+        unsafe {
+            *out_text = ptr::null_mut();
+        }
+    }
     catch_status(|| {
         if job.is_null() || out_text.is_null() {
             return Err(FfiError::invalid_arg("job and out must be non-null"));
-        }
-        unsafe {
-            *out_text = ptr::null_mut();
         }
         let j = unsafe { &*job };
         match j.inner.take_result()? {
@@ -933,12 +957,14 @@ pub unsafe extern "C" fn aurum_job_take_audio(
     job: *mut AurumJob,
     out_audio: *mut *mut AurumAudio,
 ) -> i32 {
+    if !out_audio.is_null() {
+        unsafe {
+            *out_audio = ptr::null_mut();
+        }
+    }
     catch_status(|| {
         if job.is_null() || out_audio.is_null() {
             return Err(FfiError::invalid_arg("job and out must be non-null"));
-        }
-        unsafe {
-            *out_audio = ptr::null_mut();
         }
         let j = unsafe { &*job };
         match j.inner.take_result()? {
@@ -1112,6 +1138,8 @@ mod tests {
             assert!((seg.start_s - 0.0).abs() < 1e-9);
             assert_eq!(CStr::from_ptr(seg.text).to_str().unwrap(), "hello");
             assert_eq!(aurum_transcript_segment(ptr, 2, &mut seg), 1); // INVALID_ARG
+                                                                       // Out-of-range leaves a zeroed segment (no stale text pointer).
+            assert!(seg.text.is_null());
             aurum_transcript_free(ptr);
         }
     }

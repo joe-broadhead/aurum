@@ -131,8 +131,13 @@ impl OutputTransaction {
         let write_result = (|| -> Result<()> {
             write_tmp(&tmp)?;
             // Ensure durable bytes even if the callback only flushed its writer.
+            // Re-open writeable: on Windows, FlushFileBuffers on a read-only handle
+            // can return ERROR_ACCESS_DENIED.
             {
-                let file = File::open(&tmp).map_err(|e| map_io_write(&self.dest, e))?;
+                let file = OpenOptions::new()
+                    .write(true)
+                    .open(&tmp)
+                    .map_err(|e| map_io_write(&self.dest, e))?;
                 file.sync_all().map_err(|e| map_io_sync(&self.dest, e))?;
             }
             publish(&tmp, &self.dest, self.mode, self.symlink_policy)?;
@@ -455,10 +460,28 @@ fn sync_parent_dir(dest: &Path) -> Result<()> {
     if parent.as_os_str().is_empty() {
         return Ok(());
     }
-    let dir = File::open(parent).map_err(|e| EnvironmentError::DirectoryAccess {
-        path: parent.display().to_string(),
-        reason: format!("failed to open parent directory for sync: {e}"),
-    })?;
+    // Opening a directory handle for fsync is platform-specific. On Windows,
+    // `File::open` on a directory often returns Access Denied — treat as
+    // unsupported (best-effort durability), not a hard failure (JOE-1644).
+    let dir = match File::open(parent) {
+        Ok(d) => d,
+        Err(e) => {
+            #[cfg(windows)]
+            {
+                let _ = e;
+                return Ok(());
+            }
+            #[cfg(not(windows))]
+            {
+                // On Unix, inability to open the parent is unusual — surface it.
+                return Err(EnvironmentError::DirectoryAccess {
+                    path: parent.display().to_string(),
+                    reason: format!("failed to open parent directory for sync: {e}"),
+                }
+                .into());
+            }
+        }
+    };
     match dir.sync_all() {
         Ok(()) => Ok(()),
         Err(e) => {

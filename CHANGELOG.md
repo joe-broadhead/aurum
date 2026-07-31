@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6] - 2026-07-31
+
+v0.0.6 is the **owned SDK foundations** release after evidence residual v0.0.5:
+`ValidatedConfig`, `SecretString`, and an owned `AurumEngine` for library hosts,
+with safer segment construction and honest process-global model-cache residual
+docs. Group B / JOE-1654 is partially complete — per-engine model isolation and
+richer engine STT/TTS APIs remain follow-ups.
+
 ### Added
 
 - **JOE-1654 / JOE-1779 / JOE-1782:** `ValidatedConfig`, `SecretString`, and
@@ -342,7 +350,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.5...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.6...HEAD
+[0.0.6]: https://github.com/joe-broadhead/aurum/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/joe-broadhead/aurum/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/joe-broadhead/aurum/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/joe-broadhead/aurum/compare/v0.0.2...v0.0.3

@@ -82,8 +82,8 @@ shutdown is global; engine shutdown drains only that engine's jobs. See
 TTS engines are **adapters**, not bare ONNX paths. Packs carry a versioned
 manifest (`aurum-tts-manifest.json`) with trust modes (`builtin` / `verified` /
 `local_unverified`). Kitten remains the default shipped engine; `fake-sine-v1`
-proves the contract is not Kitten-specific; Kokoro is scaffold-only until
-[ADR-001](adr-001-kokoro-tts-adapter.md) evidence lands (JOE-1617/1618). Custom
+proves the contract is not Kitten-specific; Kokoro ships as opt-in catalogue
+model `kokoro-82m-int8` ([ADR-001](adr-001-kokoro-tts-adapter.md), JOE-1618). Custom
 catalogue entries and `aurum tts inspect|verify|add` fail closed on unknown
 adapters, digest mismatch, and reserved ids.
 

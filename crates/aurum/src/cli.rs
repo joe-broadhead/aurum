@@ -618,7 +618,18 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
     }
 
     let model = cli.model.clone().unwrap_or_else(|| cfg.tts_model.clone());
-    let voice = cli.voice.clone().unwrap_or_else(|| cfg.tts_voice.clone());
+    let voice = {
+        let requested = cli.voice.clone().unwrap_or_else(|| cfg.tts_voice.clone());
+        // Opt-in Kokoro: if the selected model is Kokoro and the requested voice
+        // is not model-scoped (e.g. default "Luna"), use Kokoro's default voice.
+        if model.eq_ignore_ascii_case(aurum_core::KOKORO_TTS_MODEL)
+            && aurum_core::resolve_voice_for_model(&model, &requested).is_err()
+        {
+            aurum_core::KOKORO_DEFAULT_VOICE.to_string()
+        } else {
+            requested
+        }
+    };
     let language = cli
         .language
         .clone()

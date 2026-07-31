@@ -7,15 +7,41 @@ use aurum_ffi::{aurum_abi_version, aurum_sample_rate, AURUM_ABI_VERSION, AURUM_S
 use std::mem;
 
 // Keep in sync with include/aurum.h
-const HEADER_ABI_VERSION: u32 = 1;
+const HEADER_ABI_VERSION: u32 = 2;
+const HEADER_ABI_MIN_VERSION: u32 = 1;
 const HEADER_SAMPLE_RATE: u32 = 16000;
 
 #[test]
 fn abi_constants_match_header_macros() {
     assert_eq!(AURUM_ABI_VERSION, HEADER_ABI_VERSION);
+    assert_eq!(aurum_ffi::AURUM_ABI_MIN_VERSION, HEADER_ABI_MIN_VERSION);
     assert_eq!(AURUM_SAMPLE_RATE, HEADER_SAMPLE_RATE);
     assert_eq!(aurum_abi_version(), HEADER_ABI_VERSION);
     assert_eq!(aurum_sample_rate(), HEADER_SAMPLE_RATE);
+}
+
+#[test]
+fn capabilities_struct_matches_header_shape() {
+    let mut caps = aurum_ffi::AurumCapabilitiesC {
+        struct_size: 0,
+        struct_version: 1,
+        abi_version: 0,
+        abi_min_version: 0,
+        has_stt: 0,
+        has_tts: 0,
+        has_cleanup: 0,
+        has_jobs: 0,
+        has_doctor: 0,
+        sample_rate_hz: 0,
+        reserved: [0; 16],
+    };
+    assert_eq!(unsafe { aurum_ffi::aurum_capabilities(&mut caps) }, 0);
+    assert_eq!(caps.abi_version, HEADER_ABI_VERSION);
+    assert_eq!(caps.abi_min_version, HEADER_ABI_MIN_VERSION);
+    assert_eq!(caps.has_stt, 1);
+    assert_eq!(caps.has_jobs, 1);
+    assert_eq!(caps.has_doctor, 1);
+    assert_eq!(caps.sample_rate_hz, HEADER_SAMPLE_RATE);
 }
 
 #[test]

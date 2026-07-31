@@ -24,6 +24,20 @@ pub enum FfiStatus {
     Deadline = 12,
     /// Resource governor rejected admission (JOE-1596).
     Overload = 13,
+    /// Artifact digest/size integrity failure (JOE-1624).
+    ArtifactIntegrity = 14,
+    /// Remote/network failure.
+    Network = 15,
+    /// Authentication failure.
+    Auth = 16,
+    /// Quota exhausted.
+    Quota = 17,
+    /// Rate limited.
+    RateLimit = 18,
+    /// Filesystem / path access failure.
+    Filesystem = 19,
+    /// Engine or process is shutting down / stopped.
+    Shutdown = 20,
 }
 
 impl FfiStatus {
@@ -89,10 +103,11 @@ impl From<TranscriptionError> for FfiError {
             },
             TranscriptionError::Environment(e) => match e {
                 EnvironmentError::DiskSpace { .. } => FfiStatus::NoMemory,
+                EnvironmentError::DirectoryAccess { .. } | EnvironmentError::Io(_) => {
+                    FfiStatus::Filesystem
+                }
                 EnvironmentError::FfmpegMissing
                 | EnvironmentError::FfmpegFailed { .. }
-                | EnvironmentError::DirectoryAccess { .. }
-                | EnvironmentError::Io(_)
                 | EnvironmentError::Other { .. } => FfiStatus::Audio,
             },
             TranscriptionError::Provider(p) => match p {
@@ -100,10 +115,10 @@ impl From<TranscriptionError> for FfiError {
                 ProviderError::DeadlineExceeded => FfiStatus::Deadline,
                 ProviderError::Overload { .. } => FfiStatus::Overload,
                 ProviderError::ModelDownload { .. } => FfiStatus::ModelDownload,
-                ProviderError::Network { .. }
-                | ProviderError::RateLimited { .. }
-                | ProviderError::QuotaExceeded { .. }
-                | ProviderError::Auth { .. } => FfiStatus::ModelDownload,
+                ProviderError::Network { .. } => FfiStatus::Network,
+                ProviderError::RateLimited { .. } => FfiStatus::RateLimit,
+                ProviderError::QuotaExceeded { .. } => FfiStatus::Quota,
+                ProviderError::Auth { .. } => FfiStatus::Auth,
                 ProviderError::ModelLoad { .. }
                 | ProviderError::TranscriptionFailed { .. }
                 | ProviderError::Remote { .. }

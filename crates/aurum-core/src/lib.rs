@@ -51,11 +51,13 @@ pub mod cancel;
 pub mod capabilities;
 pub mod cleanup;
 pub mod config;
+pub mod doctor;
 pub mod download;
 pub mod dto;
 pub mod error;
 pub mod eval;
 pub mod model;
+pub mod observability;
 pub mod output;
 pub mod partial;
 pub mod pcm;
@@ -79,6 +81,7 @@ pub use cleanup::{
     TextCleanup,
 };
 pub use config::{Config, EffectiveConfigDiagnostic};
+pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_SCHEMA_VERSION};
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
 pub use eval::{
@@ -86,6 +89,9 @@ pub use eval::{
     EvalReport, SttFixture, SttScore,
 };
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
+pub use observability::{
+    process_metrics, DiagnosticBundle, Metrics, MetricsSnapshot, SpanTimer, METRICS_SCHEMA_VERSION,
+};
 pub use output::{
     commit_text, format_result, write_result, write_result_to_path, CommitMode, OutputFormat,
     OutputTransaction, SymlinkPolicy, DEFAULT_MAX_OUTPUT_BYTES,

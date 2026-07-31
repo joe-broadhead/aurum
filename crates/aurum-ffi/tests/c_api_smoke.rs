@@ -1,11 +1,13 @@
 //! Smoke tests that exercise the C ABI from Rust (same symbols hosts link).
 
 use aurum_ffi::{
-    aurum_abi_version, aurum_cleanup_rules, aurum_engine_create, aurum_engine_destroy,
-    aurum_engine_is_model_ready, aurum_engine_last_error, aurum_engine_preload,
-    aurum_engine_transcribe_pcm, aurum_sample_rate, aurum_shutdown, aurum_string_free,
-    aurum_version, AurumEngine, AurumEngineConfigC, AurumTranscribeOptsC, AURUM_ABI_VERSION,
-    AURUM_SAMPLE_RATE,
+    aurum_abi_version, aurum_capabilities, aurum_cleanup_rules, aurum_doctor_json,
+    aurum_engine_create, aurum_engine_destroy, aurum_engine_is_model_ready,
+    aurum_engine_last_error, aurum_engine_preload, aurum_engine_shutdown,
+    aurum_engine_transcribe_pcm, aurum_job_free, aurum_job_poll, aurum_job_start_cleanup,
+    aurum_job_take_string, aurum_job_wait, aurum_sample_rate, aurum_shutdown, aurum_string_free,
+    aurum_version, AurumCapabilitiesC, AurumEngine, AurumEngineConfigC, AurumJobSnapshotC,
+    AurumTranscribeOptsC, AURUM_ABI_VERSION, AURUM_SAMPLE_RATE,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -69,4 +71,70 @@ fn create_destroy_and_cleanup() {
     unsafe { aurum_string_free(out) };
 
     aurum_shutdown();
+}
+
+#[test]
+fn capabilities_and_doctor_and_cleanup_job() {
+    let mut caps = AurumCapabilitiesC {
+        struct_size: 0,
+        struct_version: 1,
+        abi_version: 0,
+        abi_min_version: 0,
+        has_stt: 0,
+        has_tts: 0,
+        has_cleanup: 0,
+        has_jobs: 0,
+        has_doctor: 0,
+        sample_rate_hz: 0,
+        reserved: [0; 16],
+    };
+    assert_eq!(unsafe { aurum_capabilities(&mut caps) }, 0);
+    assert_eq!(caps.has_jobs, 1);
+    assert_eq!(caps.has_doctor, 1);
+
+    let mut json: *mut std::os::raw::c_char = ptr::null_mut();
+    assert_eq!(unsafe { aurum_doctor_json(&mut json) }, 0);
+    assert!(!json.is_null());
+    let s = unsafe { CStr::from_ptr(json) }.to_string_lossy();
+    assert!(s.contains("schema_version"));
+    unsafe { aurum_string_free(json) };
+
+    let dir = tempdir().unwrap();
+    let cache = CString::new(dir.path().to_str().unwrap()).unwrap();
+    let cfg = AurumEngineConfigC {
+        cache_dir: cache.as_ptr(),
+        local_only: 1,
+        progress_logging: 0,
+        reserved: [0; 6],
+    };
+    let mut engine: *mut AurumEngine = ptr::null_mut();
+    assert_eq!(unsafe { aurum_engine_create(&cfg, &mut engine) }, 0);
+
+    let text = CString::new("um, hello job").unwrap();
+    let mut job = ptr::null_mut();
+    assert_eq!(
+        unsafe { aurum_job_start_cleanup(engine, text.as_ptr(), 1, &mut job) },
+        0
+    );
+    assert!(!job.is_null());
+    assert_eq!(unsafe { aurum_job_wait(job, 5000) }, 0);
+    let mut snap = AurumJobSnapshotC {
+        struct_size: 0,
+        struct_version: 0,
+        job_id: 0,
+        kind: 0,
+        state: 0,
+        progress_pct: 0,
+        reserved: [0; 16],
+    };
+    assert_eq!(unsafe { aurum_job_poll(job, &mut snap) }, 0);
+    assert_eq!(snap.state, 3); // COMPLETED
+    let mut out: *mut c_char = ptr::null_mut();
+    assert_eq!(unsafe { aurum_job_take_string(job, &mut out) }, 0);
+    let cleaned = unsafe { CStr::from_ptr(out) }.to_string_lossy();
+    assert!(cleaned.to_ascii_lowercase().contains("hello"));
+    unsafe { aurum_string_free(out) };
+    unsafe { aurum_job_free(job) };
+    assert_eq!(unsafe { aurum_engine_shutdown(engine, 2000) }, 0);
+    unsafe { aurum_engine_destroy(engine) };
 }

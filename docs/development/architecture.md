@@ -70,6 +70,13 @@ streaming output writers. Hosts drive progressive text via **`PartialSession`**
 Reproducible smoke benches and a versioned WER/CER eval corpus live under
 `aurum_core::bench` / `aurum_core::eval` and `evals/`.
 
+## Native SDK & FFI v2 (JOE-1577)
+
+Embedders use an explicit **engine** plus optional **jobs** so hosts never nest
+Tokio. Blocking v1 exports remain; jobs are the nonblocking path. Process
+shutdown is global; engine shutdown drains only that engine's jobs. See
+[FFI guide](../library/ffi.md).
+
 ## TTS model platform (JOE-1576)
 
 TTS engines are **adapters**, not bare ONNX paths. Packs carry a versioned

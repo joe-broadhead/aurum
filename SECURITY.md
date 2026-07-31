@@ -53,6 +53,13 @@ published release and the default branch.
 - Capability preflight rejects impossible routes before network/decode work.
 - External JSON DTOs exclude raw PCM and native handles.
 
+## Native embeds / FFI (JOE-1577)
+
+- Prefer job APIs over blocking calls inside host async runtimes.
+- Engine shutdown is scoped; process shutdown drains global admission.
+- Diagnostic bundles and `aurum doctor` never print API keys or raw PCM.
+- Result handles transfer ownership once; use-after-free is a host bug.
+
 ## TTS model packs & BYOM trust (JOE-1576)
 
 - **No bare ONNX support.** A pack must declare a known adapter id plus artifacts

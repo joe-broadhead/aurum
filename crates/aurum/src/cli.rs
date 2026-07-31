@@ -67,6 +67,17 @@ pub enum Commands {
 
     /// Inspect and verify local model/voice-pack cache (JOE-1592).
     Cache(CacheCli),
+
+    /// Read-only system, config, cache, and capability diagnostics (JOE-1628).
+    Doctor(DoctorCli),
+}
+
+/// `aurum doctor` — install / config / capability probe (no downloads).
+#[derive(Debug, Parser)]
+pub struct DoctorCli {
+    /// Emit JSON report.
+    #[arg(long)]
+    pub json: bool,
 }
 
 /// `aurum cache` — inventory / verify / repair surface.
@@ -348,6 +359,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
         Some(Commands::Tts(tts)) => run_tts_cli(tts).await,
         Some(Commands::Cache(cache)) => run_cache_cmd(cache).await,
+        Some(Commands::Doctor(doc)) => run_doctor_cmd(doc),
         None => {
             if cli.transcribe.audio_file.is_none() {
                 eprintln!(
@@ -1164,6 +1176,23 @@ async fn apply_configured_cleanup(
         for w in &report.warnings {
             eprintln!("aurum: cleanup note: {w}");
         }
+    }
+    Ok(())
+}
+
+fn run_doctor_cmd(cli: DoctorCli) -> Result<()> {
+    init_tracing(false);
+    let cfg = Config::load()?;
+    let report = aurum_core::run_doctor(&cfg);
+    if cli.json {
+        println!("{}", report.to_json_pretty()?);
+    } else {
+        print!("{}", report.format_human());
+    }
+    if !report.ok {
+        // Soft failures (warn) still exit 0 when overall ok is true;
+        // error severity makes ok false.
+        std::process::exit(2);
     }
     Ok(())
 }

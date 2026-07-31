@@ -1,17 +1,29 @@
 //! Pure Rust façade — single source of behavior for C (and future UniFFI).
+//!
+//! ## Ownership (JOE-1622 / JOE-1625)
+//!
+//! * Each [`Engine`] owns cache policy, exclusive busy state, cancel publication,
+//!   metrics sink, and a [`JobController`] for async jobs.
+//! * Process-wide Tokio runtime + whisper context cache remain shared (documented
+//!   convenience); **engine shutdown** drains that engine's jobs only and does
+//!   not poison other engines.
+//! * Process [`shutdown`] / [`shutdown_with_timeout`] close admission globally.
 
 use crate::error::{FfiError, FfiStatus};
+use crate::jobs::{Job, JobController};
 use crate::runtime::{self, ShutdownOutcome};
 use crate::types::{
     CleanupStyle, EngineConfig, Segment, TranscribeOpts, Transcript, AURUM_SAMPLE_RATE,
 };
 use aurum_core::cancel::CancelFlag;
 use aurum_core::cleanup::{cleanup_text, RulesCleanup, TextCleanup};
+use aurum_core::observability::Metrics;
 use aurum_core::providers::local::clear_context_cache;
 use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
 use aurum_core::runtime::OpAdmission;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// RAII guard: sets engine `busy` and process lifecycle active count; clears on
@@ -49,15 +61,22 @@ impl Drop for BusyGuard<'_> {
     }
 }
 
-/// Local STT engine handle for embedders.
+/// Local STT/TTS engine handle for embedders (explicit ownership, JOE-1622).
 pub struct Engine {
+    cache_dir: PathBuf,
+    local_only: bool,
     provider: LocalWhisperProvider,
     /// Currently published cancel token for the in-flight exclusive op (if any).
     /// Fresh per operation — never reset a shared engine-global flag across ops.
     active_cancel: Mutex<Option<CancelFlag>>,
-    /// True while preload or transcribe is in flight on this handle.
+    /// True while blocking preload or transcribe is in flight on this handle.
     busy: AtomicBool,
     last_error: Mutex<String>,
+    /// Async job controller (nonblocking start; poll/wait/cancel/take).
+    jobs: Arc<JobController>,
+    metrics: Arc<Metrics>,
+    /// Engine closed for new jobs (after [`Self::shutdown_engine`]).
+    closed: AtomicBool,
 }
 
 impl Engine {
@@ -68,15 +87,126 @@ impl Engine {
                 "cache_dir is required (host must supply a writable model cache path)",
             ));
         }
-        let provider = LocalWhisperProvider::new(std::path::PathBuf::from(config.cache_dir.trim()))
+        if !runtime::is_running() {
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "process lifecycle is not accepting new engines (call before aurum_shutdown)",
+            ));
+        }
+        let cache_dir = PathBuf::from(config.cache_dir.trim());
+        let provider = LocalWhisperProvider::new(cache_dir.clone())
             .with_progress(config.progress_logging)
             .with_local_only(config.local_only);
+        let metrics = Metrics::shared();
+        // Default: up to 2 concurrent jobs (exclusive blocking path still serial).
+        let jobs = Arc::new(JobController::new(Arc::clone(&metrics), 2));
         Ok(Self {
+            cache_dir,
+            local_only: config.local_only,
             provider,
             active_cancel: Mutex::new(None),
             busy: AtomicBool::new(false),
             last_error: Mutex::new(String::new()),
+            jobs,
+            metrics,
+            closed: AtomicBool::new(false),
         })
+    }
+
+    /// Engine-local metrics snapshot (also feeds process counters).
+    pub fn metrics_snapshot(&self) -> aurum_core::observability::MetricsSnapshot {
+        self.metrics.snapshot()
+    }
+
+    /// Drain this engine's jobs without affecting other engines (JOE-1622).
+    pub fn shutdown_engine(&self, timeout: Duration) -> Result<(), FfiError> {
+        self.closed.store(true, Ordering::SeqCst);
+        self.jobs.close();
+        // Cancel in-flight exclusive op.
+        self.cancel();
+        if self.jobs.drain(timeout) {
+            Ok(())
+        } else {
+            Err(FfiError::new(
+                FfiStatus::Busy,
+                format!(
+                    "engine still has {} active job(s)",
+                    self.jobs.active_count()
+                ),
+            ))
+        }
+    }
+
+    /// Start async preload (returns immediately).
+    pub fn start_preload_job(&self, model: &str) -> Result<Job, FfiError> {
+        self.ensure_open()?;
+        let model = model.trim().to_string();
+        if model.is_empty() {
+            return Err(FfiError::invalid_arg("model name is required"));
+        }
+        // Clone provider settings via a fresh handle sharing cache_dir.
+        let provider = LocalWhisperProvider::new(self.cache_dir.clone())
+            .with_progress(false)
+            .with_local_only(self.local_only);
+        self.jobs.start_preload(provider, model)
+    }
+
+    /// Start async STT job (copies PCM; returns immediately).
+    pub fn start_transcribe_job(
+        &self,
+        samples: &[f32],
+        opts: &TranscribeOpts,
+    ) -> Result<Job, FfiError> {
+        self.ensure_open()?;
+        let provider = LocalWhisperProvider::new(self.cache_dir.clone())
+            .with_progress(false)
+            .with_local_only(self.local_only);
+        self.jobs
+            .start_transcribe(provider, samples.to_vec(), opts.clone())
+    }
+
+    /// Start async rules cleanup.
+    pub fn start_cleanup_job(&self, text: &str, style: CleanupStyle) -> Result<Job, FfiError> {
+        self.ensure_open()?;
+        self.jobs.start_cleanup(text.to_string(), style)
+    }
+
+    /// Start async local TTS job (feature `tts`).
+    #[cfg(feature = "tts")]
+    pub fn start_tts_job(
+        &self,
+        text: &str,
+        model: &str,
+        voice: &str,
+        language: &str,
+        speaking_rate: f32,
+    ) -> Result<Job, FfiError> {
+        self.ensure_open()?;
+        self.jobs.start_tts(crate::jobs::TtsJobRequest {
+            cache_dir: self.cache_dir.clone(),
+            text: text.to_string(),
+            model: model.to_string(),
+            voice: voice.to_string(),
+            language: language.to_string(),
+            speaking_rate,
+            local_only: self.local_only,
+        })
+    }
+
+    fn ensure_open(&self) -> Result<(), FfiError> {
+        if self.closed.load(Ordering::SeqCst) {
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "engine is shut down; create a new engine",
+            ));
+        }
+        if !runtime::is_running() {
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "process lifecycle is stopped",
+            ));
+        }
+        Ok(())
     }
 
     pub fn last_error(&self) -> String {

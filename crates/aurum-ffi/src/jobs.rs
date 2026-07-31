@@ -310,8 +310,16 @@ impl JobController {
         }
     }
 
+    /// Close admission and cancel live jobs. Serialized with `alloc_locked`.
     pub fn close(&self) {
-        self.closed.store(true, Ordering::SeqCst);
+        if let Ok(live) = self.live.lock() {
+            self.closed.store(true, Ordering::SeqCst);
+            for j in live.iter() {
+                j.cancel();
+            }
+        } else {
+            self.closed.store(true, Ordering::SeqCst);
+        }
     }
 
     /// Cooperative-cancel every non-terminal job.
@@ -342,14 +350,22 @@ impl JobController {
         self.active_count() == 0
     }
 
-    fn alloc(&self, kind: JobKind) -> Result<Job, FfiError> {
+    /// Allocate + register a job under the live lock (atomic with `close`).
+    ///
+    /// Obtains the runtime handle *before* admission so we never orphan a job
+    /// we cannot spawn. Callers must `handle.spawn` immediately.
+    fn alloc_locked(&self, kind: JobKind) -> Result<(Job, tokio::runtime::Handle), FfiError> {
+        let handle = runtime::handle()?;
+        let mut live = self
+            .live
+            .lock()
+            .map_err(|_| FfiError::internal("job registry poisoned"))?;
         if self.closed.load(Ordering::SeqCst) || !runtime::is_running() {
             return Err(FfiError::new(
                 FfiStatus::Shutdown,
                 "engine/process is not accepting new jobs",
             ));
         }
-        // Hold process lifecycle admission for the entire job.
         let admission = runtime::begin_job()?;
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let shared = Arc::new(JobShared {
@@ -368,16 +384,23 @@ impl JobController {
             admission: Mutex::new(Some(admission)),
         });
         let job = Job { inner: shared };
-        self.live
-            .lock()
-            .map_err(|_| FfiError::internal("job registry poisoned"))?
-            .push(job.clone());
-        // Opportunistic GC of terminal jobs from registry.
-        if let Ok(mut g) = self.live.lock() {
-            g.retain(|j| !j.state().is_terminal());
+        live.retain(|j| !j.state().is_terminal());
+        live.push(job.clone());
+        const MAX_QUEUED: usize = 64;
+        if live.iter().filter(|j| !j.state().is_terminal()).count() > MAX_QUEUED {
+            live.pop();
+            drop(live);
+            job.finish_err(FfiError::new(
+                FfiStatus::Overload,
+                format!("too many queued jobs (max {MAX_QUEUED})"),
+            ));
+            return Err(FfiError::new(
+                FfiStatus::Overload,
+                format!("too many queued jobs (max {MAX_QUEUED})"),
+            ));
         }
         self.metrics.record_start();
-        Ok(job)
+        Ok((job, handle))
     }
 
     async fn begin_running(
@@ -407,10 +430,9 @@ impl JobController {
         provider: LocalWhisperProvider,
         model: String,
     ) -> Result<Job, FfiError> {
-        let job = self.alloc(JobKind::Preload)?;
+        let (job, handle) = self.alloc_locked(JobKind::Preload)?;
         let ctrl = Arc::clone(self);
         let job_c = job.clone();
-        let handle = runtime::handle()?;
         handle.spawn(async move {
             let _permit = match ctrl.begin_running(&job_c).await {
                 Ok(p) => p,
@@ -457,11 +479,10 @@ impl JobController {
         if model.is_empty() {
             return Err(FfiError::invalid_arg("model name is required"));
         }
-        let job = self.alloc(JobKind::Transcribe)?;
+        let (job, handle) = self.alloc_locked(JobKind::Transcribe)?;
         let cancel = job.inner.cancel.clone();
         let ctrl = Arc::clone(self);
         let job_c = job.clone();
-        let handle = runtime::handle()?;
         handle.spawn(async move {
             let _permit = match ctrl.begin_running(&job_c).await {
                 Ok(p) => p,
@@ -517,10 +538,9 @@ impl JobController {
         text: String,
         style: CleanupStyle,
     ) -> Result<Job, FfiError> {
-        let job = self.alloc(JobKind::Cleanup)?;
+        let (job, handle) = self.alloc_locked(JobKind::Cleanup)?;
         let ctrl = Arc::clone(self);
         let job_c = job.clone();
-        let handle = runtime::handle()?;
         handle.spawn(async move {
             let _permit = match ctrl.begin_running(&job_c).await {
                 Ok(p) => p,
@@ -546,10 +566,9 @@ impl JobController {
         if req.text.trim().is_empty() {
             return Err(FfiError::invalid_arg("TTS text is empty"));
         }
-        let job = self.alloc(JobKind::Tts)?;
+        let (job, handle) = self.alloc_locked(JobKind::Tts)?;
         let ctrl = Arc::clone(self);
         let job_c = job.clone();
-        let handle = runtime::handle()?;
         handle.spawn(async move {
             let _permit = match ctrl.begin_running(&job_c).await {
                 Ok(p) => p,
@@ -712,24 +731,27 @@ mod tests {
 
     #[test]
     fn jobs_hold_process_admission_until_terminal() {
-        // Starting a job must increase active ops; finishing drops them so
-        // process shutdown can clear caches (regression for JOE-1577 review).
-        use crate::runtime::{begin_op, shutdown_runtime, ShutdownOutcome};
+        // Starting a job must leave process lifecycle Running (admission held);
+        // finishing drops admission without poisoning process shutdown.
+        // Never call process shutdown_runtime here — it is sticky for the suite.
+        use crate::runtime::begin_op;
         let metrics = Metrics::shared();
         let ctrl = Arc::new(JobController::new(metrics, 2));
         let job = ctrl
             .start_cleanup("um hi".into(), CleanupStyle::Clean)
             .unwrap();
-        // While job may still be running, begin_op should succeed (Running).
-        let ticket = begin_op();
-        assert!(ticket.is_ok() || ticket.is_err()); // lifecycle still Running
+        // Process still accepts ops while jobs run.
+        let ticket = begin_op().expect("lifecycle still Running with active job");
         drop(ticket);
-        let _ = job.wait(Some(Duration::from_secs(5)));
-        // After jobs finish, a short shutdown drain should succeed if nothing else runs.
-        // We only assert the job itself completed; full process shutdown is
-        // covered by engine tests (process OnceCell is sticky for the suite).
-        assert!(job.state().is_terminal());
-        let _ = shutdown_runtime(Duration::from_millis(1));
-        let _ = ShutdownOutcome::Stopped;
+        let st = job.wait(Some(Duration::from_secs(5))).unwrap();
+        assert!(st.is_terminal());
+        // New jobs still work after previous job finished (suite not poisoned).
+        let job2 = ctrl
+            .start_cleanup("again".into(), CleanupStyle::Raw)
+            .unwrap();
+        assert_eq!(
+            job2.wait(Some(Duration::from_secs(5))).unwrap(),
+            JobState::Completed
+        );
     }
 }

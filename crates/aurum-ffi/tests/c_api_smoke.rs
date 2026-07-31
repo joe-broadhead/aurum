@@ -5,9 +5,9 @@ use aurum_ffi::{
     aurum_engine_create, aurum_engine_destroy, aurum_engine_is_model_ready,
     aurum_engine_last_error, aurum_engine_preload, aurum_engine_shutdown,
     aurum_engine_transcribe_pcm, aurum_job_free, aurum_job_poll, aurum_job_start_cleanup,
-    aurum_job_take_string, aurum_job_wait, aurum_sample_rate, aurum_shutdown, aurum_string_free,
-    aurum_version, AurumCapabilitiesC, AurumEngine, AurumEngineConfigC, AurumJobSnapshotC,
-    AurumTranscribeOptsC, AURUM_ABI_VERSION, AURUM_SAMPLE_RATE,
+    aurum_job_take_string, aurum_job_wait, aurum_sample_rate, aurum_string_free, aurum_version,
+    AurumCapabilitiesC, AurumEngine, AurumEngineConfigC, AurumJobSnapshotC, AurumTranscribeOptsC,
+    AURUM_ABI_VERSION, AURUM_SAMPLE_RATE,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -69,8 +69,8 @@ fn create_destroy_and_cleanup() {
     let cleaned = unsafe { CStr::from_ptr(out) }.to_string_lossy();
     assert!(cleaned.to_ascii_lowercase().contains("hello"));
     unsafe { aurum_string_free(out) };
-
-    aurum_shutdown();
+    // Do not call aurum_shutdown here — process lifecycle is sticky for the
+    // suite and would poison later job tests in this binary.
 }
 
 #[test]

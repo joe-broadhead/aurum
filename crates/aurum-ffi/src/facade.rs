@@ -34,9 +34,27 @@ struct BusyGuard<'a> {
 }
 
 impl<'a> BusyGuard<'a> {
-    fn acquire(busy: &'a AtomicBool, what: &str) -> Result<Self, FfiError> {
+    fn acquire(
+        busy: &'a AtomicBool,
+        closed: &AtomicBool,
+        what: &str,
+    ) -> Result<Self, FfiError> {
+        // Reject closed engines before taking process admission (JOE-1647).
+        if closed.load(Ordering::SeqCst) {
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "engine is shut down; create a new engine",
+            ));
+        }
         // Process admission first so shutdown races cannot leave a half-admitted op.
         let admission = runtime::begin_op()?;
+        if closed.load(Ordering::SeqCst) {
+            drop(admission);
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "engine is shut down; create a new engine",
+            ));
+        }
         if busy
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
@@ -46,6 +64,15 @@ impl<'a> BusyGuard<'a> {
             return Err(FfiError::state(format!(
                 "{what} already in progress on this engine (one exclusive op at a time)"
             )));
+        }
+        // Re-check closed after claiming busy: destroy may have started.
+        if closed.load(Ordering::SeqCst) {
+            busy.store(false, Ordering::SeqCst);
+            drop(admission);
+            return Err(FfiError::new(
+                FfiStatus::Shutdown,
+                "engine is shut down; create a new engine",
+            ));
         }
         Ok(Self {
             busy,
@@ -118,23 +145,49 @@ impl Engine {
         self.metrics.snapshot()
     }
 
-    /// Drain this engine's jobs without affecting other engines (JOE-1622).
+    /// Drain this engine's jobs and wait for exclusive blocking ops (JOE-1622 / JOE-1647).
+    ///
+    /// Sets `closed` first so new blocking calls and jobs are rejected. Cancels
+    /// the in-flight exclusive op, drains async jobs, then waits until `busy` is
+    /// clear (or `timeout` elapses).
     pub fn shutdown_engine(&self, timeout: Duration) -> Result<(), FfiError> {
         self.closed.store(true, Ordering::SeqCst);
         self.jobs.close();
         // Cancel in-flight exclusive op.
         self.cancel();
-        if self.jobs.drain(timeout) {
-            Ok(())
-        } else {
-            Err(FfiError::new(
+        let deadline = std::time::Instant::now() + timeout;
+        // Drain jobs with remaining budget.
+        let jobs_ok = self.jobs.drain(timeout);
+        // Wait for exclusive busy (preload/transcribe) to finish.
+        while self.busy.load(Ordering::SeqCst) {
+            if std::time::Instant::now() >= deadline {
+                return Err(FfiError::new(
+                    FfiStatus::Busy,
+                    "engine still has an exclusive blocking operation in progress",
+                ));
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if !jobs_ok {
+            return Err(FfiError::new(
                 FfiStatus::Busy,
                 format!(
                     "engine still has {} active job(s)",
                     self.jobs.active_count()
                 ),
-            ))
+            ));
         }
+        Ok(())
+    }
+
+    /// True while exclusive preload/transcribe is in flight.
+    pub fn is_busy(&self) -> bool {
+        self.busy.load(Ordering::SeqCst)
+    }
+
+    /// True after shutdown/destroy has closed admission.
+    pub fn is_closed(&self) -> bool {
+        self.closed.load(Ordering::SeqCst)
     }
 
     /// Start async preload (returns immediately).
@@ -267,7 +320,7 @@ impl Engine {
             self.store_err(&e);
             return Err(e);
         }
-        let _guard = match BusyGuard::acquire(&self.busy, "operation") {
+        let _guard = match BusyGuard::acquire(&self.busy, &self.closed, "operation") {
             Ok(g) => g,
             Err(e) => {
                 self.store_err(&e);
@@ -331,7 +384,7 @@ impl Engine {
             return Err(e);
         }
 
-        let _guard = match BusyGuard::acquire(&self.busy, "transcription") {
+        let _guard = match BusyGuard::acquire(&self.busy, &self.closed, "transcription") {
             Ok(g) => g,
             Err(e) => {
                 self.store_err(&e);
@@ -566,7 +619,7 @@ mod tests {
         })
         .unwrap();
 
-        let _g = BusyGuard::acquire(&engine.busy, "test").unwrap();
+        let _g = BusyGuard::acquire(&engine.busy, &engine.closed, "test").unwrap();
         let err = engine
             .transcribe_pcm(
                 &[0.0; 100],
@@ -600,11 +653,28 @@ mod tests {
         })
         .unwrap();
 
-        let _hold_a = BusyGuard::acquire(&a.busy, "test").unwrap();
+        let _hold_a = BusyGuard::acquire(&a.busy, &a.closed, "test").unwrap();
         // B must not see STATE from A's exclusive op — only ModelNotReady (empty cache).
         let err = b.preload("tiny-q5_1").unwrap_err();
         assert_eq!(err.status, FfiStatus::ModelNotReady);
         assert!(!b.busy.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn shutdown_rejects_new_blocking_ops() {
+        let dir = tempdir().unwrap();
+        let engine = Engine::new(EngineConfig {
+            cache_dir: dir.path().display().to_string(),
+            local_only: true,
+            progress_logging: false,
+        })
+        .unwrap();
+        engine
+            .shutdown_engine(Duration::from_secs(1))
+            .unwrap();
+        let err = engine.preload("tiny-q5_1").unwrap_err();
+        assert_eq!(err.status, FfiStatus::Shutdown);
+        assert!(engine.is_closed());
     }
 
     #[test]

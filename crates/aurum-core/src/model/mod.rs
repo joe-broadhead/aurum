@@ -148,7 +148,7 @@ pub const MODELS: &[ModelInfo] = &[
         name: "large-v3-q5_0",
         filename: "ggml-large-v3-q5_0.bin",
         approx_bytes: 1_080_000_000,
-        notes: "quantized",
+        notes: "experimental — not recommended (degeneration risk; prefer large-v3-turbo)",
     },
     ModelInfo {
         name: "large",
@@ -255,25 +255,34 @@ pub fn format_model_list(cache_dir: &Path) -> String {
     out.push_str(&models_dir(cache_dir).display().to_string());
     out.push_str(")\n\n");
     out.push_str(&format!(
-        "{:<22} {:>10}  {:<8}  {}\n",
-        "NAME", "SIZE", "STATUS", "NOTES"
+        "{:<22} {:>10}  {:<8}  {:<12}  {}\n",
+        "NAME", "SIZE", "STATUS", "TIER", "NOTES"
     ));
     out.push_str(&format!(
-        "{:<22} {:>10}  {:<8}  {}\n",
-        "----", "----", "------", "-----"
+        "{:<22} {:>10}  {:<8}  {:<12}  {}\n",
+        "----", "----", "------", "----", "-----"
     ));
     for row in rows {
         let size = format_bytes(row.info.approx_bytes);
         let status = if row.cached { "cached" } else { "—" };
+        let tier = match model_support_tier(row.info.name) {
+            ModelSupportTier::Supported => "supported",
+            ModelSupportTier::Experimental => "experimental",
+        };
         out.push_str(&format!(
-            "{:<22} {:>10}  {:<8}  {}\n",
-            row.info.name, size, status, row.info.notes
+            "{:<22} {:>10}  {:<8}  {:<12}  {}\n",
+            row.info.name, size, status, tier, row.info.notes
         ));
     }
     out.push_str(
         "\nTip: first run downloads the selected model. Try `tiny-q5_1` (~32 MB) for a quick trial.\n",
     );
     out.push_str("Default model: `base` (~142 MB). Use --model <name> to choose.\n");
+    out.push_str(
+        "Guidance (single-clip dogfood, not formal WER): English lecture quality often \
+         favors `small.en` or `large-v3-turbo`; prefer `.en` variants for English-only audio. \
+         Avoid `large-v3-q5_0` for production (experimental).\n",
+    );
     out
 }
 
@@ -358,12 +367,8 @@ pub fn is_model_cached(cache_dir: &Path, model_name: &str) -> bool {
     {
         return false;
     }
-    // Pinned path: one hash inside verify_model_basic. Unpinned: magic + sidecar.
-    if pinned_sha256(info.filename).is_some() {
-        verify_model_basic(&path, info).is_ok()
-    } else {
-        verify_model_basic(&path, info).is_ok() && verify_cached_checksum(&path)
-    }
+    // Trusted catalogue requires a reviewed pin (JOE-1645).
+    pinned_sha256(info.filename).is_some() && verify_model_basic(&path, info).is_ok()
 }
 
 /// Ensure a model is present locally, downloading if needed. Returns the path.
@@ -398,13 +403,18 @@ pub async fn ensure_model_with_options(
             .map(|m| m.len() > 1_000_000)
             .unwrap_or(false)
     {
-        // Prefer pinned SHA when available (one full hash). Otherwise magic + optional sidecar.
-        let ok = if pinned_sha256(info.filename).is_some() {
-            verify_model_basic(&path, info).is_ok()
-        } else {
-            verify_model_basic(&path, info).is_ok() && verify_cached_checksum(&path)
-        };
-        if ok {
+        // Trusted catalogue requires reviewed pin + integrity (JOE-1645).
+        if pinned_sha256(info.filename).is_none() {
+            return Err(ProviderError::ModelDownload {
+                model: model_name.to_string(),
+                reason: format!(
+                    "model `{}` has no reviewed SHA-256 pin — not available on the trusted path",
+                    info.name
+                ),
+            }
+            .into());
+        }
+        if verify_model_basic(&path, info).is_ok() {
             tracing::info!(model = info.name, path = %path.display(), "using cached model");
             return Ok(path);
         }
@@ -454,8 +464,8 @@ pub async fn ensure_model_with_options(
             .metadata()
             .map(|m| m.len() > 1_000_000)
             .unwrap_or(false)
+        && pinned_sha256(info.filename).is_some()
         && verify_model_basic(&path, info).is_ok()
-        && verify_cached_checksum(&path)
     {
         let _ = lock_file.unlock();
         tracing::info!(model = info.name, "model appeared while waiting on lock");
@@ -485,33 +495,18 @@ pub async fn ensure_model_with_options(
     Ok(path)
 }
 
-/// If a `.sha256` sidecar exists, ensure it matches the file contents.
+/// Sidecar checksum is operator metadata only — it never authenticates an
+/// unpinned download (JOE-1645). Returns true only when a sidecar exists and matches.
+#[allow(dead_code)]
 fn verify_cached_checksum(path: &Path) -> bool {
     let checksum_path = path.with_extension("bin.sha256");
     let Ok(contents) = fs::read_to_string(&checksum_path) else {
-        return true;
+        return false;
     };
     let Some(expected) = contents.split_whitespace().next() else {
-        return true;
-    };
-    let Ok(mut file) = File::open(path) else {
         return false;
     };
-    let mut hasher = Sha256::new();
-    let mut buf = [0u8; 1024 * 64];
-    loop {
-        match file.read(&mut buf) {
-            Ok(0) => break,
-            Ok(n) => hasher.update(&buf[..n]),
-            Err(_) => return false,
-        }
-    }
-    let actual = hex::encode(hasher.finalize());
-    if actual != expected {
-        tracing::warn!(%expected, %actual, "model checksum mismatch");
-        return false;
-    }
-    true
+    verify_against_expected(path, expected)
 }
 
 async fn download_model(
@@ -644,19 +639,29 @@ async fn download_model(
         "model download complete (pre-publish)"
     );
 
-    // Verify-before-publish (JOE-1591): never expose a bad file at the final path.
-    if let Some(expected) = pinned_sha256(info.filename) {
-        if digest != expected {
-            let _ = fs::remove_file(&partial);
-            return Err(ProviderError::ModelDownload {
-                model: info.name.to_string(),
-                reason: format!(
-                    "sha256 mismatch (got {digest}, expected {expected}) — refusing to publish"
-                ),
-            }
-            .into());
+    // Verify-before-publish (JOE-1591 / JOE-1645): every trusted model requires a pin.
+    let Some(expected) = pinned_sha256(info.filename) else {
+        let _ = fs::remove_file(&partial);
+        return Err(ProviderError::ModelDownload {
+            model: info.name.to_string(),
+            reason: format!(
+                "no reviewed SHA-256 pin for {} — refusing to publish unauthenticated artifact",
+                info.filename
+            ),
         }
-    } else if let Some(exact) = pinned_exact_bytes(info.filename) {
+        .into());
+    };
+    if digest != expected {
+        let _ = fs::remove_file(&partial);
+        return Err(ProviderError::ModelDownload {
+            model: info.name.to_string(),
+            reason: format!(
+                "sha256 mismatch (got {digest}, expected {expected}) — refusing to publish"
+            ),
+        }
+        .into());
+    }
+    if let Some(exact) = pinned_exact_bytes(info.filename) {
         if downloaded != exact {
             let _ = fs::remove_file(&partial);
             return Err(ProviderError::ModelDownload {
@@ -710,14 +715,22 @@ fn hf_redirect_policy(attempt: reqwest::redirect::Attempt<'_>) -> reqwest::redir
     }
 }
 
-/// Independently reviewed SHA-256 digests (JOE-1590).
-/// A missing pin still allows download but fails closed on publish when
-/// `require_reviewed_pin` is true; cache verify reports unpinned state.
-fn pinned_sha256(filename: &str) -> Option<&'static str> {
+/// Independently reviewed SHA-256 digests (JOE-1590 / JOE-1645).
+///
+/// Every trusted catalogue filename must have a pin. Identity is the digest +
+/// exact size, not a mutable upstream branch tip. A missing pin is a release
+/// defect: download refuses to publish and cache verify never labels the file healthy.
+pub fn pinned_sha256(filename: &str) -> Option<&'static str> {
     match filename {
         "ggml-tiny.bin" => Some("be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21"),
         "ggml-tiny-q5_1.bin" => {
             Some("818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7")
+        }
+        "ggml-tiny-q8_0.bin" => {
+            Some("c2085835d3f50733e2ff6e4b41ae8a2b8d8110461e18821b09a15c40c42d1cca")
+        }
+        "ggml-tiny.en.bin" => {
+            Some("921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f")
         }
         "ggml-tiny.en-q5_1.bin" => {
             Some("c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b")
@@ -726,13 +739,66 @@ fn pinned_sha256(filename: &str) -> Option<&'static str> {
         "ggml-base-q5_1.bin" => {
             Some("422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898")
         }
+        "ggml-base-q8_0.bin" => {
+            Some("c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9")
+        }
+        "ggml-base.en.bin" => {
+            Some("a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002")
+        }
         "ggml-base.en-q5_1.bin" => {
             Some("4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f")
+        }
+        "ggml-small.bin" => {
+            Some("1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b")
         }
         "ggml-small-q5_1.bin" => {
             Some("ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb")
         }
+        "ggml-small-q8_0.bin" => {
+            Some("49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f")
+        }
+        "ggml-small.en.bin" => {
+            Some("c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d")
+        }
+        "ggml-small.en-q5_1.bin" => {
+            Some("bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30")
+        }
+        "ggml-medium.bin" => {
+            Some("6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208")
+        }
+        "ggml-medium.en.bin" => {
+            Some("cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356")
+        }
+        "ggml-large-v3.bin" => {
+            Some("64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2")
+        }
+        "ggml-large-v3-q5_0.bin" => {
+            Some("d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1")
+        }
+        "ggml-large-v3-turbo.bin" => {
+            Some("1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69")
+        }
+        "ggml-large-v3-turbo-q5_0.bin" => {
+            Some("394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2")
+        }
         _ => None,
+    }
+}
+
+/// Support tier for catalogue display (JOE-1650).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelSupportTier {
+    /// Default recommended catalogue entries.
+    Supported,
+    /// Available but not recommended for production quality (known risk).
+    Experimental,
+}
+
+/// Support tier for a catalogue name (aliases resolve via [`lookup_model`]).
+pub fn model_support_tier(name: &str) -> ModelSupportTier {
+    match name {
+        "large-v3-q5_0" => ModelSupportTier::Experimental,
+        _ => ModelSupportTier::Supported,
     }
 }
 
@@ -867,15 +933,34 @@ fn verify_model_basic(path: &Path, info: &ModelInfo) -> Result<()> {
         .into());
     }
 
-    // When a pin exists, enforce it on cache hits. Do not delete — quarantine is
-    // the operator path (JOE-1592); here we fail closed for consumers.
-    if let Some(expected) = pinned_sha256(info.filename) {
-        if !verify_against_expected(path, expected) {
+    // JOE-1645: trusted path requires a reviewed pin; never bless unpinned files.
+    let Some(expected) = pinned_sha256(info.filename) else {
+        return Err(ProviderError::ModelDownload {
+            model: info.name.to_string(),
+            reason: format!(
+                "no reviewed SHA-256 pin for {} — not trusted",
+                info.filename
+            ),
+        }
+        .into());
+    };
+    if !verify_against_expected(path, expected) {
+        return Err(ProviderError::ModelDownload {
+            model: info.name.to_string(),
+            reason: format!(
+                "cached model failed pinned sha256 check ({expected}); \
+                 run `aurum cache verify` / quarantine repair"
+            ),
+        }
+        .into());
+    }
+    if let Some(exact) = pinned_exact_bytes(info.filename) {
+        if meta.len() != exact {
             return Err(ProviderError::ModelDownload {
                 model: info.name.to_string(),
                 reason: format!(
-                    "cached model failed pinned sha256 check ({expected}); \
-                     run `aurum cache verify` / quarantine repair"
+                    "cached model size mismatch (got {}, expected {exact})",
+                    meta.len()
                 ),
             }
             .into());
@@ -950,13 +1035,44 @@ mod tests {
     }
 
     #[test]
-    fn reviewed_sha256_pins_cover_default_and_trial_models() {
-        for name in ["tiny", "tiny-q5_1", "base", "base-q5_1"] {
-            let info = lookup_model(name).unwrap();
-            assert!(
-                pinned_sha256(info.filename).is_some(),
-                "missing sha256 for default/trial model {name}"
-            );
+    fn reviewed_sha256_pins_cover_every_catalogue_filename() {
+        // JOE-1645: every trusted entry must have an immutable digest.
+        let mut missing = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for m in MODELS {
+            if !seen.insert(m.filename) {
+                continue; // aliases share identity
+            }
+            if pinned_sha256(m.filename).is_none() {
+                missing.push(m.filename);
+            } else {
+                let pin = pinned_sha256(m.filename).unwrap();
+                assert_eq!(pin.len(), 64, "pin length for {}", m.filename);
+            }
         }
+        assert!(
+            missing.is_empty(),
+            "missing sha256 pins for: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn aliases_share_canonical_artifact_pins() {
+        let large = lookup_model("large").unwrap();
+        let large_v3 = lookup_model("large-v3").unwrap();
+        assert_eq!(large.filename, large_v3.filename);
+        assert_eq!(
+            pinned_sha256(large.filename),
+            pinned_sha256(large_v3.filename)
+        );
+    }
+
+    #[test]
+    fn large_v3_q5_0_is_experimental_tier() {
+        assert_eq!(
+            model_support_tier("large-v3-q5_0"),
+            ModelSupportTier::Experimental
+        );
+        assert_eq!(model_support_tier("base"), ModelSupportTier::Supported);
     }
 }

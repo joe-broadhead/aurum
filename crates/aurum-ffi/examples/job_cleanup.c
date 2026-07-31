@@ -60,7 +60,10 @@ int main(void) {
   printf("cleaned: %s\n", out);
   aurum_string_free(out);
   aurum_job_free(job);
-  aurum_engine_shutdown(engine, 2000);
-  aurum_engine_destroy(engine);
+  /* Preferred close with status (JOE-1647); falls back to destroy. */
+  if (aurum_engine_close(engine, 5000) != AURUM_OK) {
+    fprintf(stderr, "close busy; forcing destroy\n");
+    aurum_engine_destroy(engine);
+  }
   return 0;
 }

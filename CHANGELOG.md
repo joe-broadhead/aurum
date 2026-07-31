@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **JOE-1643 / JOE-1644–1650** v0.0.3 audit remediation:
+  - **JOE-1644** Output `NoClobber` uses Unix hard-link publish (race-safe vs
+    rename-overwrite); file and parent-dir sync errors propagate; temp files
+    created with owner-only mode at create time
+  - **JOE-1645** Every trusted STT catalogue model has reviewed SHA-256 + exact
+    size; unpinned downloads refuse to publish; sidecar never authenticates
+  - **JOE-1646** STT/TTS residency: registry is sole long-lived owner; singleflight
+    only coalesces in-progress loads; TTS sessions share a process-global budget
+  - **JOE-1647** FFI engine close waits for exclusive blocking ops; `aurum_engine_close`
+    status API; destroy waits up to 30s; closed engines reject new work
+  - **JOE-1648** Remote upload FFmpeg encode uses supervised lifecycle (`-nostdin`,
+    deadline, stderr cap, no `-y` clobber)
+  - **JOE-1649** BYOM pack artifacts reject symlinks/path escapes; manifests use
+    secure output transactions
+  - **JOE-1650** `large-v3-q5_0` marked experimental; repetition degeneration
+    detector; model guidance docs from dogfood (not formal WER)
+
 ### Added
 
 - **JOE-1618** Curated Kokoro-82M TTS adapter (opt-in, not default):

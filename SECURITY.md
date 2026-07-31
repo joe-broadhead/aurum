@@ -36,7 +36,8 @@ Aurum is an on-device speech I/O CLI and library (STT + TTS). Reports are especi
 - Unexpected network access on the default (`local`) STT or TTS path
 - API key leakage in logs, debug output, or error messages
 - Model / voice-pack download integrity / supply-chain issues (SHA-256 pins)
-- Temp-file or path handling races (STT/cleanup/TTS share one output transaction)
+- Temp-file or path handling races (STT/cleanup/TTS share one output transaction;
+  `NoClobber` uses hard-link publish on Unix; durability sync errors are fail-closed)
 - Path traversal via `--input-file` / `--output-file` on TTS or cleanup
 - Memory / resource exhaustion via crafted audio inputs or very large TTS text
 - Symlink-destination clobber or partial-file exposure on crash mid-write
@@ -131,14 +132,20 @@ published release and the default branch.
 
 ## Output file commits
 
-User-visible output files (transcripts, cleanup text, TTS WAV) use a shared
-commit protocol in `aurum_core::output::transaction`:
+User-visible output files (transcripts, cleanup text, TTS WAV, TTS manifests) use
+a shared commit protocol in `aurum_core::output::transaction` (JOE-1644):
 
-- Randomized same-directory temporary file with exclusive create
-- Write → flush → `sync_all` on the temp file
-- Atomic publish (`rename`; Windows removes destination first)
-- Best-effort parent-directory sync
-- Default **reject** policy for destination symbolic links
+- Randomized same-directory temporary file with exclusive create and owner-only
+  mode (0o600 on Unix at create time)
+- Write → flush → `sync_all` on the temp file (**errors propagated**)
+- **NoClobber (Unix):** `link(tmp, dest)` then unlink temp — fails if dest exists
+  (race-safe vs rename-overwrite)
+- **Replace (Unix):** atomic `rename`
+- **Windows Replace:** stage existing dest aside, rename into place, restore on
+  failure (not a single OS primitive; residual limitations documented in code)
+- Parent-directory sync errors are propagated except where the OS rejects
+  directory fsync (EINVAL/ENOTSUP)
+- Default **reject** policy for destination symbolic links and special files
 - TTS supports `NoClobber` (default without `--force`) and `Replace` (`--force`)
 
 A failure before publish leaves the previous destination intact and removes the

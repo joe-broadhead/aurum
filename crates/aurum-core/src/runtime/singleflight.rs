@@ -86,6 +86,85 @@ impl<T> Singleflight<T> {
             .filter(|s| matches!(s, SlotState::Ready(_)))
             .count()
     }
+
+    /// Complete a coalesced load without retaining a permanent Ready slot
+    /// (JOE-1646). The caller must have already published the value into the
+    /// authoritative registry. Waiters wake, see no Loading slot, and re-query
+    /// the registry.
+    pub fn finish_load_published(&self, key: &LoadKey) {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.remove(key);
+        self.cv.notify_all();
+    }
+
+    /// Mark a failed coalesced load.
+    pub fn finish_load_failed(&self, key: &LoadKey, message: String) {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        guard.insert(
+            key.clone(),
+            SlotState::Failed {
+                message,
+                at: Instant::now(),
+            },
+        );
+        self.cv.notify_all();
+    }
+
+    /// Begin a coalesced load for registry-owned residency (JOE-1646).
+    ///
+    /// - [`BeginLoad::Leader`]: this caller must load, insert into the registry,
+    ///   then call [`Self::finish_load_published`] or [`Self::finish_load_failed`].
+    /// - [`BeginLoad::WaitDone`]: a concurrent load finished; re-check the registry.
+    /// - [`BeginLoad::Failed`]: recent failure still in TTL window.
+    pub fn begin_or_wait(&self, key: &LoadKey) -> BeginLoad {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        loop {
+            if let Some(SlotState::Failed { at, .. }) = guard.get(key) {
+                if at.elapsed() > self.fail_ttl {
+                    guard.remove(key);
+                }
+            }
+            match guard.get_mut(key) {
+                Some(SlotState::Ready(_)) => {
+                    // Legacy Ready path: treat as completed, clear and let caller
+                    // re-query registry.
+                    guard.remove(key);
+                    self.cv.notify_all();
+                    return BeginLoad::WaitDone;
+                }
+                Some(SlotState::Failed { message, .. }) => {
+                    return BeginLoad::Failed(message.clone());
+                }
+                Some(SlotState::Loading { waiters }) => {
+                    *waiters += 1;
+                    guard = self.cv.wait(guard).unwrap_or_else(|e| e.into_inner());
+                    // After wake: loading finished (published or failed).
+                    // Loop to observe Failed or absence → WaitDone.
+                    if !matches!(guard.get(key), Some(SlotState::Loading { .. })) {
+                        if let Some(SlotState::Failed { message, .. }) = guard.get(key) {
+                            return BeginLoad::Failed(message.clone());
+                        }
+                        return BeginLoad::WaitDone;
+                    }
+                }
+                None => {
+                    guard.insert(key.clone(), SlotState::Loading { waiters: 0 });
+                    return BeginLoad::Leader;
+                }
+            }
+        }
+    }
+}
+
+/// Result of [`Singleflight::begin_or_wait`].
+#[derive(Debug)]
+pub enum BeginLoad {
+    /// This caller is responsible for loading and finishing the slot.
+    Leader,
+    /// A concurrent load completed; re-check the registry (or retry).
+    WaitDone,
+    /// A recent failure is still cached.
+    Failed(String),
 }
 
 impl<T> Default for Singleflight<T> {

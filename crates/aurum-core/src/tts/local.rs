@@ -25,8 +25,13 @@ use super::validate::{
 };
 use super::wav::peak_guard_f32_to_i16;
 use crate::error::{ProviderError, Result, UserError};
-use crate::runtime::{LoadKey, OpContext, ResourceGovernor, Singleflight};
+use crate::runtime::singleflight::BeginLoad;
+use crate::runtime::{
+    LoadKey, ModelRegistry, OpContext, RegistryConfig, ResidencyWeight, ResourceGovernor,
+    Singleflight,
+};
 use async_trait::async_trait;
+use once_cell::sync::Lazy;
 use ort::session::Session;
 use ort::value::Tensor;
 use std::collections::HashMap;
@@ -34,19 +39,111 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Process-global TTS residency (JOE-1646): registry owns ready packs; singleflight
+/// only coalesces in-progress loads. Multiple `LocalTtsProvider` handles share it.
+struct TtsSessionCache {
+    flight: Singleflight<LoadedPack>,
+    registry: ModelRegistry<LoadedPack>,
+}
+
+impl TtsSessionCache {
+    fn new() -> Self {
+        Self {
+            flight: Singleflight::default(),
+            registry: ModelRegistry::new(RegistryConfig::default()),
+        }
+    }
+
+    fn weight_for(onnx: &Path) -> ResidencyWeight {
+        let disk = std::fs::metadata(onnx).map(|m| m.len()).unwrap_or(0);
+        // ONNX + voices + runtime overhead headroom.
+        let bytes = disk.saturating_mul(2).max(32 * 1024 * 1024);
+        ResidencyWeight { bytes }
+    }
+
+    fn get_or_load<F>(&self, key: LoadKey, weight: ResidencyWeight, loader: F) -> Result<Arc<LoadedPack>>
+    where
+        F: FnOnce() -> Result<LoadedPack>,
+    {
+        if weight.bytes > self.registry.config().max_resident_bytes {
+            return Err(ProviderError::Overload {
+                reason: format!(
+                    "TTS pack weight {} exceeds residency budget {}",
+                    weight.bytes,
+                    self.registry.config().max_resident_bytes
+                ),
+            }
+            .into());
+        }
+        loop {
+            if let Some(entry) = self.registry.get(&key) {
+                return Ok(Arc::clone(&entry.value));
+            }
+            match self.flight.begin_or_wait(&key) {
+                BeginLoad::WaitDone => {
+                    if let Some(entry) = self.registry.get(&key) {
+                        return Ok(Arc::clone(&entry.value));
+                    }
+                    continue;
+                }
+                BeginLoad::Failed(message) => {
+                    return Err(ProviderError::ModelLoad {
+                        model: key.id.clone(),
+                        reason: message,
+                    }
+                    .into());
+                }
+                BeginLoad::Leader => break,
+            }
+        }
+
+        let gov = ResourceGovernor::process_global();
+        let load_result = (|| -> Result<Arc<LoadedPack>> {
+            let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
+            Ok(Arc::new(loader()?))
+        })();
+
+        match load_result {
+            Ok(pack) => match self.registry.insert(key.clone(), Arc::clone(&pack), weight) {
+                Ok(entry) => {
+                    self.flight.finish_load_published(&key);
+                    Ok(Arc::clone(&entry.value))
+                }
+                Err(e) => {
+                    self.flight.finish_load_failed(&key, e.to_string());
+                    drop(pack);
+                    Err(e)
+                }
+            },
+            Err(e) => {
+                self.flight.finish_load_failed(&key, e.to_string());
+                Err(e)
+            }
+        }
+    }
+
+    fn clear(&self) {
+        self.registry.clear();
+        self.flight.clear();
+    }
+}
+
+static TTS_SESSION_CACHE: Lazy<TtsSessionCache> = Lazy::new(TtsSessionCache::new);
+
 /// On-device KittenTTS via ONNX Runtime + misaki-rs G2P (no espeak / GPL).
 ///
 /// Pool size is intentionally 1 session per model (serial inference under a
 /// mutex). Throughput concurrency is governed by ResourceGovernor TTS permits
 /// rather than unbounded parallel ONNX sessions (memory cost of multi-session
 /// pools is not free for mobile/desktop defaults).
+///
+/// Loaded packs participate in the process-global weighted residency registry
+/// (JOE-1646) so multiple provider handles cannot silently multiply sessions.
 pub struct LocalTtsProvider {
     cache_dir: PathBuf,
     show_progress: bool,
     local_only: bool,
     max_chars: usize,
-    /// Singleflight-backed session cache keyed by model id.
-    sessions: Arc<Singleflight<LoadedPack>>,
 }
 
 struct LoadedPack {
@@ -66,7 +163,6 @@ impl LocalTtsProvider {
             show_progress: false,
             local_only: false,
             max_chars: DEFAULT_MAX_CHARS,
-            sessions: Arc::new(Singleflight::default()),
         }
     }
 
@@ -85,18 +181,18 @@ impl LocalTtsProvider {
         self
     }
 
-    /// Drop loaded ONNX sessions for this provider (frees ORT graphs held in RAM).
+    /// Drop loaded ONNX sessions process-wide (frees ORT graphs held in RAM).
     ///
     /// Safe to call anytime; the next synthesize/preload reloads from the on-disk pack.
     /// Does not delete cached files under the TTS cache directory.
     pub fn clear_sessions(&self) {
-        self.sessions.clear();
+        TTS_SESSION_CACHE.clear();
     }
 
     async fn ensure_loaded(&self, model: &str, local_only: bool) -> Result<Arc<LoadedPack>> {
         let key = LoadKey::tts(model, self.cache_dir.join(model).display().to_string());
-        if let Some(ready) = self.sessions.get_ready(&key) {
-            return Ok(ready);
+        if let Some(entry) = TTS_SESSION_CACHE.registry.get(&key) {
+            return Ok(Arc::clone(&entry.value));
         }
 
         let info = lookup_model(model)?;
@@ -115,13 +211,11 @@ impl LocalTtsProvider {
         let catalogue_max = info.max_phoneme_tokens;
         let key_for_load = key.clone();
         let model_id = model.to_string();
-        let sessions = Arc::clone(&self.sessions);
+        let weight = TtsSessionCache::weight_for(&onnx);
 
-        // Load on a blocking thread; singleflight ensures one native load per key.
+        // Load on a blocking thread; process cache coalesces and registers.
         let loaded = tokio::task::spawn_blocking(move || {
-            let gov = ResourceGovernor::process_global();
-            sessions.get_or_load(key_for_load, || {
-                let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
+            TTS_SESSION_CACHE.get_or_load(key_for_load, weight, || {
                 load_pack(
                     &onnx,
                     &voices_file,
@@ -181,11 +275,10 @@ impl LocalTtsProvider {
             format!("local-pack:{}", manifest.model_id),
             root.display().to_string(),
         );
-        if let Some(ready) = self.sessions.get_ready(&key) {
-            return Ok((ready, manifest));
+        if let Some(entry) = TTS_SESSION_CACHE.registry.get(&key) {
+            return Ok((Arc::clone(&entry.value), manifest));
         }
         let key_for_load = key.clone();
-        let sessions = Arc::clone(&self.sessions);
         let speed_priors = load_speed_priors_from_path(
             &root.join(
                 manifest
@@ -194,11 +287,10 @@ impl LocalTtsProvider {
                     .unwrap_or("config.json"),
             ),
         );
+        let weight = TtsSessionCache::weight_for(&onnx);
 
         let loaded = tokio::task::spawn_blocking(move || {
-            let gov = ResourceGovernor::process_global();
-            sessions.get_or_load(key_for_load, || {
-                let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
+            TTS_SESSION_CACHE.get_or_load(key_for_load, weight, || {
                 load_pack(
                     &onnx,
                     &voices_file,

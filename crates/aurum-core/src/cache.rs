@@ -39,25 +39,22 @@ pub fn status_stt(cache_dir: &Path) -> Vec<CacheEntry> {
         .into_iter()
         .map(|row| {
             let expected = model_exact_or_approx(row.info);
+            let pin = model::pinned_sha256(row.info.filename);
             let (actual, state) = match fs::metadata(&row.path) {
                 Ok(m) if m.len() > 1_000_000 => {
                     let actual = m.len();
-                    let state = if let Some(exp) = model::pinned_exact_bytes(row.info.filename) {
+                    // Cheap status never claims Healthy (requires digest verify) — JOE-1645.
+                    let state = if pin.is_none() {
+                        VerifyState::Unpinned
+                    } else if let Some(exp) = model::pinned_exact_bytes(row.info.filename) {
                         if actual == exp {
-                            VerifyState::Healthy
+                            // Present + size OK; full integrity is `aurum cache verify`.
+                            VerifyState::Legacy
                         } else {
                             VerifyState::SizeMismatch
                         }
                     } else {
-                        // Approx is UX only — allow ±5% band when no exact pin.
-                        let approx = row.info.approx_bytes;
-                        let lo = approx.saturating_mul(95) / 100;
-                        let hi = approx.saturating_mul(105) / 100;
-                        if (lo..=hi).contains(&actual) {
-                            VerifyState::Unpinned
-                        } else {
-                            VerifyState::SizeMismatch
-                        }
+                        VerifyState::Legacy
                     };
                     (Some(actual), state)
                 }
@@ -71,7 +68,7 @@ pub fn status_stt(cache_dir: &Path) -> Vec<CacheEntry> {
                 manifest_version: ARTIFACT_MANIFEST_VERSION,
                 expected_bytes: expected,
                 actual_bytes: actual,
-                expected_sha256: None, // status is cheap; verify fills digest
+                expected_sha256: pin.map(|s| s.to_string()),
                 state,
                 last_error: None,
             }
@@ -117,10 +114,15 @@ fn verify_one_stt(cache_dir: &Path, info: &ModelInfo, path: &Path) -> CacheEntry
         last_error: None,
     };
 
+    entry.expected_sha256 = model::pinned_sha256(info.filename).map(|s| s.to_string());
     match model::ensure_model_verified_local(path, info) {
         Ok(()) => {
             entry.actual_bytes = fs::metadata(path).ok().map(|m| m.len());
-            entry.state = VerifyState::Healthy;
+            entry.state = if entry.expected_sha256.is_some() {
+                VerifyState::Healthy
+            } else {
+                VerifyState::Unpinned
+            };
         }
         Err(e) => {
             entry.last_error = Some(e.to_string());

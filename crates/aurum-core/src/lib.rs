@@ -57,6 +57,7 @@ pub mod pcm;
 pub mod postprocess;
 pub mod providers;
 pub mod remote;
+pub mod runtime;
 #[cfg(feature = "tts")]
 pub mod tts;
 pub mod window;
@@ -81,6 +82,9 @@ pub use providers::{
     TranscriptionProvider, TranscriptionResult,
 };
 pub use remote::{HardenedHttpClient, RemotePolicy};
+pub use runtime::{
+    GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,
+};
 pub use window::{PartialClock, PartialWindowPolicy};
 
 #[cfg(feature = "tts")]

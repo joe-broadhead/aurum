@@ -48,7 +48,7 @@ mod types;
 
 pub use c_api::*;
 pub use error::{FfiError, FfiStatus};
-pub use facade::{cleanup_rules, shutdown, Engine};
+pub use facade::{cleanup_rules, shutdown, shutdown_with_timeout, Engine};
 pub use types::{
     CleanupStyle, EngineConfig, Segment, TranscribeOpts, Transcript, AURUM_ABI_VERSION,
     AURUM_SAMPLE_RATE,

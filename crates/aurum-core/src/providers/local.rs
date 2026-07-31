@@ -3,6 +3,10 @@
 //! Maintains a process-level cache of loaded `WhisperContext` values keyed by
 //! model path so repeated calls (library batch use, tests) do not reload ggml.
 //!
+//! Concurrent cold starts coalesce via singleflight (JOE-1597). Resident weight
+//! and eviction use the shared model registry (JOE-1598). Inference threads and
+//! blocking work are admitted by the process [`ResourceGovernor`] (JOE-1596/1599).
+//!
 //! Embedders (mic hosts) should prefer:
 //! - [`LocalWhisperProvider::preload`] at startup
 //! - [`LocalWhisperProvider::transcribe_pcm`] or [`AudioInput::from_pcm`] for buffers
@@ -15,77 +19,109 @@ use crate::audio::{AudioInput, WHISPER_SAMPLE_RATE};
 use crate::error::{ProviderError, Result};
 use crate::model::{self, DownloadProgressCallback, EnsureModelOptions};
 use crate::postprocess;
+use crate::runtime::{
+    LoadKey, ModelRegistry, OpContext, PermitKind, RegistryConfig, ResidencyWeight,
+    ResourceGovernor, Singleflight,
+};
 use async_trait::async_trait;
 use once_cell::sync::Lazy;
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 static LOGGING_HOOKS: once_cell::sync::OnceCell<()> = once_cell::sync::OnceCell::new();
 
-/// Process-global cache of loaded whisper contexts.
-static CONTEXT_CACHE: Lazy<ContextCache> = Lazy::new(ContextCache::new);
-
+/// Process-global STT context residency + singleflight loader.
 struct ContextCache {
-    inner: Mutex<HashMap<PathBuf, Arc<WhisperContext>>>,
+    flight: Singleflight<WhisperContext>,
+    registry: ModelRegistry<WhisperContext>,
 }
 
 impl ContextCache {
     fn new() -> Self {
         Self {
-            inner: Mutex::new(HashMap::new()),
+            flight: Singleflight::default(),
+            registry: ModelRegistry::new(RegistryConfig::default()),
         }
+    }
+
+    fn load_key(model_path: &Path, model_name: &str) -> LoadKey {
+        LoadKey::stt(model_name, model_path.display().to_string())
+    }
+
+    /// Conservative weight: on-disk size + 50% runtime overhead headroom.
+    fn weight_for(model_path: &Path) -> ResidencyWeight {
+        let disk = std::fs::metadata(model_path).map(|m| m.len()).unwrap_or(0);
+        let bytes = disk.saturating_add(disk / 2).max(16 * 1024 * 1024);
+        ResidencyWeight { bytes }
     }
 
     fn get_or_load(&self, model_path: &Path, model_name: &str) -> Result<Arc<WhisperContext>> {
-        let key = model_path.to_path_buf();
-        {
-            let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-            if let Some(ctx) = guard.get(&key) {
-                tracing::debug!(path = %key.display(), "reusing cached whisper context");
-                return Ok(Arc::clone(ctx));
-            }
+        let key = Self::load_key(model_path, model_name);
+        if let Some(entry) = self.registry.get(&key) {
+            return Ok(Arc::clone(&entry.value));
+        }
+        if let Some(ready) = self.flight.get_ready(&key) {
+            // Re-register if registry dropped it while singleflight still has Ready.
+            let weight = Self::weight_for(model_path);
+            let _ = self
+                .registry
+                .insert(key.clone(), Arc::clone(&ready), weight);
+            return Ok(ready);
         }
 
-        LOGGING_HOOKS.get_or_init(|| {
-            whisper_rs::install_logging_hooks();
-        });
+        let gov = ResourceGovernor::process_global();
+        let path_owned = model_path.to_path_buf();
+        let name_owned = model_name.to_string();
+        let weight = Self::weight_for(model_path);
 
-        let params = WhisperContextParameters::default();
-        let ctx = WhisperContext::new_with_params(model_path.to_string_lossy().as_ref(), params)
-            .map_err(|e| ProviderError::ModelLoad {
-                model: model_name.to_string(),
-                reason: e.to_string(),
-            })?;
-        let ctx = Arc::new(ctx);
+        let ctx = self.flight.get_or_load(key.clone(), || {
+            let _permit = gov.acquire(PermitKind::ModelLoad, None)?;
 
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let entry = guard.entry(key).or_insert_with(|| Arc::clone(&ctx));
-        Ok(Arc::clone(entry))
+            LOGGING_HOOKS.get_or_init(|| {
+                whisper_rs::install_logging_hooks();
+            });
+
+            let params = WhisperContextParameters::default();
+            let ctx =
+                WhisperContext::new_with_params(path_owned.to_string_lossy().as_ref(), params)
+                    .map_err(|e| ProviderError::ModelLoad {
+                        model: name_owned.clone(),
+                        reason: e.to_string(),
+                    })?;
+            Ok(ctx)
+        })?;
+
+        // Evict idle peers if needed; on failure keep the loaded context (still in
+        // singleflight) so callers are not left without a working model after a
+        // successful native load. Over-budget is reported only when no room exists.
+        match self.registry.insert(key, Arc::clone(&ctx), weight) {
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(
+                    model = %model_name,
+                    error = %e,
+                    "STT context loaded but residency insert failed; keeping in singleflight"
+                );
+            }
+        }
+        Ok(ctx)
     }
 
     fn clear(&self) {
-        if let Ok(mut guard) = self.inner.lock() {
-            guard.clear();
-        }
+        self.registry.clear();
+        self.flight.clear();
     }
 
-    fn contains(&self, model_path: &Path) -> bool {
-        self.inner
-            .lock()
-            .map(|g| g.contains_key(model_path))
-            .unwrap_or(false)
+    fn contains(&self, model_path: &Path, model_name: &str) -> bool {
+        let key = Self::load_key(model_path, model_name);
+        self.registry.get(&key).is_some() || self.flight.contains_ready(&key)
     }
 }
 
-impl Drop for ContextCache {
-    fn drop(&mut self) {
-        self.clear();
-    }
-}
+static CONTEXT_CACHE: Lazy<ContextCache> = Lazy::new(ContextCache::new);
 
-/// Drop all cached whisper contexts (call before process exit).
+/// Drop all cached whisper contexts (call before process exit, only when idle).
 pub fn clear_context_cache() {
     CONTEXT_CACHE.clear();
 }
@@ -145,7 +181,7 @@ impl LocalWhisperProvider {
             return false;
         };
         let path = model::model_path(&self.cache_dir, info);
-        CONTEXT_CACHE.contains(&path)
+        CONTEXT_CACHE.contains(&path, model)
     }
 
     fn ensure_opts(&self) -> EnsureModelOptions {
@@ -217,14 +253,14 @@ impl TranscriptionProvider for LocalWhisperProvider {
             .into());
         }
 
-        if options.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
-            return Err(ProviderError::Cancelled.into());
-        }
+        let op = OpContext::from_optional_cancel(options.cancel.clone());
+        op.check()?;
+        op.emit("stt", "ensure_model");
 
         let model_name = options.model.clone();
         let language = options.language.clone();
         let timestamps = options.timestamps;
-        let cancel = options.cancel.clone();
+        let cancel = op.cancel.clone();
         let samples: Arc<[f32]> = Arc::clone(&input.samples);
         let duration_secs = input.duration_secs;
         let cache_dir = self.cache_dir.clone();
@@ -232,11 +268,17 @@ impl TranscriptionProvider for LocalWhisperProvider {
 
         let model_path = model::ensure_model_with_options(&cache_dir, &model_name, opts).await?;
 
-        if cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
-            return Err(ProviderError::Cancelled.into());
-        }
+        op.check()?;
+        op.emit("stt", "inference");
 
         let result = tokio::task::spawn_blocking(move || {
+            // Admission inside the worker so queue wait does not occupy a Tokio worker.
+            let gov = ResourceGovernor::process_global();
+            let n_threads = gov.recommend_stt_threads();
+            let op_inner = OpContext::with_cancel(cancel.clone());
+            let _permit = gov.acquire_stt(n_threads, 0, Some(&op_inner))?;
+            // Re-check after queue wait so late work does not start after cancel.
+            op_inner.check()?;
             run_whisper(
                 &model_path,
                 &model_name,
@@ -244,7 +286,8 @@ impl TranscriptionProvider for LocalWhisperProvider {
                 duration_secs,
                 &language,
                 timestamps,
-                cancel.as_ref(),
+                Some(&cancel),
+                n_threads as i32,
             )
         })
         .await
@@ -264,6 +307,7 @@ unsafe extern "C" fn abort_callback_atomic(user_data: *mut std::ffi::c_void) -> 
     flag.load(std::sync::atomic::Ordering::SeqCst)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_whisper(
     model_path: &Path,
     model_name: &str,
@@ -272,12 +316,20 @@ fn run_whisper(
     language: &str,
     timestamps: bool,
     cancel: Option<&crate::cancel::CancelFlag>,
+    n_threads: i32,
 ) -> Result<TranscriptionResult> {
     if cancel.is_some_and(|c| c.is_cancelled()) {
         return Err(ProviderError::Cancelled.into());
     }
 
-    let ctx = CONTEXT_CACHE.get_or_load(model_path, model_name)?;
+    let key = ContextCache::load_key(model_path, model_name);
+    let pin = CONTEXT_CACHE.registry.pin(&key);
+    let ctx = match pin.as_ref() {
+        Some(p) => Arc::clone(p.value()),
+        None => CONTEXT_CACHE.get_or_load(model_path, model_name)?,
+    };
+    // Keep pin alive across full() so eviction cannot drop the context mid-decode.
+    let _pin = pin.or_else(|| CONTEXT_CACHE.registry.pin(&key));
 
     let mut state = ctx
         .create_state()
@@ -307,11 +359,7 @@ fn run_whisper(
         }
     }
 
-    let n_threads = std::thread::available_parallelism()
-        .map(|n| n.get() as i32)
-        .unwrap_or(4)
-        .clamp(1, 8);
-    params.set_n_threads(n_threads);
+    params.set_n_threads(n_threads.clamp(1, 8));
 
     let lang = language.trim().to_ascii_lowercase();
     let auto = lang.is_empty() || lang == "auto";

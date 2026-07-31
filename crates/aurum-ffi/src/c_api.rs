@@ -167,13 +167,28 @@ pub extern "C" fn aurum_version() -> *const c_char {
     VER.as_ptr()
 }
 
-/// Wait for in-flight ops, clear whisper context cache, reject new work.
+/// Wait for in-flight ops, clear whisper context cache only if idle, reject new work.
 /// Must not be called while the host still intends to use engines.
 #[no_mangle]
 pub extern "C" fn aurum_shutdown() {
     let _ = catch_unwind(|| {
         facade::shutdown();
     });
+}
+
+/// Drain with an explicit timeout. Returns `AURUM_OK` or `AURUM_ERR_BUSY`.
+///
+/// On BUSY, whisper contexts are **not** cleared.
+#[no_mangle]
+pub extern "C" fn aurum_shutdown_ex(timeout_ms: c_uint) -> i32 {
+    match catch_unwind(|| {
+        let ms = timeout_ms as u64;
+        facade::shutdown_with_timeout(std::time::Duration::from_millis(ms))
+    }) {
+        Ok(Ok(())) => status_ok(),
+        Ok(Err(e)) => status_err(&e),
+        Err(_) => FfiStatus::Internal.as_i32(),
+    }
 }
 
 /* ---------- engine lifecycle ---------- */

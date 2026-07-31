@@ -124,6 +124,12 @@ pub enum ProviderError {
     #[error("transcription cancelled")]
     Cancelled,
 
+    #[error("operation deadline exceeded")]
+    DeadlineExceeded,
+
+    #[error("resource overload: {reason}")]
+    Overload { reason: String },
+
     #[error("network error talking to {provider}: {reason}")]
     Network { provider: String, reason: String },
 

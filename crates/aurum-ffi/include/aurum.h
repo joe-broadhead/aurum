@@ -15,10 +15,16 @@
  *
  * Lifecycle:
  *   - Zero-initialize config/opts structs (reserved fields must be 0).
- *   - Call aurum_engine_destroy on every engine, then aurum_shutdown() before
- *     process exit (Metal/ggml teardown). Do not start new work after shutdown.
+ *   - Call aurum_engine_destroy on every engine, then aurum_shutdown() /
+ *     aurum_shutdown_ex() before process exit (Metal/ggml teardown).
+ *   - Shutdown closes admission (Running → ShuttingDown → Stopped). New work
+ *     is rejected after shutdown begins. Context caches are cleared only when
+ *     the active-op count reaches zero; a BUSY return leaves contexts intact.
+ *   - Do not start new work after shutdown.
  *   - aurum_engine_last_error: returned pointer is valid only until the next
  *     aurum_engine_last_error call on the SAME thread — copy immediately.
+ *   - Cancel publishes a per-operation token; aurum_engine_cancel targets only
+ *     the currently in-flight exclusive op (never a future job).
  */
 #pragma once
 
@@ -49,7 +55,13 @@ typedef enum AurumStatus {
   AURUM_ERR_AUDIO = 7,
   AURUM_ERR_INTERNAL = 8,
   AURUM_ERR_UNSUPPORTED = 9,
-  AURUM_ERR_NO_MEMORY = 10
+  AURUM_ERR_NO_MEMORY = 10,
+  /** Shutdown drain timed out; active work remains; contexts not cleared. */
+  AURUM_ERR_BUSY = 11,
+  /** Operation deadline exceeded. */
+  AURUM_ERR_DEADLINE = 12,
+  /** Resource governor rejected admission (overload / budget). */
+  AURUM_ERR_OVERLOAD = 13
 } AurumStatus;
 
 typedef enum AurumCleanupStyle {
@@ -84,7 +96,18 @@ typedef struct AurumSegment {
 uint32_t aurum_abi_version(void);
 uint32_t aurum_sample_rate(void);
 const char *aurum_version(void);
+/**
+ * Drain in-flight exclusive ops (default timeout) and clear whisper contexts
+ * only if the active count reaches zero. Idempotent. Prefer
+ * aurum_shutdown_ex when the host needs a BUSY status.
+ */
 void aurum_shutdown(void);
+/**
+ * Same as aurum_shutdown with an explicit timeout in milliseconds.
+ * Returns AURUM_OK when stopped and caches cleared; AURUM_ERR_BUSY when the
+ * drain timed out (contexts intentionally NOT cleared).
+ */
+AurumStatus aurum_shutdown_ex(uint32_t timeout_ms);
 
 /* engine lifecycle */
 AurumStatus aurum_engine_create(const AurumEngineConfig *cfg, AurumEngine **out);

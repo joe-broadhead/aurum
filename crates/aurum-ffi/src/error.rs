@@ -18,6 +18,12 @@ pub enum FfiStatus {
     Internal = 8,
     Unsupported = 9,
     NoMemory = 10,
+    /// Shutdown drain timed out; active work remains (JOE-1594).
+    Busy = 11,
+    /// Operation deadline exceeded (JOE-1595).
+    Deadline = 12,
+    /// Resource governor rejected admission (JOE-1596).
+    Overload = 13,
 }
 
 impl FfiStatus {
@@ -55,7 +61,7 @@ impl FfiError {
 }
 
 impl fmt::Display for FfiError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.message)
     }
 }
@@ -90,6 +96,8 @@ impl From<TranscriptionError> for FfiError {
             },
             TranscriptionError::Provider(p) => match p {
                 ProviderError::Cancelled => FfiStatus::Cancelled,
+                ProviderError::DeadlineExceeded => FfiStatus::Deadline,
+                ProviderError::Overload { .. } => FfiStatus::Overload,
                 ProviderError::ModelDownload { .. } => FfiStatus::ModelDownload,
                 ProviderError::Network { .. }
                 | ProviderError::RateLimited { .. }

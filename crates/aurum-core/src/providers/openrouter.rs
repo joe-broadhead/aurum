@@ -179,6 +179,10 @@ impl TranscriptionProvider for OpenRouterProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
+        let op = crate::runtime::OpContext::from_optional_cancel(options.cancel.clone());
+        op.check()?;
+        let gov = crate::runtime::ResourceGovernor::process_global();
+        let _permit = gov.acquire(crate::runtime::PermitKind::Remote, Some(&op))?;
         let path = self.resolve_path(&options.model);
         match path {
             SttPath::Transcriptions => self.transcribe_dedicated(input, options).await,

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1573** Runtime lifecycle, concurrency, and resource governance:
+  - Synchronized FFI lifecycle Running → ShuttingDown → Stopped; `aurum_shutdown_ex`
+    returns `AURUM_ERR_BUSY` and does not clear contexts while work is active (JOE-1594)
+  - Per-operation `OpContext` (request id, fresh cancel token, absolute deadline) (JOE-1595)
+  - Process `ResourceGovernor` with separate permits for model load / STT / TTS / remote /
+    blocking work, CPU thread budget, and soft memory reservations (JOE-1596)
+  - Singleflight STT context and TTS session loading (JOE-1597)
+  - Weighted model residency registry with idle eviction (JOE-1598)
+  - STT `n_threads` allocated from the global CPU budget; bounded `spawn_blocking` (JOE-1599)
+  - TTS bounded by governor permits; soft deadline keeps native work tracked until return (JOE-1600)
+  - New status codes: `AURUM_ERR_BUSY`, `AURUM_ERR_DEADLINE`, `AURUM_ERR_OVERLOAD`
+  - Typed provider errors: `DeadlineExceeded`, `Overload`
+
 - **JOE-1572** Safe external I/O and artifact trust:
   - Supervised FFmpeg decode (concurrent stdout/stderr drain, `-nostdin`, protocol
     whitelist, wall-clock deadline, kill+reap)

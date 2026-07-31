@@ -1,6 +1,9 @@
-//! On-device rule-based cleanup.
+//! On-device rule-based cleanup (JOE-1610).
 //!
 //! No network, no ML weights — pure string/regex transforms.
+//! English filler/contraction heuristics apply only when language is English
+//! (or `auto` defaulting to English). Other languages receive whitespace-safe
+//! normalization only for `clean`/`professional` styles.
 
 use super::{CleanupProviderKind, CleanupResult, CleanupStyle, TextCleanup};
 use crate::error::Result;
@@ -10,11 +13,39 @@ use std::sync::LazyLock;
 
 /// Local, deterministic text cleanup.
 #[derive(Debug, Default, Clone)]
-pub struct RulesCleanup;
+pub struct RulesCleanup {
+    /// Optional BCP-47 / ISO language hint (e.g. `en`, `fr`, `auto`).
+    pub language: Option<String>,
+}
 
 impl RulesCleanup {
     pub fn new() -> Self {
-        Self
+        Self { language: None }
+    }
+
+    pub fn with_language(mut self, language: impl Into<String>) -> Self {
+        self.language = Some(language.into());
+        self
+    }
+
+    fn is_english(&self) -> bool {
+        match self
+            .language
+            .as_deref()
+            .map(|s| s.trim().to_ascii_lowercase())
+        {
+            None => true, // historical default: English heuristics
+            Some(l)
+                if l.is_empty()
+                    || l == "auto"
+                    || l == "en"
+                    || l.starts_with("en-")
+                    || l == "eng" =>
+            {
+                true
+            }
+            _ => false,
+        }
     }
 }
 
@@ -30,16 +61,42 @@ impl TextCleanup for RulesCleanup {
 
     async fn cleanup(&self, text: &str, style: CleanupStyle) -> Result<CleanupResult> {
         let original = text.to_string();
-        let trimmed = text.trim();
-        let body = if trimmed.is_empty() {
+        let english = self.is_english();
+        let body = if text.trim().is_empty() {
             String::new()
         } else {
             match style {
-                CleanupStyle::Raw => trimmed.to_string(),
-                CleanupStyle::Clean => clean(trimmed),
-                CleanupStyle::Bullets => to_bullets(&clean(trimmed)),
-                CleanupStyle::Professional => professional(&clean(trimmed)),
-                CleanupStyle::Summary => summarize(&clean(trimmed)),
+                CleanupStyle::Raw => text.trim().to_string(),
+                CleanupStyle::Clean => {
+                    if english {
+                        clean_english(text)
+                    } else {
+                        whitespace_safe(text)
+                    }
+                }
+                CleanupStyle::Bullets => {
+                    let base = if english {
+                        clean_english(text)
+                    } else {
+                        whitespace_safe(text)
+                    };
+                    to_bullets(&base)
+                }
+                CleanupStyle::Professional => {
+                    if english {
+                        professional_english(&clean_english(text))
+                    } else {
+                        whitespace_safe(text)
+                    }
+                }
+                CleanupStyle::Summary => {
+                    let base = if english {
+                        clean_english(text)
+                    } else {
+                        whitespace_safe(text)
+                    };
+                    summarize(&base)
+                }
             }
         };
         Ok(CleanupResult {
@@ -51,33 +108,109 @@ impl TextCleanup for RulesCleanup {
     }
 }
 
-static RE_WS: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s+").expect("regex"));
-static RE_WS2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\s{2,}").expect("regex"));
+// --- Precompiled patterns (no per-call Regex::new for hot paths) ---
+
+static RE_WS2: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[ \t]{2,}").expect("regex"));
 static RE_SPACE_PUNCT: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\s+([,.!?;:])").expect("regex"));
+    LazyLock::new(|| Regex::new(r"[ \t]+([,.!?;:])").expect("regex"));
 static RE_SENT_SPLIT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[.!?]+\s+").expect("regex"));
 
-fn clean(text: &str) -> String {
-    let mut result = RE_WS.replace_all(text, " ").into_owned();
-
-    let multi = [
+// English fillers (precompiled).
+static RE_FILLER_MULTI: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    [
         "you know", "i mean", "sort of", "kind of", "okay so", "so yeah",
-    ];
-    for filler in multi {
-        let pat = format!(r"(?i)\b{}\b[,.]?", regex::escape(filler));
-        result = Regex::new(&pat)
-            .expect("filler regex")
-            .replace_all(&result, "")
-            .into_owned();
-    }
+    ]
+    .into_iter()
+    .map(|f| Regex::new(&format!(r"(?i)\b{}\b[,.]?", regex::escape(f))).expect("filler"))
+    .collect()
+});
+static RE_FILLER_SINGLE: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+    ["um", "uh", "uhm", "erm", "ah", "eh"]
+        .into_iter()
+        .map(|f| Regex::new(&format!(r"(?i)\b{}\b[,.]?", regex::escape(f))).expect("filler"))
+        .collect()
+});
 
-    let single = ["um", "uh", "uhm", "erm", "ah", "eh"];
-    for filler in single {
-        let pat = format!(r"(?i)\b{}\b[,.]?", regex::escape(filler));
-        result = Regex::new(&pat)
-            .expect("filler regex")
-            .replace_all(&result, "")
-            .into_owned();
+// Safe professional expansions only (no ambiguous I'd / it's).
+static RE_PRO_SAFE: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
+    [
+        (r"(?i)\bcan't\b", "cannot"),
+        (r"(?i)\bwon't\b", "will not"),
+        (r"(?i)\bdon't\b", "do not"),
+        (r"(?i)\bdidn't\b", "did not"),
+        (r"(?i)\bisn't\b", "is not"),
+        (r"(?i)\baren't\b", "are not"),
+        (r"(?i)\bwasn't\b", "was not"),
+        (r"(?i)\bweren't\b", "were not"),
+        (r"(?i)\bhaven't\b", "have not"),
+        (r"(?i)\bhasn't\b", "has not"),
+        (r"(?i)\bhadn't\b", "had not"),
+        (r"(?i)\bI'm\b", "I am"),
+        (r"(?i)\bI've\b", "I have"),
+        (r"(?i)\bI'll\b", "I will"),
+        // Intentionally omitted: I'd, it's, that's, there's (ambiguous).
+        (r"(?i)\bwe're\b", "we are"),
+        (r"(?i)\bwe've\b", "we have"),
+        (r"(?i)\bwe'll\b", "we will"),
+        (r"(?i)\bthey're\b", "they are"),
+        (r"(?i)\bthey've\b", "they have"),
+        (r"(?i)\bgonna\b", "going to"),
+        (r"(?i)\bwanna\b", "want to"),
+        (r"(?i)\bkinda\b", "kind of"),
+        (r"(?i)\byeah\b", "yes"),
+        (r"(?i)\byep\b", "yes"),
+        (r"(?i)\bnope\b", "no"),
+        (r"(?i)\basap\b", "as soon as possible"),
+        (r"(?i)\bfyi\b", "for your information"),
+    ]
+    .into_iter()
+    .map(|(p, r)| (Regex::new(p).expect("pro"), r))
+    .collect()
+});
+
+/// Whitespace-safe normalization preserving paragraph breaks.
+fn whitespace_safe(text: &str) -> String {
+    let paragraphs: Vec<String> = text
+        .split("\n\n")
+        .map(|p| {
+            let line = p
+                .lines()
+                .map(|l| l.trim())
+                .filter(|l| !l.is_empty())
+                .collect::<Vec<_>>()
+                .join(" ");
+            RE_WS2.replace_all(&line, " ").into_owned()
+        })
+        .filter(|p| !p.trim().is_empty())
+        .collect();
+    paragraphs.join("\n\n")
+}
+
+fn clean_english(text: &str) -> String {
+    // Preserve paragraphs: clean each block independently.
+    let paragraphs: Vec<String> = text
+        .split("\n\n")
+        .map(clean_english_paragraph)
+        .filter(|p| !p.is_empty())
+        .collect();
+    paragraphs.join("\n\n")
+}
+
+fn clean_english_paragraph(text: &str) -> String {
+    // Collapse horizontal whitespace and single newlines inside a paragraph.
+    let mut result = text
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    result = RE_WS2.replace_all(&result, " ").into_owned();
+
+    for re in RE_FILLER_MULTI.iter() {
+        result = re.replace_all(&result, "").into_owned();
+    }
+    for re in RE_FILLER_SINGLE.iter() {
+        result = re.replace_all(&result, "").into_owned();
     }
 
     result = RE_WS2.replace_all(&result, " ").into_owned();
@@ -92,6 +225,22 @@ fn clean(text: &str) -> String {
         }
     }
     result
+}
+
+fn professional_english(text: &str) -> String {
+    let paragraphs: Vec<String> = text
+        .split("\n\n")
+        .map(|p| {
+            let mut result = p.to_string();
+            for (re, rep) in RE_PRO_SAFE.iter() {
+                result = re.replace_all(&result, *rep).into_owned();
+            }
+            result = RE_WS2.replace_all(&result, " ").into_owned();
+            capitalize_sentences(result.trim())
+        })
+        .filter(|p| !p.is_empty())
+        .collect();
+    paragraphs.join("\n\n")
 }
 
 fn to_bullets(text: &str) -> String {
@@ -119,55 +268,6 @@ fn to_bullets(text: &str) -> String {
         .join("\n")
 }
 
-fn professional(text: &str) -> String {
-    let replacements: &[(&str, &str)] = &[
-        (r"(?i)\bcan't\b", "cannot"),
-        (r"(?i)\bwon't\b", "will not"),
-        (r"(?i)\bdon't\b", "do not"),
-        (r"(?i)\bdidn't\b", "did not"),
-        (r"(?i)\bisn't\b", "is not"),
-        (r"(?i)\baren't\b", "are not"),
-        (r"(?i)\bwasn't\b", "was not"),
-        (r"(?i)\bweren't\b", "were not"),
-        (r"(?i)\bhaven't\b", "have not"),
-        (r"(?i)\bhasn't\b", "has not"),
-        (r"(?i)\bhadn't\b", "had not"),
-        (r"(?i)\bI'm\b", "I am"),
-        (r"(?i)\bI've\b", "I have"),
-        (r"(?i)\bI'll\b", "I will"),
-        (r"(?i)\bI'd\b", "I would"),
-        (r"(?i)\bwe're\b", "we are"),
-        (r"(?i)\bwe've\b", "we have"),
-        (r"(?i)\bwe'll\b", "we will"),
-        (r"(?i)\bthey're\b", "they are"),
-        (r"(?i)\bthey've\b", "they have"),
-        (r"(?i)\bit's\b", "it is"),
-        (r"(?i)\bthat's\b", "that is"),
-        (r"(?i)\bthere's\b", "there is"),
-        (r"(?i)\bgonna\b", "going to"),
-        (r"(?i)\bwanna\b", "want to"),
-        (r"(?i)\bkinda\b", "kind of"),
-        (r"(?i)\byeah\b", "yes"),
-        (r"(?i)\byep\b", "yes"),
-        (r"(?i)\bnope\b", "no"),
-        (r"(?i)\bokay\b", "all right"),
-        (r"(?i)\bok\b", "all right"),
-        (r"(?i)\bhey\b", "hello"),
-        (r"(?i)\basap\b", "as soon as possible"),
-        (r"(?i)\bfyi\b", "for your information"),
-    ];
-
-    let mut result = text.to_string();
-    for (pat, rep) in replacements {
-        result = Regex::new(pat)
-            .expect("pro regex")
-            .replace_all(&result, *rep)
-            .into_owned();
-    }
-    result = RE_WS2.replace_all(&result, " ").into_owned();
-    capitalize_sentences(result.trim())
-}
-
 fn summarize(text: &str) -> String {
     let sentences = split_sentences(text);
     if sentences.len() <= 2 {
@@ -188,7 +288,6 @@ fn summarize(text: &str) -> String {
 }
 
 fn split_sentences(text: &str) -> Vec<String> {
-    // Simple split on .!? followed by whitespace — good enough for v0.
     let mut out: Vec<String> = RE_SENT_SPLIT
         .split(text)
         .map(|s| s.trim().to_string())
@@ -197,7 +296,6 @@ fn split_sentences(text: &str) -> Vec<String> {
     if out.is_empty() {
         out.push(text.to_string());
     }
-    // Re-attach terminal punctuation roughly
     out
 }
 
@@ -225,5 +323,66 @@ fn capitalize_first(text: &str) -> String {
     match chars.next() {
         None => String::new(),
         Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn english_clean_strips_um() {
+        let r = RulesCleanup::new()
+            .with_language("en")
+            .cleanup("um, hello there", CleanupStyle::Clean)
+            .await
+            .unwrap();
+        assert!(r.text.to_ascii_lowercase().contains("hello"));
+        assert!(!r.text.to_ascii_lowercase().contains("um"));
+    }
+
+    #[tokio::test]
+    async fn french_does_not_strip_english_fillers_as_english() {
+        // "um" as substring of French should not be English-filler processed.
+        // We only apply whitespace-safe path — content preserved aside from trim.
+        let r = RulesCleanup::new()
+            .with_language("fr")
+            .cleanup("Bonjour, um, le monde", CleanupStyle::Clean)
+            .await
+            .unwrap();
+        // Whitespace-safe keeps words; may keep "um" as a token.
+        assert!(r.text.contains("Bonjour") || r.text.to_ascii_lowercase().contains("bonjour"));
+        assert!(r.text.contains("monde"));
+    }
+
+    #[tokio::test]
+    async fn professional_preserves_id_contraction() {
+        let r = RulesCleanup::new()
+            .with_language("en")
+            .cleanup("I'd like that", CleanupStyle::Professional)
+            .await
+            .unwrap();
+        // Must not force "I would" (could have been "I had").
+        assert!(
+            r.text.contains("I'd") || r.text.contains("I d"),
+            "got: {}",
+            r.text
+        );
+        assert!(!r.text.contains("I would"));
+    }
+
+    #[tokio::test]
+    async fn paragraphs_preserved_in_clean() {
+        let input = "First paragraph um here.\n\nSecond paragraph uh there.";
+        let r = RulesCleanup::new()
+            .with_language("en")
+            .cleanup(input, CleanupStyle::Clean)
+            .await
+            .unwrap();
+        assert!(
+            r.text.contains("\n\n"),
+            "paragraph break lost: {:?}",
+            r.text
+        );
     }
 }

@@ -1,6 +1,10 @@
-//! Error taxonomy for Aurum.
+//! Error taxonomy for Aurum (JOE-1611).
 //!
-//! Errors are grouped so callers (and the CLI) can present actionable messages:
+//! [`TranscriptionError`] is the crate-wide error type (also exported as
+//! [`AurumError`]). High-level [`ErrorCategory`] identifiers are stable at
+//! v0.0.3 / v0.1.0; detailed variants may evolve under a non-exhaustive policy.
+//!
+//! Groups:
 //! - [`TranscriptionError::User`] — bad input, missing key, invalid model name
 //! - [`TranscriptionError::Environment`] — missing ffmpeg, disk full, cache issues
 //! - [`TranscriptionError::Provider`] — network, rate limit, model load failure
@@ -8,7 +12,60 @@
 
 use thiserror::Error;
 
+/// Stable high-level category identifiers (frozen at 0.1 policy).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ErrorCategory {
+    InvalidInput,
+    UnsupportedCapability,
+    Cancelled,
+    DeadlineExceeded,
+    BusyOverloaded,
+    ModelUnavailable,
+    ArtifactIntegrity,
+    Network,
+    Auth,
+    RateLimit,
+    Quota,
+    Filesystem,
+    DiskFull,
+    Subprocess,
+    NativeInference,
+    Internal,
+    /// Catch-all for user/config class errors.
+    User,
+    Environment,
+    Provider,
+}
+
+impl ErrorCategory {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidInput => "invalid_input",
+            Self::UnsupportedCapability => "unsupported_capability",
+            Self::Cancelled => "cancelled",
+            Self::DeadlineExceeded => "deadline_exceeded",
+            Self::BusyOverloaded => "busy_overloaded",
+            Self::ModelUnavailable => "model_unavailable",
+            Self::ArtifactIntegrity => "artifact_integrity",
+            Self::Network => "network",
+            Self::Auth => "auth",
+            Self::RateLimit => "rate_limit",
+            Self::Quota => "quota",
+            Self::Filesystem => "filesystem",
+            Self::DiskFull => "disk_full",
+            Self::Subprocess => "subprocess",
+            Self::NativeInference => "native_inference",
+            Self::Internal => "internal",
+            Self::User => "user",
+            Self::Environment => "environment",
+            Self::Provider => "provider",
+        }
+    }
+}
+
 /// Top-level error type used across the core library and CLI.
+///
+/// Prefer the [`AurumError`] alias in new code.
 #[derive(Debug, Error)]
 pub enum TranscriptionError {
     #[error("{0}")]
@@ -23,6 +80,9 @@ pub enum TranscriptionError {
     #[error("internal error: {0}")]
     Internal(String),
 }
+
+/// Preferred name for the crate-wide error type (JOE-1611).
+pub type AurumError = TranscriptionError;
 
 #[derive(Debug, Error)]
 pub enum UserError {
@@ -77,6 +137,14 @@ pub enum UserError {
 
     #[error("invalid configuration: {reason}")]
     InvalidConfig { reason: String },
+
+    #[error("unsupported capability for {provider}/{model}: {reason}\n  Hint: {hint}")]
+    UnsupportedCapability {
+        provider: String,
+        model: String,
+        reason: String,
+        hint: String,
+    },
 
     #[error("{message}")]
     Other { message: String },
@@ -165,7 +233,7 @@ pub enum ProviderError {
 }
 
 impl TranscriptionError {
-    /// Short category label for logging / exit-code mapping.
+    /// Coarse group label (backward compatible).
     pub fn category(&self) -> &'static str {
         match self {
             Self::User(_) => "user",
@@ -175,13 +243,93 @@ impl TranscriptionError {
         }
     }
 
-    /// Suggested process exit code.
-    pub fn exit_code(&self) -> i32 {
+    /// Stable semantic category (JOE-1611).
+    pub fn error_category(&self) -> ErrorCategory {
         match self {
-            Self::User(_) => 2,
-            Self::Environment(_) => 3,
-            Self::Provider(_) => 4,
-            Self::Internal(_) => 1,
+            Self::User(u) => match u {
+                UserError::UnsupportedCapability { .. } => ErrorCategory::UnsupportedCapability,
+                UserError::ModelNotCached { .. } | UserError::InvalidModel { .. } => {
+                    ErrorCategory::ModelUnavailable
+                }
+                UserError::MissingApiKey => ErrorCategory::Auth,
+                UserError::InvalidConfig { .. }
+                | UserError::InvalidProvider { .. }
+                | UserError::InvalidOutputFormat { .. }
+                | UserError::FileNotFound { .. }
+                | UserError::InvalidAudio { .. }
+                | UserError::AudioTooLong { .. }
+                | UserError::AudioTooLarge { .. }
+                | UserError::UnsupportedSampleRate { .. }
+                | UserError::Other { .. } => ErrorCategory::InvalidInput,
+            },
+            Self::Environment(e) => match e {
+                EnvironmentError::DiskSpace { .. } => ErrorCategory::DiskFull,
+                EnvironmentError::FfmpegMissing | EnvironmentError::FfmpegFailed { .. } => {
+                    ErrorCategory::Subprocess
+                }
+                EnvironmentError::DirectoryAccess { .. } | EnvironmentError::Io(_) => {
+                    ErrorCategory::Filesystem
+                }
+                EnvironmentError::Other { .. } => ErrorCategory::Environment,
+            },
+            Self::Provider(p) => match p {
+                ProviderError::Cancelled => ErrorCategory::Cancelled,
+                ProviderError::DeadlineExceeded => ErrorCategory::DeadlineExceeded,
+                ProviderError::Overload { .. } => ErrorCategory::BusyOverloaded,
+                ProviderError::Network { .. } => ErrorCategory::Network,
+                ProviderError::Auth { .. } => ErrorCategory::Auth,
+                ProviderError::RateLimited { .. } => ErrorCategory::RateLimit,
+                ProviderError::QuotaExceeded { .. } => ErrorCategory::Quota,
+                ProviderError::ModelLoad { .. } | ProviderError::ModelDownload { .. } => {
+                    ErrorCategory::ModelUnavailable
+                }
+                ProviderError::TranscriptionFailed { .. } => ErrorCategory::NativeInference,
+                ProviderError::InvalidProviderPayload { .. }
+                | ProviderError::ResponseTooLarge { .. }
+                | ProviderError::LimitExceeded { .. }
+                | ProviderError::Remote { .. }
+                | ProviderError::Other { .. } => ErrorCategory::Provider,
+            },
+            Self::Internal(_) => ErrorCategory::Internal,
+        }
+    }
+
+    /// Whether a caller may reasonably retry the same operation.
+    pub fn retryable(&self) -> bool {
+        matches!(
+            self.error_category(),
+            ErrorCategory::Network
+                | ErrorCategory::RateLimit
+                | ErrorCategory::BusyOverloaded
+                | ErrorCategory::DeadlineExceeded
+        )
+    }
+
+    /// Suggested process exit code.
+    ///
+    /// 1 internal · 2 user/input · 3 environment · 4 provider · 5 cancelled ·
+    /// 6 deadline · 7 overload
+    pub fn exit_code(&self) -> i32 {
+        match self.error_category() {
+            ErrorCategory::Internal => 1,
+            ErrorCategory::Cancelled => 5,
+            ErrorCategory::DeadlineExceeded => 6,
+            ErrorCategory::BusyOverloaded => 7,
+            ErrorCategory::User
+            | ErrorCategory::InvalidInput
+            | ErrorCategory::UnsupportedCapability
+            | ErrorCategory::Auth
+            | ErrorCategory::ModelUnavailable
+            | ErrorCategory::ArtifactIntegrity => 2,
+            ErrorCategory::Environment
+            | ErrorCategory::Filesystem
+            | ErrorCategory::DiskFull
+            | ErrorCategory::Subprocess => 3,
+            ErrorCategory::Provider
+            | ErrorCategory::Network
+            | ErrorCategory::RateLimit
+            | ErrorCategory::Quota
+            | ErrorCategory::NativeInference => 4,
         }
     }
 

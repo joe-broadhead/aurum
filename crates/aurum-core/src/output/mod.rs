@@ -5,8 +5,9 @@
 pub mod transaction;
 
 use crate::error::{Result, UserError};
-use crate::providers::{Segment, TranscriptionResult};
-use serde::Serialize;
+#[cfg(test)]
+use crate::providers::Segment;
+use crate::providers::TranscriptionResult;
 use std::io::{self, Write};
 use std::path::Path;
 
@@ -279,49 +280,9 @@ fn format_ts(secs: f64) -> String {
     format!("{h:02}:{m:02}:{s:02},{ms:03}")
 }
 
-#[derive(Serialize)]
-struct JsonOutput<'a> {
-    /// Schema version for machine consumers.
-    #[serde(rename = "schema_version")]
-    schema_version: u32,
-    text: &'a str,
-    language: Option<&'a str>,
-    model: &'a str,
-    provider: &'a str,
-    duration_secs: f64,
-    backend_kind: crate::providers::BackendKind,
-    timestamps_reliable: bool,
-    cleanup_style: crate::cleanup::CleanupStyle,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cleanup_provider: Option<crate::cleanup::CleanupProviderKind>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    original_text: Option<&'a str>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    original_segments: Option<&'a [Segment]>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cleanup_segment_policy: Option<&'a str>,
-    segments: &'a [Segment],
-}
-
 fn write_json<W: Write>(result: &TranscriptionResult, w: &mut W) -> io::Result<()> {
-    let payload = JsonOutput {
-        schema_version: 1,
-        text: &result.text,
-        language: result.language.as_deref(),
-        model: &result.model,
-        provider: &result.provider,
-        duration_secs: result.duration_secs,
-        backend_kind: result.backend_kind,
-        timestamps_reliable: result.timestamps_reliable,
-        cleanup_style: result.cleanup_style,
-        cleanup_provider: result.cleanup_provider,
-        original_text: result.original_text.as_deref(),
-        original_segments: result.original_segments.as_deref(),
-        cleanup_segment_policy: result.cleanup_segment_policy.map(|p| p.as_str()),
-        segments: &result.segments,
-    };
-    // Stream via serde_json to the budget writer (no intermediate pretty String
-    // for the whole payload before write — serializer pushes into `w`).
+    // Versioned external DTO (JOE-1614) — single contract for CLI/embed JSON.
+    let payload = crate::dto::SttResultDto::from_result(result);
     serde_json::to_writer_pretty(&mut *w, &payload).map_err(io::Error::other)?;
     w.write_all(b"\n")?;
     Ok(())

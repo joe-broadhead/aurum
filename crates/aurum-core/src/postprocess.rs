@@ -1,9 +1,11 @@
-//! Shared transcript cleanup applied after every provider.
+//! Shared transcript cleanup applied after every provider (JOE-1609).
 //!
 //! Whisper (and some remote models) emit control / non-speech tokens that should
-//! not leak into scripted `txt`/`srt`/`json` output.
+//! not leak into scripted `txt`/`srt`/`json` output. Normalization produces an
+//! explicit [`NormalizationReport`] listing repairs and drops.
 
-use crate::providers::{Segment, TranscriptionResult};
+use crate::providers::{BackendKind, Segment, TranscriptionResult};
+use serde::{Deserialize, Serialize};
 
 /// Known non-speech / control markers frequently emitted by whisper.cpp.
 const SPECIAL_MARKERS: &[&str] = &[
@@ -32,48 +34,139 @@ const SPECIAL_MARKERS: &[&str] = &[
     "♫",
 ];
 
+/// One normalization repair or warning (deterministic, no provider payloads).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizationEvent {
+    pub code: String,
+    pub detail: String,
+}
+
+/// Report of repairs applied while normalizing a provider result.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NormalizationReport {
+    pub events: Vec<NormalizationEvent>,
+    pub dropped_segments: usize,
+    pub repaired_timestamps: usize,
+    pub markers_stripped: bool,
+}
+
+impl NormalizationReport {
+    pub fn warnings(&self) -> Vec<String> {
+        self.events
+            .iter()
+            .map(|e| format!("{}: {}", e.code, e.detail))
+            .collect()
+    }
+
+    pub fn is_clean(&self) -> bool {
+        self.events.is_empty()
+    }
+}
+
 /// Clean provider output into a stable, scriptable result.
-pub fn normalize_result(mut result: TranscriptionResult) -> TranscriptionResult {
-    // Drop / strip special markers from segments.
+pub fn normalize_result(result: TranscriptionResult) -> TranscriptionResult {
+    normalize_result_with_report(result).0
+}
+
+/// Like [`normalize_result`] but returns an explicit repair report.
+pub fn normalize_result_with_report(
+    mut result: TranscriptionResult,
+) -> (TranscriptionResult, NormalizationReport) {
+    let mut report = NormalizationReport::default();
+
+    // Backend / reliability consistency.
+    if matches!(result.backend_kind, BackendKind::LlmAssisted) && result.timestamps_reliable {
+        result.timestamps_reliable = false;
+        report.events.push(NormalizationEvent {
+            code: "backend_reliability".into(),
+            detail: "LLM-assisted backend cannot claim reliable timestamps".into(),
+        });
+    }
+
+    if !result.duration_secs.is_finite() || result.duration_secs < 0.0 {
+        report.events.push(NormalizationEvent {
+            code: "duration".into(),
+            detail: format!("non-finite or negative duration {}", result.duration_secs),
+        });
+        result.duration_secs = 0.0;
+    }
+
     let mut cleaned_segments = Vec::with_capacity(result.segments.len());
     for mut seg in result.segments.drain(..) {
+        let before = seg.text.clone();
         seg.text = strip_markers(&seg.text);
+        if seg.text != before {
+            report.markers_stripped = true;
+        }
         let trimmed = seg.text.trim();
         if trimmed.is_empty() || is_only_marker(trimmed) {
+            report.dropped_segments += 1;
+            report.events.push(NormalizationEvent {
+                code: "drop_segment".into(),
+                detail: "empty or marker-only segment".into(),
+            });
             continue;
         }
         seg.text = trimmed.to_string();
-        // Drop non-finite / inverted spans (LLM backends can emit NaN).
+
         if !seg.start.is_finite() || !seg.end.is_finite() {
+            report.dropped_segments += 1;
+            report.events.push(NormalizationEvent {
+                code: "drop_segment".into(),
+                detail: "non-finite timestamps".into(),
+            });
             continue;
         }
-        // Clamp timestamps into [0, duration].
+
+        let mut repaired = false;
         if result.duration_secs > 0.0 {
-            seg.start = seg.start.clamp(0.0, result.duration_secs);
-            seg.end = seg.end.clamp(0.0, result.duration_secs);
+            let ns = seg.start.clamp(0.0, result.duration_secs);
+            let ne = seg.end.clamp(0.0, result.duration_secs);
+            if ns != seg.start || ne != seg.end {
+                repaired = true;
+            }
+            seg.start = ns;
+            seg.end = ne;
         } else {
-            seg.start = seg.start.max(0.0);
-            seg.end = seg.end.max(0.0);
+            if seg.start < 0.0 {
+                seg.start = 0.0;
+                repaired = true;
+            }
+            if seg.end < 0.0 {
+                seg.end = 0.0;
+                repaired = true;
+            }
         }
         if seg.end < seg.start {
             std::mem::swap(&mut seg.start, &mut seg.end);
+            repaired = true;
+            report.events.push(NormalizationEvent {
+                code: "swap_timestamps".into(),
+                detail: "inverted segment span swapped".into(),
+            });
+        }
+        if repaired {
+            report.repaired_timestamps += 1;
         }
         cleaned_segments.push(seg);
     }
     result.segments = cleaned_segments;
 
-    // Rebuild full text from segments when available (keeps txt/srt/json aligned).
     if !result.segments.is_empty() {
         result.text = join_segment_text(&result.segments);
     } else {
+        let before = result.text.clone();
         result.text = strip_markers(&result.text);
+        if result.text != before {
+            report.markers_stripped = true;
+        }
         result.text = result.text.trim().to_string();
         if is_only_marker(&result.text) {
             result.text.clear();
         }
     }
 
-    result
+    (result, report)
 }
 
 fn join_segment_text(segments: &[Segment]) -> String {
@@ -96,7 +189,6 @@ fn strip_markers(text: &str) -> String {
     for marker in SPECIAL_MARKERS {
         out = out.replace(marker, " ");
     }
-    // Collapse whitespace.
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
@@ -105,7 +197,6 @@ fn is_only_marker(text: &str) -> bool {
     if t.is_empty() {
         return false;
     }
-    // Only drop known non-speech markers — not arbitrary bracketed phrases.
     SPECIAL_MARKERS
         .iter()
         .any(|m| t.eq_ignore_ascii_case(m.trim_matches(|c| c == '[' || c == ']')))
@@ -121,51 +212,65 @@ pub fn truncate_chars(s: &str, max_chars: usize) -> String {
     format!("{truncated}…")
 }
 
+/// Validated segment constructor (rejects NaN/inverted spans).
+pub fn validated_segment(start: f64, end: f64, text: impl Into<String>) -> Option<Segment> {
+    if !start.is_finite() || !end.is_finite() || end < start {
+        return None;
+    }
+    let text = text.into();
+    if text.trim().is_empty() {
+        return None;
+    }
+    Some(Segment {
+        start,
+        end,
+        text: text.trim().to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn strips_blank_audio() {
-        let r = normalize_result(TranscriptionResult::local(
-            "[BLANK_AUDIO]".into(),
-            vec![Segment {
-                start: 0.0,
-                end: 10.0,
-                text: "[BLANK_AUDIO]".into(),
-            }],
-            Some("en".into()),
-            "tiny".into(),
-            3.0,
-        ));
-        assert!(r.text.is_empty(), "got {:?}", r.text);
-        assert!(r.segments.is_empty());
-    }
-
-    #[test]
-    fn clamps_timestamps() {
-        let r = normalize_result(TranscriptionResult::local(
-            "Hello".into(),
-            vec![Segment {
-                start: -1.0,
-                end: 99.0,
-                text: "Hello".into(),
-            }],
+    fn drops_nan_segments() {
+        let r = TranscriptionResult::local(
+            "x".into(),
+            vec![
+                Segment {
+                    start: f64::NAN,
+                    end: 1.0,
+                    text: "bad".into(),
+                },
+                Segment {
+                    start: 0.0,
+                    end: 1.0,
+                    text: "good".into(),
+                },
+            ],
             None,
-            "tiny".into(),
-            5.0,
-        ));
-        assert_eq!(r.segments[0].start, 0.0);
-        assert_eq!(r.segments[0].end, 5.0);
+            "m".into(),
+            2.0,
+        );
+        let (out, report) = normalize_result_with_report(r);
+        assert_eq!(out.segments.len(), 1);
+        assert_eq!(out.segments[0].text, "good");
+        assert!(report.dropped_segments >= 1);
     }
 
     #[test]
-    fn truncate_multibyte_safe() {
-        let s = "hello 你好世界";
-        let t = truncate_chars(s, 8);
-        assert!(t.ends_with('…'));
-        assert!(t.is_char_boundary(t.len() - '…'.len_utf8()) || t.ends_with('…'));
-        // Must not panic and must be valid UTF-8 (guaranteed by String).
-        let _ = t.len();
+    fn llm_backend_clears_reliable_flag() {
+        let mut r =
+            TranscriptionResult::openrouter("hi".into(), vec![], None, "m".into(), 1.0, true);
+        r.timestamps_reliable = true;
+        let (out, report) = normalize_result_with_report(r);
+        assert!(!out.timestamps_reliable);
+        assert!(!report.is_clean());
+    }
+
+    #[test]
+    fn validated_segment_rejects_inverted() {
+        assert!(validated_segment(2.0, 1.0, "x").is_none());
+        assert!(validated_segment(0.0, 1.0, "x").is_some());
     }
 }

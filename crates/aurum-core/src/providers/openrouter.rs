@@ -126,18 +126,12 @@ impl OpenRouterProvider {
         self
     }
 
-    /// Resolve which path to use for `model`.
+    /// Resolve which path to use for `model` (capability-oriented routing, JOE-1613).
     pub fn resolve_path(&self, model: &str) -> SttPath {
-        match self.stt_mode {
-            OpenRouterSttMode::Chat => SttPath::Chat,
-            OpenRouterSttMode::Transcriptions => SttPath::Transcriptions,
-            OpenRouterSttMode::Auto => {
-                if looks_like_dedicated_asr(model) {
-                    SttPath::Transcriptions
-                } else {
-                    SttPath::Chat
-                }
-            }
+        use crate::capabilities::{resolve_openrouter_stt_path, OpenRouterSttPath};
+        match resolve_openrouter_stt_path(self.stt_mode, model) {
+            OpenRouterSttPath::Chat => SttPath::Chat,
+            OpenRouterSttPath::Transcriptions => SttPath::Transcriptions,
         }
     }
 }

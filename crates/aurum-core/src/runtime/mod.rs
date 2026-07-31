@@ -25,4 +25,4 @@ pub use op_context::{OpContext, OpProgress, ProgressSink};
 pub use registry::{
     ModelRegistry, RegistryConfig, RegistryEntry, RegistryPin, RegistrySnapshot, ResidencyWeight,
 };
-pub use singleflight::{LoadKey, Singleflight};
+pub use singleflight::{BeginLoad, LeaderGuard, LoadKey, Singleflight};

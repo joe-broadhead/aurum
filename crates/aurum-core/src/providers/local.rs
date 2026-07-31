@@ -20,7 +20,7 @@ use crate::error::{ProviderError, Result};
 use crate::model::{self, DownloadProgressCallback, EnsureModelOptions};
 use crate::postprocess;
 use crate::runtime::{
-    LoadKey, ModelRegistry, OpContext, PermitKind, RegistryConfig, ResidencyWeight,
+    LoadKey, ModelRegistry, OpContext, PermitKind, RegistryConfig, RegistryPin, ResidencyWeight,
     ResourceGovernor, Singleflight,
 };
 use async_trait::async_trait;
@@ -56,15 +56,20 @@ impl ContextCache {
         ResidencyWeight { bytes }
     }
 
-    fn get_or_load(&self, model_path: &Path, model_name: &str) -> Result<Arc<WhisperContext>> {
+    /// Load or reuse a context and return an **active registry pin** held for the
+    /// whole operation (JOE-1646). No unpinned Arc is returned to callers.
+    fn get_or_load_pin(
+        &self,
+        model_path: &Path,
+        model_name: &str,
+    ) -> Result<RegistryPin<WhisperContext>> {
         let key = Self::load_key(model_path, model_name);
-        // Registry is the sole long-lived owner of ready contexts (JOE-1646).
-        if let Some(entry) = self.registry.get(&key) {
-            return Ok(Arc::clone(&entry.value));
+        // Atomic lookup+pin under registry lock.
+        if let Some(pin) = self.registry.get_and_pin(&key) {
+            return Ok(pin);
         }
 
         let weight = Self::weight_for(model_path);
-        // Reject exclusive oversize models before native load when possible.
         if weight.bytes > self.registry.config().max_resident_bytes {
             return Err(ProviderError::Overload {
                 reason: format!(
@@ -76,75 +81,77 @@ impl ContextCache {
             .into());
         }
 
-        use crate::runtime::singleflight::BeginLoad;
-        // Coalesce concurrent cold loads; registry remains the only Ready owner.
+        // Coalesce concurrent cold loads; LeaderGuard is panic-safe.
         loop {
-            if let Some(entry) = self.registry.get(&key) {
-                return Ok(Arc::clone(&entry.value));
+            if let Some(pin) = self.registry.get_and_pin(&key) {
+                return Ok(pin);
             }
-            match self.flight.begin_or_wait(&key) {
-                BeginLoad::WaitDone => {
+            match self.flight.begin_or_wait_guard(key.clone()) {
+                Ok(None) => {
                     // Leader finished — re-check registry.
-                    if let Some(entry) = self.registry.get(&key) {
-                        return Ok(Arc::clone(&entry.value));
-                    }
-                    // Load failed or was evicted; retry (may become leader).
                     continue;
                 }
-                BeginLoad::Failed(message) => {
+                Err(message) => {
                     return Err(ProviderError::ModelLoad {
                         model: model_name.to_string(),
                         reason: message,
                     }
                     .into());
                 }
-                BeginLoad::Leader => break,
-            }
-        }
+                Ok(Some(leader)) => {
+                    let gov = ResourceGovernor::process_global();
+                    let path_owned = model_path.to_path_buf();
+                    let name_owned = model_name.to_string();
 
-        let gov = ResourceGovernor::process_global();
-        let path_owned = model_path.to_path_buf();
-        let name_owned = model_name.to_string();
+                    let load_result = (|| -> Result<Arc<WhisperContext>> {
+                        let _permit = gov.acquire(PermitKind::ModelLoad, None)?;
+                        LOGGING_HOOKS.get_or_init(|| {
+                            whisper_rs::install_logging_hooks();
+                        });
+                        let params = WhisperContextParameters::default();
+                        let ctx = WhisperContext::new_with_params(
+                            path_owned.to_string_lossy().as_ref(),
+                            params,
+                        )
+                        .map_err(|e| ProviderError::ModelLoad {
+                            model: name_owned.clone(),
+                            reason: e.to_string(),
+                        })?;
+                        Ok(Arc::new(ctx))
+                    })();
 
-        let load_result = (|| -> Result<Arc<WhisperContext>> {
-            let _permit = gov.acquire(PermitKind::ModelLoad, None)?;
-
-            LOGGING_HOOKS.get_or_init(|| {
-                whisper_rs::install_logging_hooks();
-            });
-
-            let params = WhisperContextParameters::default();
-            let ctx =
-                WhisperContext::new_with_params(path_owned.to_string_lossy().as_ref(), params)
-                    .map_err(|e| ProviderError::ModelLoad {
-                        model: name_owned.clone(),
-                        reason: e.to_string(),
-                    })?;
-            Ok(Arc::new(ctx))
-        })();
-
-        match load_result {
-            Ok(ctx) => {
-                // Publish into registry first (authoritative residency).
-                match self.registry.insert(key.clone(), Arc::clone(&ctx), weight) {
-                    Ok(entry) => {
-                        self.flight.finish_load_published(&key);
-                        Ok(Arc::clone(&entry.value))
-                    }
-                    Err(e) => {
-                        // Budget exhausted: drop the native context (do not hide in flight).
-                        self.flight.finish_load_failed(&key, e.to_string());
-                        // Drop ctx: no hidden Ready owner.
-                        drop(ctx);
-                        Err(e)
+                    match load_result {
+                        Ok(ctx) => {
+                            match self.registry.insert_and_pin(
+                                key.clone(),
+                                Arc::clone(&ctx),
+                                weight,
+                            ) {
+                                Ok(pin) => {
+                                    leader.success();
+                                    return Ok(pin);
+                                }
+                                Err(e) => {
+                                    leader.fail(e.to_string());
+                                    drop(ctx);
+                                    return Err(e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            leader.fail(e.to_string());
+                            return Err(e);
+                        }
                     }
                 }
             }
-            Err(e) => {
-                self.flight.finish_load_failed(&key, e.to_string());
-                Err(e)
-            }
         }
+    }
+
+    fn get_or_load(&self, model_path: &Path, model_name: &str) -> Result<Arc<WhisperContext>> {
+        Ok(Arc::clone(
+            self.get_or_load_pin(model_path, model_name)?.value(),
+        ))
     }
 
     fn clear(&self) {
@@ -367,14 +374,9 @@ fn run_whisper(
         return Err(ProviderError::Cancelled.into());
     }
 
-    let key = ContextCache::load_key(model_path, model_name);
-    let pin = CONTEXT_CACHE.registry.pin(&key);
-    let ctx = match pin.as_ref() {
-        Some(p) => Arc::clone(p.value()),
-        None => CONTEXT_CACHE.get_or_load(model_path, model_name)?,
-    };
-    // Keep pin alive across full() so eviction cannot drop the context mid-decode.
-    let _pin = pin.or_else(|| CONTEXT_CACHE.registry.pin(&key));
+    // Atomic registry lease held for the entire decode (JOE-1646).
+    let lease = CONTEXT_CACHE.get_or_load_pin(model_path, model_name)?;
+    let ctx = Arc::clone(lease.value());
 
     let mut state = ctx
         .create_state()
@@ -451,7 +453,7 @@ fn run_whisper(
         None
     };
 
-    Ok(TranscriptionResult::local(
+    let result = TranscriptionResult::local(
         full_text,
         segments,
         detected.or_else(|| {
@@ -463,5 +465,8 @@ fn run_whisper(
         }),
         model_name.to_string(),
         duration_secs,
-    ))
+    );
+    // Explicitly hold the registry lease until after decode completes.
+    drop(lease);
+    Ok(result)
 }

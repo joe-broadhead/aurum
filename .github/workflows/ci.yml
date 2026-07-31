@@ -103,6 +103,36 @@ jobs:
       - name: release build CLI
         run: cargo build -p aurum-stt --release --locked
 
+      # JOE-1647: compile/link/run downstream C11 + C++17 clients against release aurum-ffi.
+      - name: native C11/C++17 FFI examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build -p aurum-ffi --release --locked
+          INC=crates/aurum-ffi/include
+          LIB=target/release
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            # MSVC/GNU mixed runners: prefer cl if present, else skip with note.
+            if command -v cl >/dev/null 2>&1; then
+              echo "MSVC C/C++ FFI example build not yet wired for Windows runner; covering via Unix matrices"
+            else
+              echo "Windows: skipping native example link (no cl); covered on ubuntu/macos"
+            fi
+            exit 0
+          fi
+          EXTRA_LIBS="-lpthread -ldl -lm"
+          if [[ "${{ runner.os }}" == "macOS" ]]; then
+            EXTRA_LIBS="-lpthread -ldl -lm -framework Security -framework CoreFoundation"
+          fi
+          cc -std=c11 -I "$INC" crates/aurum-ffi/examples/job_cleanup.c \
+            -L "$LIB" -laurum_ffi $EXTRA_LIBS -o /tmp/aurum_job_cleanup
+          c++ -std=c++17 -I "$INC" crates/aurum-ffi/examples/engine_raii.cpp \
+            -L "$LIB" -laurum_ffi $EXTRA_LIBS -o /tmp/aurum_engine_raii
+          export DYLD_LIBRARY_PATH="$LIB:${DYLD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="$LIB:${LD_LIBRARY_PATH:-}"
+          /tmp/aurum_job_cleanup
+          /tmp/aurum_engine_raii
+
   msrv:
     name: msrv (1.89)
     runs-on: ubuntu-24.04

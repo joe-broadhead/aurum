@@ -929,6 +929,9 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         cli.cleanup_provider.as_deref(),
         cli.cleanup_model.as_deref(),
     );
+    // Fail closed after CLI merge (JOE-1779 / ValidatedConfig boundary).
+    let cfg = aurum_core::ValidatedConfig::try_from_config(cfg)?.into_config();
+    let mut cfg = cfg;
 
     // Explicit --model wins; else optional --profile; else default resolution.
     let model = if cli.model.is_some() {
@@ -1045,7 +1048,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
                 ..Default::default()
             };
             let provider = OpenRouterProvider::with_policy(
-                cfg.openrouter_api_key.clone(),
+                cfg.openrouter_api_key_exposed(),
                 Some(cfg.openrouter_base_url.clone()),
                 policy,
                 stt_mode,
@@ -1236,7 +1239,7 @@ fn build_cleanup_backend(cfg: &Config, kind: CleanupProviderKind) -> Result<Box<
                 ..Default::default()
             };
             Ok(Box::new(OpenRouterCleanup::with_policy(
-                cfg.openrouter_api_key.clone(),
+                cfg.openrouter_api_key_exposed(),
                 Some(cfg.openrouter_base_url.clone()),
                 cfg.cleanup_openrouter_model
                     .clone()

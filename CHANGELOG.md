@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **JOE-1779 residual:** `Config.openrouter_api_key` is `Option<SecretString>`;
+  CLI/batch re-validate via `ValidatedConfig` after CLI overrides.
+- **JOE-1781 residual:** `TranscriptionResult::try_local` / `try_openrouter`
+  fail closed on invalid segments/duration.
+
 ## [0.0.6] - 2026-07-31
 
 v0.0.6 is the **owned SDK foundations** release after evidence residual v0.0.5:

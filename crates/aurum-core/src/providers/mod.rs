@@ -196,6 +196,19 @@ impl TranscriptionResult {
         }
     }
 
+    /// Like [`Self::local`] but fail-closed when segments/duration are invalid (JOE-1781).
+    pub fn try_local(
+        text: String,
+        segments: Vec<Segment>,
+        language: Option<String>,
+        model: String,
+        duration_secs: f64,
+    ) -> Result<Self> {
+        let r = Self::local(text, segments, language, model, duration_secs);
+        r.validate_segments()?;
+        Ok(r)
+    }
+
     pub fn openrouter(
         text: String,
         segments: Vec<Segment>,
@@ -220,6 +233,27 @@ impl TranscriptionResult {
             original_segments: None,
             cleanup_segment_policy: None,
         }
+    }
+
+    /// Like [`Self::openrouter`] but fail-closed on invalid segments/duration (JOE-1781).
+    pub fn try_openrouter(
+        text: String,
+        segments: Vec<Segment>,
+        language: Option<String>,
+        model: String,
+        duration_secs: f64,
+        timestamps_requested: bool,
+    ) -> Result<Self> {
+        let r = Self::openrouter(
+            text,
+            segments,
+            language,
+            model,
+            duration_secs,
+            timestamps_requested,
+        );
+        r.validate_segments()?;
+        Ok(r)
     }
 }
 
@@ -276,5 +310,24 @@ mod tests {
     fn segment_validate_ok_on_zero_length() {
         // Zero-duration is allowed (start == end).
         Segment::try_new(1.0, 1.0, "").unwrap();
+    }
+
+    #[test]
+    fn try_local_rejects_nan_segment() {
+        let segs = vec![Segment {
+            start: f64::NAN,
+            end: 1.0,
+            text: "x".into(),
+        }];
+        assert!(TranscriptionResult::try_local("x".into(), segs, None, "m".into(), 1.0).is_err());
+    }
+
+    #[test]
+    fn try_local_accepts_valid() {
+        let segs = vec![Segment::try_new(0.0, 0.5, "hi").unwrap()];
+        let r =
+            TranscriptionResult::try_local("hi".into(), segs, Some("en".into()), "m".into(), 1.0)
+                .unwrap();
+        assert_eq!(r.provider, "local");
     }
 }

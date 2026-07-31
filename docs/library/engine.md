@@ -42,12 +42,26 @@ let engine = AurumEngine::new(validated);
 
 Invalid provider/output/TTS ceilings fail closed at construction.
 
-## Segment construction
+## Secrets
+
+`Config.openrouter_api_key` is `Option<SecretString>`. Debug/Display never print
+the payload. Use `Config::openrouter_api_key_exposed()` only when constructing a
+remote client.
+
+## Segment / result construction
 
 ```rust
-use aurum_core::Segment;
+use aurum_core::{Segment, TranscriptionResult};
 
 let seg = Segment::try_new(0.0, 1.2, "hello")?; // rejects NaN / inverted
+let result = TranscriptionResult::try_local(
+    "hello".into(),
+    vec![seg],
+    Some("en".into()),
+    "tiny-q5_1".into(),
+    1.2,
+)?;
 ```
 
-Deserialized segments are untrusted DTOs — call `validate()` before use.
+Deserialized segments are untrusted DTOs — call `validate()` / `validate_segments()`
+before use. Prefer `try_local` / `try_openrouter` over the infallible builders.

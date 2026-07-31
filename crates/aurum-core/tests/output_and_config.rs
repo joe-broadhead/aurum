@@ -56,7 +56,10 @@ api_key = "from-file"
 
     let cfg = Config::load_from(&path).unwrap();
     if std::env::var_os("OPENROUTER_API_KEY").is_none() {
-        assert_eq!(cfg.openrouter_api_key.as_deref(), Some("from-file"));
+        assert_eq!(
+            cfg.openrouter_api_key.as_ref().map(|s| s.expose()),
+            Some("from-file")
+        );
     }
     assert_eq!(cfg.provider, "local");
 }

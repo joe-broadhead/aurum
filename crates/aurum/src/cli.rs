@@ -28,14 +28,18 @@ use std::path::PathBuf;
     long_about = "Aurum is private speech I/O on your machine:\n\
   • STT — audio → text (whisper.cpp local by default; optional OpenRouter)\n\
   • cleanup — post-transcript flow styles\n\
-  • TTS — text → mono WAV (local ONNX; no cloud)\n\n\
+  • TTS — text → mono WAV (local ONNX; no cloud)\n\
+  • batch — resumable multi-file transcription\n\n\
  Quick start:\n \
  aurum meeting.m4a\n \
  aurum meeting.m4a --cleanup clean\n \
  aurum tts \"Hello from aurum\" --output-file /tmp/a.wav\n \
  aurum cleanup --style bullets < notes.txt\n \
+ aurum batch ./lectures -O ./out\n \
  aurum models\n \
+ aurum models recommend --profile balance\n \
  aurum tts voices\n \
+ aurum support-bundle\n \
  aurum --help"
 )]
 #[command(args_conflicts_with_subcommands = true)]
@@ -52,7 +56,10 @@ pub struct Cli {
 pub enum Commands {
     /// List local whisper models and cache status.
     #[command(visible_alias = "list-models")]
-    Models,
+    Models {
+        #[command(subcommand)]
+        command: Option<ModelsCommands>,
+    },
 
     /// Transcribe an audio file (default when AUDIO_FILE is given positionally).
     #[command(visible_alias = "t")]
@@ -65,11 +72,41 @@ pub enum Commands {
     /// Synthesize speech from text (local ONNX TTS → mono WAV).
     Tts(TtsCli),
 
+    /// Bounded resumable multi-file transcription (JOE-1726).
+    Batch(crate::batch_cmd::BatchCli),
+
     /// Inspect and verify local model/voice-pack cache (JOE-1592).
     Cache(CacheCli),
 
     /// Read-only system, config, cache, and capability diagnostics (JOE-1628).
     Doctor(DoctorCli),
+
+    /// Privacy-safe support bundle for issue reports (JOE-1728).
+    #[command(name = "support-bundle")]
+    SupportBundle(crate::support_cmd::SupportBundleCli),
+
+    /// Generate shell completions (bash/zsh/fish/powershell/elvish).
+    Completions(crate::completions_cmd::CompletionsCli),
+
+    /// Print a man page to stdout (JOE-1720).
+    Man,
+}
+
+/// `aurum models` subcommands.
+#[derive(Debug, Subcommand)]
+pub enum ModelsCommands {
+    /// Explain an intent profile and the model it resolves to (JOE-1723).
+    Recommend {
+        /// Profile: speed | balance | quality
+        #[arg(long, value_name = "PROFILE")]
+        profile: String,
+        /// Language used for resolution (default: auto / config).
+        #[arg(long, value_name = "CODE")]
+        language: Option<String>,
+        /// Emit JSON.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// `aurum doctor` — install / config / capability probe (no downloads).
@@ -178,8 +215,13 @@ pub struct TranscribeArgs {
     pub provider: Option<String>,
 
     /// Local model name (tiny-q5_1, base, …) or OpenRouter model id.
+    /// Overrides --profile when both are set.
     #[arg(long, value_name = "NAME")]
     pub model: Option<String>,
+
+    /// Intent profile: speed | balance | quality (JOE-1723). Ignored if --model is set.
+    #[arg(long, value_name = "PROFILE")]
+    pub profile: Option<String>,
 
     /// Language code (e.g. en, fr) or "auto".
     #[arg(long, value_name = "CODE")]
@@ -349,17 +391,49 @@ pub struct CleanupArgs {
 /// Entry point used by `main`.
 pub async fn run(cli: Cli) -> Result<()> {
     match cli.command {
-        Some(Commands::Models) => {
+        Some(Commands::Models { command: None }) => {
             init_tracing(false);
             let cfg = Config::load()?;
             print!("{}", model::format_model_list(&cfg.cache_dir));
             Ok(())
         }
+        Some(Commands::Models {
+            command:
+                Some(ModelsCommands::Recommend {
+                    profile,
+                    language,
+                    json,
+                }),
+        }) => {
+            init_tracing(false);
+            let cfg = Config::load()?;
+            let lang = language.unwrap_or(cfg.language);
+            let p = aurum_core::QualityProfile::parse(&profile)?;
+            let res = aurum_core::resolve_profile(p, &lang)?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&res).map_err(|e| UserError::Other {
+                        message: format!("profile json: {e}"),
+                    })?
+                );
+            } else {
+                print!("{}", aurum_core::format_recommendation(&res));
+            }
+            Ok(())
+        }
         Some(Commands::Transcribe(args)) => run_transcribe(args).await,
         Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
         Some(Commands::Tts(tts)) => run_tts_cli(tts).await,
+        Some(Commands::Batch(batch)) => crate::batch_cmd::run_batch(batch).await,
         Some(Commands::Cache(cache)) => run_cache_cmd(cache).await,
         Some(Commands::Doctor(doc)) => run_doctor_cmd(doc),
+        Some(Commands::SupportBundle(sb)) => crate::support_cmd::run_support_bundle(sb),
+        Some(Commands::Completions(c)) => crate::completions_cmd::run_completions(c)
+            .map_err(|m| UserError::Other { message: m }.into()),
+        Some(Commands::Man) => {
+            crate::completions_cmd::run_man().map_err(|m| UserError::Other { message: m }.into())
+        }
         None => {
             if cli.transcribe.audio_file.is_none() {
                 eprintln!(
@@ -369,11 +443,12 @@ pub async fn run(cli: Cli) -> Result<()> {
  aurum meeting.m4a --cleanup clean\n \
  aurum tts \"Hello from aurum\" --output-file /tmp/a.wav\n \
  echo 'um hello' | aurum cleanup --style clean\n \
+ aurum batch ./lectures -O ./out\n \
  aurum models\n\n \
  Run `aurum --help` for full options."
                 );
                 return Err(UserError::Other {
-                    message: "AUDIO_FILE is required (or use `aurum models` / `aurum cleanup` / `aurum tts`)"
+                    message: "AUDIO_FILE is required (or use `aurum models` / `aurum cleanup` / `aurum tts` / `aurum batch`)"
                         .into(),
                 }
                 .into());
@@ -855,7 +930,23 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         cli.cleanup_model.as_deref(),
     );
 
-    let model = cfg.resolve_model(cli.model.is_some())?;
+    // Explicit --model wins; else optional --profile; else default resolution.
+    let model = if cli.model.is_some() {
+        cfg.resolve_model(true)?
+    } else if let Some(ref profile) = cli.profile {
+        let p = aurum_core::QualityProfile::parse(profile)?;
+        let res = aurum_core::resolve_profile(p, &cfg.language)?;
+        if cli.verbose || atty_stderr() {
+            eprintln!(
+                "aurum: profile {} → model {} (evidence {})",
+                res.profile, res.model, res.evidence_version
+            );
+        }
+        cfg.model = Some(res.model.clone());
+        res.model
+    } else {
+        cfg.resolve_model(false)?
+    };
     let provider_name = cfg.provider.to_ascii_lowercase();
     let format = OutputFormat::parse(&cfg.output)?;
 

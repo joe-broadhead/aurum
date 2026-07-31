@@ -16,6 +16,8 @@ Enforced in CI:
 | fmt / clippy / tests | `ci.yml` |
 | MSRV | `ci.yml` msrv |
 | STT-only build + adversarial tests | `ci.yml` stt-only |
+| Fail-closed security tool pins | `scripts/check_security_tool_pins.sh` (JOE-1715) |
+| crates.io credential not chat-disclosed | operator rotation checklist in [credential-hygiene](credential-hygiene.md) |
 | Docs strict | `ci.yml` Docs |
 | Integration smoke | `ci.yml` integration-local |
 | RustSec + cargo-deny | `ci.yml` security |

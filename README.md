@@ -50,7 +50,7 @@ Aurum is an on-device **speech CLI** and **Rust library**:
 
 OpenRouter is an **optional** remote path for ASR or cleanup — never the default. TTS has no cloud path in this release.
 
-> **v0.0.3** released. Binaries on [GitHub Releases](https://github.com/joe-broadhead/aurum/releases/tag/v0.0.3). Includes local TTS + `aurum-ffi`. Library API may change before `0.1.0`.
+> **v0.0.4** — product proof: batch transcription, verified installer, profiles, support bundles, agent skills, evidence foundations. Library API remains provisional on the 0.0.x line.
 
 ## Highlights
 
@@ -58,25 +58,35 @@ OpenRouter is an **optional** remote path for ASR or cleanup — never the defau
 |--|--|
 | **Local by default** | whisper.cpp STT + ONNX TTS — no API key |
 | **Fast first run** | Quantized STT e.g. `tiny-q5_1` (~32 MB); TTS pack ~26 MB |
-| **Embeddable** | PCM STT API · `aurum-ffi` · library TTS provider |
+| **Batch** | `aurum batch` with resume manifests |
+| **Embeddable** | PCM STT API · `aurum-ffi` (STT + local TTS jobs) · library TTS |
 | **Cleanup / flow** | On-device rules or OpenRouter LLM (`aurum cleanup`) |
 | **Local TTS** | `aurum tts` · 8 English voices · pinned SHA-256 pack |
 | **Honest remote** | LLM-assisted OpenRouter ASR; unreliable SRT blocked by default |
-| **Scriptable** | Exit codes · JSON metadata · pinned model integrity |
+| **Scriptable** | Exit codes · JSON · completions · man · support bundles |
 
 ## 30-second install
 
 ```bash
-git clone https://github.com/joe-broadhead/aurum.git
-cd aurum
-./scripts/install.sh # needs Rust 1.89+, cmake, ffmpeg
+# Verified GitHub Release binary (recommended)
+curl -fsSL https://raw.githubusercontent.com/joe-broadhead/aurum/master/scripts/install.sh \
+  | bash -s -- --from-release
+
+# Or from source (Rust 1.89+, cmake, ffmpeg)
+git clone https://github.com/joe-broadhead/aurum.git && cd aurum
+./scripts/install.sh --from-source
 
 aurum models
+aurum models recommend --profile balance
 aurum meeting.m4a --model tiny-q5_1
+aurum batch ./lectures -O ./out --profile speed
 aurum meeting.m4a --cleanup clean
 echo "um, hello there" | aurum cleanup -s clean
 aurum tts "Hello from aurum" -O /tmp/hello.wav
+aurum support-bundle -O /tmp/aurum-support.json
 ```
+
+Agent skills for coding agents: [`skills/`](skills/).
 
 ## Workspace
 
@@ -88,7 +98,7 @@ aurum tts "Hello from aurum" -O /tmp/hello.wav
 
 ```toml
 # Depend on the library (pin a commit or tag)
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.3" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.4" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).
@@ -96,11 +106,15 @@ Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/
 ## CLI cheatsheet
 
 ```bash
-aurum <FILE> [--model NAME] [-o txt|srt|json] [--cleanup STYLE]
+aurum <FILE> [--model NAME] [--profile speed|balance|quality] [-o txt|srt|json] [--cleanup STYLE]
 aurum models
+aurum models recommend --profile balance
+aurum batch <INPUT> -O <DIR> [--resume] [--retry-failed]
 aurum cleanup [TEXT_FILE] --style clean   # alias: aurum flow
 aurum tts "Hello" -O out.wav [--voice Luna]
 aurum tts models && aurum tts voices
+aurum support-bundle -O support.json
+aurum completions zsh
 aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
 ```
 
@@ -108,6 +122,7 @@ aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
 |------|---------|--------|
 | `--provider` | `local` | `local` \| `openrouter` |
 | `--model` | `base` (local) | e.g. `tiny-q5_1`, or an OpenRouter id |
+| `--profile` | off | `speed` \| `balance` \| `quality` (opt-in; does not change default alone) |
 | `-o` / `--output` | `txt` | `txt` \| `srt` \| `json` |
 | `--cleanup` | `raw` (off) | `clean` \| `bullets` \| `professional` \| `summary` |
 | `--cleanup-provider` | `rules` | `rules` (on-device) \| `openrouter` |

@@ -7,6 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4] - 2026-07-31
+
+v0.0.4 is the **product proof** patch after v0.0.3: adoption polish, reproducible
+evidence foundations, agent skills, and fail-closed release hygiene. Versions
+continue as **0.0.x** until a deliberate major step.
+
+### Security
+
+- **JOE-1715:** CI/release install of `cargo-audit` / `cargo-deny` is **pinned and
+  fail-closed** (no `|| cargo install latest` fallback); `scripts/check_security_tool_pins.sh`
+  enforces workflow policy; credential rotation runbook in
+  `docs/operations/credential-hygiene.md` (operator must still revoke any
+  chat-disclosed crates.io token).
+
+### Added
+
+- **JOE-1726:** `aurum batch` — bounded, resumable multi-file transcription with
+  versioned `aurum-batch-manifest.json`, deterministic naming, dry-run, resume,
+  and retry-failed.
+- **JOE-1720:** first-class release binary installer (`scripts/install.sh
+  --from-release` with SHA256 verify, upgrade, uninstall preserving cache/config);
+  `aurum completions <shell>` and `aurum man`.
+- **JOE-1728:** `aurum support-bundle` privacy-safe offline diagnostics; early-adopter
+  issue template; redacted path tokenisation.
+- **JOE-1723:** opt-in quality profiles (`speed` / `balance` / `quality`) and
+  `aurum models recommend --profile …`; explicit `--model` wins; **default remains
+  `base`**; experimental models never selected by profiles.
+- **JOE-1778:** root `skills/` agent packs (`aurum-cli`, `aurum-batch`, `aurum-embed`,
+  `aurum-support`) following dbt-nova package shape.
+- **JOE-1731 / 1735 / 1739 foundations:** expanded smoke corpus v2, synthetic CC0
+  audio generators, silence FP + repetition metrics, TTS listening scorecard,
+  named-hardware performance report script/docs.
+
+### Fixed
+
+- **JOE-1717:** documentation truth — architecture/AGENTS no longer claim FFI is
+  STT-only; generated CLI help snapshot under `docs/reference/cli-help.md`.
+
+### Notes
+
+- Quality/performance **product claims** still require operator runs against
+  licensed speech and retained hardware reports; smoke fixtures are not speech
+  accuracy proof.
+- Profile evidence version: `0.0.4-provisional-smoke`.
+
 ## [0.0.3] - 2026-07-31
 
 v0.0.3 is a **correctness and safety hotpatch** over the epic-per-PR batch that
@@ -271,7 +316,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/joe-broadhead/aurum/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/joe-broadhead/aurum/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/joe-broadhead/aurum/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/joe-broadhead/aurum/compare/v0.0.0...v0.0.1

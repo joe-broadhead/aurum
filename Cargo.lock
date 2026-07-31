@@ -96,7 +96,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "aurum-core"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "async-trait",
  "base64",
@@ -127,7 +127,7 @@ dependencies = [
 
 [[package]]
 name = "aurum-ffi"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "aurum-core",
  "once_cell",
@@ -137,10 +137,12 @@ dependencies = [
 
 [[package]]
 name = "aurum-stt"
-version = "0.0.3"
+version = "0.0.4"
 dependencies = [
  "aurum-core",
  "clap",
+ "clap_complete",
+ "clap_mangen",
  "serde_json",
  "tempfile",
  "tokio",
@@ -304,6 +306,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "clap_complete"
+version = "4.6.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b1f84a88507dbd05c695f2cb5e8558e747179134005e9893882dec964190ed89"
+dependencies = [
+ "clap",
+]
+
+[[package]]
 name = "clap_derive"
 version = "4.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -320,6 +331,16 @@ name = "clap_lex"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
+
+[[package]]
+name = "clap_mangen"
+version = "0.2.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7e30ffc187e2e3aeafcd1c6e2aa416e29739454c0ccaa419226d5ecd181f2d78"
+dependencies = [
+ "clap",
+ "roff",
+]
 
 [[package]]
 name = "cmake"
@@ -1553,6 +1574,12 @@ dependencies = [
  "untrusted",
  "windows-sys 0.52.0",
 ]
+
+[[package]]
+name = "roff"
+version = "1.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "323c417e1d9665a65b263ec744ba09030cfb277e9daa0b018a4ab62e57bc8189"
 
 [[package]]
 name = "rustc-hash"

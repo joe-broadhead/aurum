@@ -68,6 +68,12 @@ pub struct SttScore {
     pub hyp_words: usize,
     /// True when backend timestamps are claimed reliable (host-supplied).
     pub timestamps_reliable: bool,
+    /// Non-empty hypothesis when the reference is empty (silence false positive).
+    #[serde(default)]
+    pub silence_false_positive: bool,
+    /// Rough degeneration proxy: max run of identical tokens / hyp length.
+    #[serde(default)]
+    pub repetition_ratio: f64,
 }
 
 /// Aggregate report (machine-readable).
@@ -80,6 +86,17 @@ pub struct EvalReport {
     pub stt_scores: Vec<SttScore>,
     pub mean_wer: f64,
     pub mean_cer: f64,
+    /// Count of silence false positives in this report.
+    #[serde(default)]
+    pub silence_false_positives: u32,
+    /// Mean repetition ratio across non-empty hypotheses.
+    #[serde(default)]
+    pub mean_repetition_ratio: f64,
+    /// Optional hardware / run metadata for release retention.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hardware_profile: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 /// Normalize text for WER: lowercase, strip punctuation, collapse whitespace.
@@ -153,6 +170,31 @@ fn levenshtein<T: PartialEq>(a: &[T], b: &[T]) -> usize {
     prev[m]
 }
 
+/// Silence false positive: non-empty hypothesis for an empty reference.
+pub fn silence_false_positive(reference: &str, hypothesis: &str) -> bool {
+    normalize_transcript(reference).is_empty() && !normalize_transcript(hypothesis).is_empty()
+}
+
+/// Degeneration proxy: longest run of identical tokens over hypothesis length.
+pub fn repetition_ratio(hypothesis: &str) -> f64 {
+    let normalized = normalize_transcript(hypothesis);
+    let hw = words(&normalized);
+    if hw.is_empty() {
+        return 0.0;
+    }
+    let mut best = 1usize;
+    let mut run = 1usize;
+    for w in hw.windows(2) {
+        if w[0] == w[1] {
+            run += 1;
+            best = best.max(run);
+        } else {
+            run = 1;
+        }
+    }
+    best as f64 / hw.len() as f64
+}
+
 /// Score one STT hypothesis against a fixture.
 pub fn score_stt(fixture: &SttFixture, hypothesis: &str, timestamps_reliable: bool) -> SttScore {
     let wer = word_error_rate(&fixture.reference, hypothesis);
@@ -167,6 +209,8 @@ pub fn score_stt(fixture: &SttFixture, hypothesis: &str, timestamps_reliable: bo
         ref_words: ref_n,
         hyp_words: hyp_n,
         timestamps_reliable,
+        silence_false_positive: silence_false_positive(&fixture.reference, hypothesis),
+        repetition_ratio: repetition_ratio(hypothesis),
     }
 }
 
@@ -180,6 +224,17 @@ pub fn build_report(
     let n = scores.len().max(1) as f64;
     let mean_wer = scores.iter().map(|s| s.wer).sum::<f64>() / n;
     let mean_cer = scores.iter().map(|s| s.cer).sum::<f64>() / n;
+    let silence_false_positives = scores.iter().filter(|s| s.silence_false_positive).count() as u32;
+    let rep_scores: Vec<f64> = scores
+        .iter()
+        .filter(|s| s.hyp_words > 0)
+        .map(|s| s.repetition_ratio)
+        .collect();
+    let mean_repetition_ratio = if rep_scores.is_empty() {
+        0.0
+    } else {
+        rep_scores.iter().sum::<f64>() / rep_scores.len() as f64
+    };
     EvalReport {
         corpus_version: corpus.version,
         corpus_name: corpus.name.clone(),
@@ -188,14 +243,21 @@ pub fn build_report(
         stt_scores: scores,
         mean_wer,
         mean_cer,
+        silence_false_positives,
+        mean_repetition_ratio,
+        hardware_profile: None,
+        notes: None,
     }
 }
 
-/// Built-in smoke corpus (no binary audio assets — text scoring only).
+/// Built-in smoke corpus (synthetic text + optional synthetic audio paths).
+///
+/// Audio under `evals/audio/` is generated CC0 PCM (silence / tone), not speech.
+/// Real multi-accent speech corpora remain external/private with the same schema.
 pub fn smoke_corpus() -> EvalCorpus {
     EvalCorpus {
-        version: 1,
-        name: "aurum-smoke-v1".into(),
+        version: 2,
+        name: "aurum-smoke-v2".into(),
         stt: vec![
             SttFixture {
                 id: "clean_short_en".into(),
@@ -211,7 +273,7 @@ pub fn smoke_corpus() -> EvalCorpus {
                 language: "en".into(),
                 reference: "the meeting is at 3 30 pm".into(),
                 audio: None,
-                tags: vec!["numbers".into()],
+                tags: vec!["numbers".into(), "punctuation".into()],
                 timestamps_expected_reliable: true,
                 license: "synthetic CC0".into(),
             },
@@ -219,10 +281,38 @@ pub fn smoke_corpus() -> EvalCorpus {
                 id: "silence_empty".into(),
                 language: "en".into(),
                 reference: "".into(),
-                audio: None,
+                audio: Some("audio/silence_1s.wav".into()),
                 tags: vec!["silence".into()],
                 timestamps_expected_reliable: true,
                 license: "synthetic CC0".into(),
+            },
+            SttFixture {
+                id: "tone_non_speech".into(),
+                language: "en".into(),
+                reference: "".into(),
+                audio: Some("audio/tone_440_1s.wav".into()),
+                tags: vec!["noise".into(), "music".into(), "non_speech".into()],
+                timestamps_expected_reliable: true,
+                license: "synthetic CC0".into(),
+            },
+            SttFixture {
+                id: "long_phrase_en".into(),
+                language: "en".into(),
+                reference: "the quick brown fox jumps over the lazy dog near the river bank"
+                    .into(),
+                audio: None,
+                tags: vec!["clean".into(), "long".into()],
+                timestamps_expected_reliable: true,
+                license: "synthetic CC0".into(),
+            },
+            SttFixture {
+                id: "accent_placeholder_en".into(),
+                language: "en".into(),
+                reference: "schedule the call for tomorrow morning".into(),
+                audio: None,
+                tags: vec!["accent".into(), "placeholder".into()],
+                timestamps_expected_reliable: true,
+                license: "synthetic CC0 — replace with licensed multi-accent speech".into(),
             },
         ],
         tts: vec![
@@ -237,9 +327,17 @@ pub fn smoke_corpus() -> EvalCorpus {
             TtsFixture {
                 id: "tts_numbers".into(),
                 text: "Call me at extension 42.".into(),
-                tags: vec!["numbers".into()],
+                tags: vec!["numbers".into(), "abbreviations".into()],
                 duration_ms_min: Some(300),
                 duration_ms_max: Some(8_000),
+                license: "synthetic CC0".into(),
+            },
+            TtsFixture {
+                id: "tts_long_join".into(),
+                text: "First sentence ends here. Second sentence starts now and continues for a bit longer.".into(),
+                tags: vec!["long".into(), "join".into()],
+                duration_ms_min: Some(500),
+                duration_ms_max: Some(20_000),
                 license: "synthetic CC0".into(),
             },
         ],
@@ -292,9 +390,19 @@ mod tests {
             .collect();
         let report = build_report(&c, "tiny-q5_1", "asr", scores);
         assert_eq!(report.mean_wer, 0.0);
-        assert_eq!(report.corpus_version, 1);
+        assert_eq!(report.corpus_version, 2);
+        assert_eq!(report.silence_false_positives, 0);
         let json = serde_json::to_string_pretty(&report).unwrap();
         assert!(json.contains("mean_wer"));
+        assert!(json.contains("silence_false_positives"));
+    }
+
+    #[test]
+    fn silence_fp_and_repetition() {
+        assert!(silence_false_positive("", "hello hello hello"));
+        assert!(!silence_false_positive("", ""));
+        let r = repetition_ratio("yes yes yes yes no");
+        assert!(r >= 0.5);
     }
 
     #[test]

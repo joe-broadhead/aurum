@@ -8,7 +8,7 @@
 //!
 //! Tagline: *Speech both ways. On-device by default.*
 //!
-//! The API may change without notice until a stable `0.1.0`.
+//! The API may change without notice until a deliberate major version.
 //!
 //! ## STT example
 //!
@@ -45,6 +45,7 @@
 //! ```
 
 pub mod audio;
+pub mod batch;
 pub mod bench;
 pub mod cache;
 pub mod cancel;
@@ -62,14 +63,21 @@ pub mod output;
 pub mod partial;
 pub mod pcm;
 pub mod postprocess;
+pub mod profile;
 pub mod providers;
 pub mod remote;
 pub mod runtime;
+pub mod support;
 #[cfg(feature = "tts")]
 pub mod tts;
 pub mod window;
 
 pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
+pub use batch::{
+    build_items, discover_inputs, fingerprint_file, manifest_path, merge_for_resume, work_indices,
+    BatchItem, BatchItemStatus, BatchManifest, BatchSummary, AUDIO_EXTENSIONS, BATCH_MANIFEST_NAME,
+    BATCH_MANIFEST_VERSION,
+};
 pub use cancel::CancelFlag;
 pub use capabilities::{
     preflight_cleanup, preflight_stt, preflight_tts, ProviderCapabilities,
@@ -85,8 +93,8 @@ pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_S
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
 pub use eval::{
-    build_report, char_error_rate, score_stt, smoke_corpus, word_error_rate, EvalCorpus,
-    EvalReport, SttFixture, SttScore,
+    build_report, char_error_rate, repetition_ratio, score_stt, silence_false_positive,
+    smoke_corpus, word_error_rate, EvalCorpus, EvalReport, SttFixture, SttScore,
 };
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
 pub use observability::{
@@ -99,6 +107,10 @@ pub use output::{
 pub use partial::{PartialSession, PartialSessionConfig, PartialUpdate};
 pub use pcm::PcmBuffer;
 pub use postprocess::{normalize_result_with_report, NormalizationReport};
+pub use profile::{
+    format_recommendation, resolve_profile, ProfileResolution, QualityProfile,
+    PROFILE_EVIDENCE_VERSION,
+};
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,
     TranscriptionProvider, TranscriptionResult,
@@ -106,6 +118,9 @@ pub use providers::{
 pub use remote::{HardenedHttpClient, RemotePolicy};
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,
+};
+pub use support::{
+    build_support_bundle, default_bundle_path, SupportBundle, SUPPORT_BUNDLE_VERSION,
 };
 pub use window::{PartialClock, PartialWindowPolicy};
 

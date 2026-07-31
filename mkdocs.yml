@@ -118,11 +118,16 @@ nav:
       - Handbook: operations/handbook.md
       - Troubleshooting: operations/troubleshooting.md
       - Security: operations/security.md
+      - Credential hygiene: operations/credential-hygiene.md
       - Threat model: operations/threat-model.md
       - Hardening: operations/hardening.md
       - Release gate: operations/release-gate.md
       - Benchmarks: operations/benchmarks.md
+      - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md
+      - TTS listening scorecard: operations/listening-scorecard.md
+  - Reference:
+      - CLI help snapshot: reference/cli-help.md
   - Development:
       - Contributing: development/contributing.md
       - Architecture: development/architecture.md

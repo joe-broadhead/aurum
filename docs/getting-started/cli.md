@@ -1,13 +1,21 @@
 # CLI reference
 
+Authoritative help snapshots (generated): [cli-help.md](../reference/cli-help.md).
+
 ```text
 aurum <AUDIO_FILE> [OPTIONS]
 aurum models
+aurum models recommend --profile balance
 aurum transcribe <AUDIO_FILE> [OPTIONS]
+aurum batch <INPUT> --output-dir <DIR> [OPTIONS]
 aurum cleanup [TEXT_FILE] [OPTIONS]     # alias: aurum flow
 aurum tts "Hello" --output-file out.wav
 aurum tts models
 aurum tts voices
+aurum doctor
+aurum support-bundle
+aurum completions zsh
+aurum man
 aurum --help
 aurum --version
 ```
@@ -17,7 +25,8 @@ aurum --version
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--provider local\|openrouter` | `local` | ASR backend |
-| `--model <NAME>` | `base` (local) | Local ggml name or OpenRouter model id |
+| `--model <NAME>` | `base` (local) | Local ggml name or OpenRouter model id (wins over `--profile`) |
+| `--profile speed\|balance\|quality` | off | Intent mapping (JOE-1723); does not change the default when omitted |
 | `--language <CODE>` | `auto` | Language hint or auto-detect |
 | `-o, --output txt\|srt\|json` | `txt` | Output format |
 | `--output-file <PATH>` | stdout | Write to file |
@@ -28,6 +37,27 @@ aurum --version
 | `--cleanup-model <id>` | OpenRouter default | LLM cleanup model |
 | `--cleanup-segments <p>` | `auto` | `auto` \| `keep` \| `clear` \| `per-segment` |
 | `-v, --verbose` | off | Diagnostics on stderr |
+
+## Batch options (`aurum batch`)
+
+| Flag | Description |
+|------|-------------|
+| `INPUT` | File or directory of audio |
+| `-O, --output-dir` | Transcripts + `aurum-batch-manifest.json` |
+| `--recursive` | Walk subdirectories |
+| `--resume` / `--retry-failed` | Resume / retry failed items |
+| `--dry-run` | Manifest only |
+| `--profile` / `--model` | Same semantics as transcribe |
+| `--json` | Machine-readable summary |
+
+## Support bundle
+
+```bash
+aurum support-bundle -O aurum-support.json
+aurum support-bundle --stdout
+```
+
+Redacted offline diagnostics only (no audio, transcripts, or API keys).
 
 ## TTS options (`aurum tts`)
 

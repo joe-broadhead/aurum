@@ -109,7 +109,6 @@ pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_S
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
 pub use engine::AurumEngine;
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
-pub use secret::SecretString;
 pub use eval::{
     build_report, char_error_rate, repetition_ratio, score_stt, silence_false_positive,
     smoke_corpus, word_error_rate, EvalCorpus, EvalReport, SttFixture, SttScore,
@@ -137,6 +136,7 @@ pub use remote::{HardenedHttpClient, RemotePolicy};
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,
 };
+pub use secret::SecretString;
 pub use support::{
     build_support_bundle, default_bundle_path, SupportBundle, SUPPORT_BUNDLE_VERSION,
 };

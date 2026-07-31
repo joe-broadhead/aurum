@@ -145,7 +145,8 @@ mod tests {
         let a = AurumEngine::load().unwrap();
         let b = AurumEngine::load().unwrap();
         a.metrics().record_start();
-        a.metrics().record_complete(std::time::Duration::from_millis(1));
+        a.metrics()
+            .record_complete(std::time::Duration::from_millis(1));
         assert_eq!(a.metrics_snapshot().ops_started, 1);
         assert_eq!(b.metrics_snapshot().ops_started, 0);
         assert!(!std::ptr::eq(

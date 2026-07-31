@@ -100,6 +100,15 @@ pub struct TtsMetaDto {
     pub text_truncated: bool,
     pub chunk_count: usize,
     pub synthesized_chars: usize,
+    /// Adapter id (JOE-1576); omitted when unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<String>,
+    /// Trust mode: builtin | verified | local_unverified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<String>,
+    /// Provenance: builtin | custom | local_pack.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
 }
 
 #[cfg(feature = "tts")]
@@ -121,6 +130,9 @@ impl TtsMetaDto {
             text_truncated: r.text_truncated,
             chunk_count: r.chunk_count,
             synthesized_chars: r.synthesized_chars,
+            adapter: r.adapter.clone(),
+            trust: r.trust.clone(),
+            provenance: r.provenance.clone(),
         }
     }
 }

@@ -47,6 +47,17 @@ voice = "Luna"
 language = "en"
 max_chars = 5000
 timeout_ms = 120000
+# Optional local pack override (directory with aurum-tts-manifest.json — not a bare .onnx)
+# pack_dir = "/path/to/pack"
+# allow_unverified = false
+
+# Optional custom catalogue entries (JOE-1620). Never shadow built-in ids.
+# [[tts.custom_models]]
+# id = "my-tone"
+# adapter = "fake-sine-v1"
+# pack_dir = "/path/to/pack"
+# trust = "verified"   # verified | local_unverified (never builtin)
+# license = "CC0"
 
 [openrouter]
 # api_key = "sk-or-..."    # prefer env var

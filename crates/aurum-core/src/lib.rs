@@ -105,9 +105,14 @@ pub use window::{PartialClock, PartialWindowPolicy};
 
 #[cfg(feature = "tts")]
 pub use tts::{
-    format_model_list as format_tts_model_list, format_voice_list as format_tts_voice_list,
-    list_models as list_tts_models, list_voices as list_tts_voices, resolve_voice_for_model,
+    format_adapters as format_tts_adapters, format_custom_list as format_tts_custom_list,
+    format_inspect as format_tts_inspect, format_model_list as format_tts_model_list,
+    format_voice_list as format_tts_voice_list, inspect_pack as inspect_tts_pack,
+    list_adapters as list_tts_adapters, list_models as list_tts_models,
+    list_voices as list_tts_voices, propose_add_local as propose_tts_add_local,
+    resolve_voice_for_model, run_kitten_catalogue_conformance, run_pack_conformance,
+    verify_pack as verify_tts_pack, write_add_manifest as write_tts_add_manifest,
     write_wav_i16_mono_atomic, write_wav_i16_mono_transaction, BackendKind as TtsBackendKind,
-    LocalTtsProvider, SynthesisOptions, SynthesisProvider, SynthesisResult, DEFAULT_TTS_MODEL,
-    DEFAULT_TTS_VOICE,
+    LocalTtsProvider, SynthesisOptions, SynthesisProvider, SynthesisResult, TrustMode,
+    DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE,
 };

@@ -113,6 +113,47 @@ pub enum TtsCommands {
     Models,
     /// List local TTS voices and cache status.
     Voices,
+    /// List supported TTS adapters (not bare ONNX loaders).
+    Adapters,
+    /// Read-only inspect of a model pack or manifest (no network).
+    Inspect {
+        /// Pack directory or `aurum-tts-manifest.json` path.
+        path: PathBuf,
+        /// Emit JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Full digest + adapter + conformance preflight for a pack.
+    Verify {
+        /// Pack directory or manifest path.
+        path: PathBuf,
+        /// Allow trust=local_unverified packs.
+        #[arg(long)]
+        allow_unverified: bool,
+        /// Emit JSON conformance report.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Propose adding a local pack (dry-run by default; never auto-trusts HF).
+    Add {
+        /// Local pack directory.
+        path: PathBuf,
+        /// Required known adapter id (see `aurum tts adapters`).
+        #[arg(long)]
+        adapter: String,
+        /// Custom model id to register (cannot collide with built-ins).
+        #[arg(long)]
+        model_id: String,
+        /// Trust mode: verified | local_unverified (never builtin).
+        #[arg(long, default_value = "verified")]
+        trust: String,
+        /// Write the proposed manifest into the pack directory (default is dry-run).
+        #[arg(long)]
+        write_manifest: bool,
+        /// Emit JSON proposal.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Debug, Clone, Default, clap::Args)]
@@ -236,6 +277,14 @@ pub struct TtsArgs {
     #[arg(long = "local-only")]
     pub local_only: bool,
 
+    /// Local model-pack directory (manifest + artifacts). Not a bare .onnx path.
+    #[arg(long = "pack-dir", value_name = "DIR")]
+    pub pack_dir: Option<PathBuf>,
+
+    /// Allow trust=local_unverified for `--pack-dir` (unsupported for production).
+    #[arg(long = "allow-unverified")]
+    pub allow_unverified: bool,
+
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
     pub verbose: bool,
@@ -328,12 +377,153 @@ async fn run_tts_cli(cli: TtsCli) -> Result<()> {
             init_tracing(false);
             let cfg = Config::load()?;
             print!("{}", aurum_core::format_tts_model_list(&cfg.cache_dir));
+            if !cfg.tts_custom_models.is_empty() {
+                let entries: Vec<_> = cfg
+                    .tts_custom_models
+                    .iter()
+                    .map(|e| aurum_core::tts::CustomTtsModelEntry {
+                        id: e.id.clone(),
+                        adapter: e.adapter.clone(),
+                        pack_dir: e.pack_dir.clone(),
+                        trust: e.trust.clone(),
+                        license: e.license.clone(),
+                        notes: e.notes.clone(),
+                    })
+                    .collect();
+                // Best-effort: list only entries whose packs validate.
+                if let Ok(models) = aurum_core::tts::validate_custom_models(&entries) {
+                    print!("{}", aurum_core::format_tts_custom_list(&models));
+                } else {
+                    println!(
+                        "\n(Custom models configured but failed validation — run `aurum tts verify`.)"
+                    );
+                }
+            }
             Ok(())
         }
         Some(TtsCommands::Voices) => {
             init_tracing(false);
             let cfg = Config::load()?;
             print!("{}", aurum_core::format_tts_voice_list(&cfg.cache_dir));
+            Ok(())
+        }
+        Some(TtsCommands::Adapters) => {
+            init_tracing(false);
+            print!("{}", aurum_core::format_tts_adapters());
+            Ok(())
+        }
+        Some(TtsCommands::Inspect { path, json }) => {
+            init_tracing(false);
+            let report = aurum_core::inspect_tts_pack(&path);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report).map_err(|e| {
+                        UserError::Other {
+                            message: format!("json: {e}"),
+                        }
+                    })?
+                );
+            } else {
+                print!("{}", aurum_core::format_tts_inspect(&report));
+            }
+            if !report.ok {
+                std::process::exit(2);
+            }
+            Ok(())
+        }
+        Some(TtsCommands::Verify {
+            path,
+            allow_unverified,
+            json,
+        }) => {
+            init_tracing(false);
+            let report = aurum_core::verify_tts_pack(&path, allow_unverified)?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report).map_err(|e| {
+                        UserError::Other {
+                            message: format!("json: {e}"),
+                        }
+                    })?
+                );
+            } else {
+                println!(
+                    "adapter={} model={} ok={}",
+                    report.adapter_id, report.model_id, report.ok()
+                );
+                if !report.passed.is_empty() {
+                    println!("passed: {}", report.passed.join(", "));
+                }
+                if !report.failed.is_empty() {
+                    println!("failed:");
+                    for f in &report.failed {
+                        println!("  - {}: {}", f.check, f.detail);
+                    }
+                }
+                if !report.skipped.is_empty() {
+                    println!("skipped: {}", report.skipped.join(", "));
+                }
+            }
+            if !report.ok() {
+                std::process::exit(2);
+            }
+            Ok(())
+        }
+        Some(TtsCommands::Add {
+            path,
+            adapter,
+            model_id,
+            trust,
+            write_manifest,
+            json,
+        }) => {
+            init_tracing(false);
+            let trust_mode = aurum_core::TrustMode::parse(&trust)?;
+            let mut proposal =
+                aurum_core::propose_tts_add_local(&path, &adapter, &model_id, trust_mode)?;
+            proposal.dry_run = !write_manifest;
+            if write_manifest {
+                let written = aurum_core::write_tts_add_manifest(&path, &proposal)?;
+                proposal.dry_run = false;
+                proposal
+                    .next_steps
+                    .insert(0, format!("Wrote manifest: {}", written.display()));
+            }
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&proposal).map_err(|e| {
+                        UserError::Other {
+                            message: format!("json: {e}"),
+                        }
+                    })?
+                );
+            } else {
+                println!("adapter: {}", proposal.adapter_id);
+                println!("model_id: {}", proposal.model_id);
+                println!("trust: {}", proposal.trust);
+                println!("dry_run: {}", proposal.dry_run);
+                for w in &proposal.warnings {
+                    println!("warning: {w}");
+                }
+                println!("\nProposed [[tts.custom_models]] snippet:");
+                println!("[[tts.custom_models]]");
+                println!("id = {:?}", proposal.model_id);
+                println!("adapter = {:?}", proposal.adapter_id);
+                println!("pack_dir = {:?}", path.display().to_string());
+                println!("trust = {:?}", proposal.trust);
+                println!("license = {:?}", proposal.manifest.license);
+                for s in &proposal.next_steps {
+                    println!("next: {s}");
+                }
+                if proposal.dry_run {
+                    println!(
+                        "\nNo files changed (dry-run). Pass --write-manifest to materialize the pack manifest."
+                    );
+                }
+            }
             Ok(())
         }
         None => run_tts_synth(cli.synth).await,
@@ -431,6 +621,21 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         .with_local_only(cli.local_only)
         .with_max_chars(cfg.tts_max_chars);
 
+    let pack_dir = cli
+        .pack_dir
+        .clone()
+        .or_else(|| cfg.tts_pack_dir.clone());
+    let allow_unverified = cli.allow_unverified || cfg.tts_allow_unverified;
+    // Custom model id → pack_dir resolution (JOE-1620).
+    let pack_dir = if pack_dir.is_none() {
+        cfg.tts_custom_models
+            .iter()
+            .find(|m| m.id == model)
+            .and_then(|m| m.pack_dir.as_ref().map(PathBuf::from))
+    } else {
+        pack_dir
+    };
+
     let opts = aurum_core::SynthesisOptions {
         model,
         voice,
@@ -439,7 +644,9 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         speaking_rate,
         timeout_ms,
         cancel: None,
-        local_only: cli.local_only,
+        local_only: cli.local_only || pack_dir.is_some(),
+        pack_dir,
+        allow_unverified,
     };
 
     let result = provider.synthesize(&body, &opts).await?;
@@ -466,7 +673,7 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
 
     if cli.emit_json {
         let abs = std::fs::canonicalize(&output_file).unwrap_or(output_file.clone());
-        let payload = serde_json::json!({
+        let mut payload = serde_json::json!({
             "backend_kind": "local",
             "provider": result.provider,
             "model": result.model,
@@ -482,6 +689,17 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
             "chunk_count": result.chunk_count,
             "synthesized_chars": result.synthesized_chars,
         });
+        if let Some(obj) = payload.as_object_mut() {
+            if let Some(a) = &result.adapter {
+                obj.insert("adapter".into(), serde_json::json!(a));
+            }
+            if let Some(t) = &result.trust {
+                obj.insert("trust".into(), serde_json::json!(t));
+            }
+            if let Some(p) = &result.provenance {
+                obj.insert("provenance".into(), serde_json::json!(p));
+            }
+        }
         let mut stdout = io::stdout().lock();
         writeln!(
             stdout,

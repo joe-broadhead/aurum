@@ -35,6 +35,12 @@ pub struct SynthesisOptions {
     pub cancel: Option<crate::cancel::CancelFlag>,
     /// When true, never hit the network for missing voice packs.
     pub local_only: bool,
+    /// Optional local model-pack directory (JOE-1619). When set, loads artifacts
+    /// from the pack manifest instead of the built-in catalogue cache. Requires a
+    /// known adapter; bare ONNX paths are rejected by pack load.
+    pub pack_dir: Option<std::path::PathBuf>,
+    /// Allow `local_unverified` trust for [`Self::pack_dir`] (explicit opt-in).
+    pub allow_unverified: bool,
 }
 
 impl Default for SynthesisOptions {
@@ -48,6 +54,8 @@ impl Default for SynthesisOptions {
             timeout_ms: crate::tts::DEFAULT_TIMEOUT_MS,
             cancel: None,
             local_only: false,
+            pack_dir: None,
+            allow_unverified: false,
         }
     }
 }
@@ -82,6 +90,15 @@ pub struct SynthesisResult {
     pub chunk_count: usize,
     /// Characters of source text actually synthesized (equals `text_chars`).
     pub synthesized_chars: usize,
+    /// Adapter id that executed synthesis (JOE-1576).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<String>,
+    /// Trust mode: builtin | verified | local_unverified.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust: Option<String>,
+    /// Provenance: builtin | custom | local_pack.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provenance: Option<String>,
 }
 
 /// Provider trait for local (and future) TTS backends.

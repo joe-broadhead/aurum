@@ -53,6 +53,23 @@ published release and the default branch.
 - Capability preflight rejects impossible routes before network/decode work.
 - External JSON DTOs exclude raw PCM and native handles.
 
+## TTS model packs & BYOM trust (JOE-1576)
+
+- **No bare ONNX support.** A pack must declare a known adapter id plus artifacts
+  in `aurum-tts-manifest.json`. Filename heuristics and Hugging Face cards are
+  never treated as a support guarantee.
+- **Trust modes:** `builtin` (catalogue pins), `verified` (exact digests/sizes),
+  `local_unverified` (explicit opt-in only; metadata marks unsupported). ONNX
+  execution is **code-adjacent trust** — unverified packs are the caller's
+  responsibility.
+- Local packs never shadow built-in cache identities. Symlink pack roots are
+  rejected. Artifact size caps apply before load.
+- Custom catalogue entries (`[[tts.custom_models]]`) cannot use reserved built-in
+  ids or `trust=builtin`. Remote auto-trust of arbitrary repositories is not
+  supported.
+- Inspect/verify tooling is read-only by default; `add` is dry-run unless
+  `--write-manifest` is explicit.
+
 ## Performance & streaming memory (JOE-1574)
 
 - PCM ring buffers never allocate beyond configured capacity; invalid floats are

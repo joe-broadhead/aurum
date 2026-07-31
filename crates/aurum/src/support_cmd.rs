@@ -1,8 +1,7 @@
 //! `aurum support-bundle` — privacy-safe diagnostics (JOE-1728).
 
-use aurum_core::config::Config;
 use aurum_core::error::Result;
-use aurum_core::support::{build_support_bundle, default_bundle_path};
+use aurum_core::support::default_bundle_path;
 use clap::Parser;
 use std::io::{self, IsTerminal};
 use std::path::PathBuf;
@@ -24,8 +23,8 @@ pub struct SupportBundleCli {
 }
 
 pub fn run_support_bundle(cli: SupportBundleCli) -> Result<()> {
-    let cfg = Config::load()?;
-    let bundle = build_support_bundle(&cfg, cli.notes);
+    let engine = aurum_core::AurumEngine::load()?;
+    let bundle = engine.support_bundle(cli.notes);
     if cli.stdout {
         println!("{}", bundle.to_json_pretty()?);
         return Ok(());

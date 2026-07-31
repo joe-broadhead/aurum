@@ -1284,8 +1284,9 @@ async fn apply_configured_cleanup(
 
 fn run_doctor_cmd(cli: DoctorCli) -> Result<()> {
     init_tracing(false);
-    let cfg = Config::load()?;
-    let report = aurum_core::run_doctor(&cfg);
+    // Prefer owned engine path (JOE-1782); residual process caches unchanged.
+    let engine = aurum_core::AurumEngine::load()?;
+    let report = engine.doctor();
     if cli.json {
         println!("{}", report.to_json_pretty()?);
     } else {

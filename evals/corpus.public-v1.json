@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "name": "aurum-public-v1",
+  "description": "Licensed redistributable offline STT/TTS evaluation corpus for Aurum. Speech audio is synthetic (macOS say / lavfi), not human recordings. Suitable for CI and release gates; not a multi-language human-speech benchmark.",
+  "license": "MIT (repo) + synthetic speech generated offline; no third-party copyrighted speech",
+  "stt": [
+    {
+      "id": "clean_en_us",
+      "language": "en",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "audio": "audio/speech/clean_en-US.wav",
+      "tags": ["clean", "short", "accent_us", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0-equivalent (macOS say Samantha → wav)",
+      "source": "scripts/generate_eval_speech.sh voice=Samantha",
+      "notes": "US English synthetic voice"
+    },
+    {
+      "id": "clean_en_gb",
+      "language": "en",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "audio": "audio/speech/clean_en-GB.wav",
+      "tags": ["clean", "short", "accent_gb", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0-equivalent (macOS say Daniel → wav)",
+      "source": "scripts/generate_eval_speech.sh voice=Daniel",
+      "notes": "GB English synthetic voice"
+    },
+    {
+      "id": "clean_en_au",
+      "language": "en",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "audio": "audio/speech/clean_en-AU.wav",
+      "tags": ["clean", "short", "accent_au", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0-equivalent (macOS say Karen → wav)",
+      "source": "scripts/generate_eval_speech.sh voice=Karen",
+      "notes": "AU English synthetic voice"
+    },
+    {
+      "id": "noisy_en_us",
+      "language": "en",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "audio": "audio/noise/noisy_en-US.wav",
+      "tags": ["noisy", "short", "accent_us", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic + lavfi white noise mix",
+      "source": "ffmpeg amix white noise over clean_en-US",
+      "notes": "Controlled noise for robustness smoke"
+    },
+    {
+      "id": "fillers_en",
+      "language": "en",
+      "reference": "um so you know i think we should uh maybe postpone the meeting until next week",
+      "audio": "../tests/fixtures/fillers.wav",
+      "tags": ["clean", "fillers", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic (tests/fixtures, generate_fixtures.sh)",
+      "source": "tests/fixtures/fillers.wav",
+      "notes": "Also used for cleanup dogfood"
+    },
+    {
+      "id": "numbers_en",
+      "language": "en",
+      "reference": "the code is a b c one two three call me at five five five one two one two",
+      "audio": "../tests/fixtures/numbers.wav",
+      "tags": ["numbers", "punctuation", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic (tests/fixtures, generate_fixtures.sh)",
+      "source": "tests/fixtures/numbers.wav"
+    },
+    {
+      "id": "multi_sentence_en",
+      "language": "en",
+      "reference": "first we need to ship the beta second we should write the docs third we can plan the release",
+      "audio": "../tests/fixtures/multi_sentence.wav",
+      "tags": ["clean", "long", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic (tests/fixtures, generate_fixtures.sh)",
+      "source": "tests/fixtures/multi_sentence.wav"
+    },
+    {
+      "id": "longer_en",
+      "language": "en",
+      "reference": "this is a slightly longer sample for aurum it includes several sentences so we can check timestamps and subtitle output the weather is fine and the system should remain stable under a short load",
+      "audio": "../tests/fixtures/longer.wav",
+      "tags": ["clean", "long", "timestamps", "synthetic"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic (tests/fixtures, generate_fixtures.sh)",
+      "source": "tests/fixtures/longer.wav"
+    },
+    {
+      "id": "silence_3s",
+      "language": "en",
+      "reference": "",
+      "audio": "../tests/fixtures/silence.wav",
+      "tags": ["silence"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic silence (lavfi anullsrc)",
+      "source": "tests/fixtures/silence.wav"
+    },
+    {
+      "id": "silence_1s_eval",
+      "language": "en",
+      "reference": "",
+      "audio": "audio/silence_1s.wav",
+      "tags": ["silence"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0 silence",
+      "source": "scripts/generate_eval_audio.py"
+    },
+    {
+      "id": "tone_non_speech",
+      "language": "en",
+      "reference": "",
+      "audio": "audio/tone_440_1s.wav",
+      "tags": ["noise", "music", "non_speech"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0 tone",
+      "source": "scripts/generate_eval_audio.py"
+    }
+  ],
+  "tts": [
+    {
+      "id": "tts_short",
+      "text": "Hello from Aurum.",
+      "tags": ["short"],
+      "duration_ms_min": 200,
+      "duration_ms_max": 5000,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "tts_numbers",
+      "text": "Call me at extension 42 on March 3rd.",
+      "tags": ["numbers", "abbreviations", "dates"],
+      "duration_ms_min": 300,
+      "duration_ms_max": 10000,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "tts_long_join",
+      "text": "First sentence ends here. Second sentence starts now and continues for a bit longer so we can judge join quality.",
+      "tags": ["long", "join"],
+      "duration_ms_min": 500,
+      "duration_ms_max": 25000,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "tts_homograph",
+      "text": "I will record the record after I read the lead.",
+      "tags": ["homograph", "pronunciation"],
+      "duration_ms_min": 400,
+      "duration_ms_max": 12000,
+      "license": "synthetic CC0"
+    }
+  ]
+}

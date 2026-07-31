@@ -18,4 +18,5 @@
 *.pdb
 release-assets/
 release-notes.md
-evals/reports/*.json
+# Operator scratch under evals/reports/_local/ stays untracked
+evals/reports/_local/

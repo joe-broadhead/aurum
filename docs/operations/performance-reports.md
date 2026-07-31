@@ -30,5 +30,7 @@ Each retained report JSON should include:
 ./scripts/run_perf_report.sh --profile apple_silicon_metal --model tiny-q5_1
 ```
 
-Reports are written under `evals/reports/` (gitignored samples) or an operator
-archive. Do not commit private machine serials or user audio paths.
+Retained baselines for the first Apple Silicon Metal profile live under
+`evals/reports/perf/` (see [evidence-v004.md](evidence-v004.md)). Operator
+scratch goes in `evals/reports/_local/`. Do not commit private hostnames,
+serials, or user audio paths — use redacted host labels.

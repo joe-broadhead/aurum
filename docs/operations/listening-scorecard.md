@@ -29,3 +29,9 @@ and future adapters. Record method, listener count, and date.
 - Follow-ups:
 
 Objective PCM checks remain separate (`aurum_core::eval` duration/PCM guards).
+
+## Round 001 (recorded)
+
+See repository path `evals/reports/listening/listening-round-001.json`
+and the summary in [evidence-v004.md](evidence-v004.md). Round 001 is a
+**single-listener, non-blinded pilot** — not MOS.

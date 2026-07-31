@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "kind": "stt_e2e_wall",
+  "profile": "apple_silicon_metal",
+  "model": "base",
+  "fixture": "tests/fixtures/sample.wav",
+  "host": "maintainer-apple-silicon-01",
+  "os": "macOS-26.6-arm64-arm-64bit",
+  "machine": "arm64",
+  "aurum_version": "0.0.4",
+  "commit": "6239651e9814ad00d2400b49d2aade4deaa826a9",
+  "samples_ms": [
+    811.64,
+    805.46,
+    801.95,
+    803.22,
+    803.43
+  ],
+  "p50_ms": 803.43,
+  "p95_ms": 811.64,
+  "mean_ms": 805.14,
+  "audio_duration_ms": 5232.38,
+  "rtf_p50": 0.1536,
+  "warm": true,
+  "repetitions": 5,
+  "notes": "end-to-end CLI wall time including process startup amortization across warm model cache; Metal whisper on Apple Silicon"
+}

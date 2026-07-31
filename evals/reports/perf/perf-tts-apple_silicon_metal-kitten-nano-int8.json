@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "tts_e2e_wall",
+  "profile": "apple_silicon_metal",
+  "model": "kitten-nano-int8",
+  "host": "maintainer-apple-silicon-01",
+  "os": "macOS-26.6-arm64-arm-64bit",
+  "machine": "arm64",
+  "aurum_version": "0.0.4",
+  "commit": "6239651e9814ad00d2400b49d2aade4deaa826a9",
+  "samples_ms": [
+    932.78,
+    963.01,
+    951.32
+  ],
+  "p50_ms": 951.32,
+  "mean_ms": 949.03,
+  "mean_audio_duration_ms": 3500.0,
+  "rtf_p50": 0.2718,
+  "repetitions": 3,
+  "notes": "warm pack; end-to-end CLI wall time"
+}

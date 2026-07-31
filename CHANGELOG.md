@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1731:** public offline STT corpus (`evals/corpus.public-v1.json`) with
+  synthetic multi-accent speech, noise mix, silence/non-speech fixtures,
+  checksums, and `scripts/run_stt_eval_matrix.py` plus retained matrix reports.
+- **JOE-1735:** Kitten/Kokoro objective PCM report + listening pilot round 001
+  (explicitly not MOS) under `evals/reports/listening/`.
+- **JOE-1739:** named-hardware Apple Silicon Metal STT/TTS wall-time baselines
+  under `evals/reports/perf/`; evidence summary in `docs/operations/evidence-v004.md`.
+- **JOE-1715 (docs):** credential rotation runbook for post-publish token revoke.
+
 ## [0.0.4] - 2026-07-31
 
 v0.0.4 is the **product proof** patch after v0.0.3: adoption polish, reproducible

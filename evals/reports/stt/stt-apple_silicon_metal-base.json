@@ -1,0 +1,199 @@
+{
+  "schema_version": 1,
+  "corpus_version": 1,
+  "corpus_name": "aurum-public-v1",
+  "model": "base",
+  "backend_kind": "asr",
+  "provider": "local",
+  "hardware_profile": "apple_silicon_metal",
+  "host": "maintainer-apple-silicon-01",
+  "os": "macOS-26.6-arm64-arm-64bit",
+  "machine": "arm64",
+  "aurum_version": "0.0.4",
+  "commit": "6239651e9814ad00d2400b49d2aade4deaa826a9",
+  "stt_scores": [
+    {
+      "fixture_id": "clean_en_us",
+      "wer": 0.4,
+      "cer": 0.2821,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.0667,
+      "hypothesis": "Hello, this is a test of the Orem transcription system, 1, 2, 3, 4, 5.",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "tags": [
+        "clean",
+        "short",
+        "accent_us",
+        "synthetic"
+      ],
+      "audio_sha256": "56ede86ed266552ea93d9f73fb279061d6ee88a491fc2d246f3a4edc93c7d56a",
+      "wall_s": 0.809
+    },
+    {
+      "fixture_id": "clean_en_gb",
+      "wer": 0.3333,
+      "cer": 0.2949,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.0909,
+      "hypothesis": "Hello, this is a test of the Aurum transcription system, 12345.",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "tags": [
+        "clean",
+        "short",
+        "accent_gb",
+        "synthetic"
+      ],
+      "audio_sha256": "cc7c7b413bb7d4e9b090d0eddf18fc772fd40f663d7a9d3fdbb6d3477c86b6ca",
+      "wall_s": 0.806
+    },
+    {
+      "fixture_id": "clean_en_au",
+      "wer": 0.4,
+      "cer": 0.3333,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.0909,
+      "hypothesis": "Hello, this is a test of the Oram transcription system. 12345",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "tags": [
+        "clean",
+        "short",
+        "accent_au",
+        "synthetic"
+      ],
+      "audio_sha256": "5185cd96b0b29ab993dc1d58e02214f89cb869c48ba0f8a0632d62051df38d21",
+      "wall_s": 0.806
+    },
+    {
+      "fixture_id": "noisy_en_us",
+      "wer": 0.4,
+      "cer": 0.2821,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.0667,
+      "hypothesis": "Hello, this is a test of the Orom transcription system, 1, 2, 3, 4, 5.",
+      "reference": "hello this is a test of the aurum transcription system one two three four five",
+      "tags": [
+        "noisy",
+        "short",
+        "accent_us",
+        "synthetic"
+      ],
+      "audio_sha256": "1d4d332a6ac36af3919b90e81e32d1867c53dd7fe6196acf22b0bbf041264898",
+      "wall_s": 0.809
+    },
+    {
+      "fixture_id": "fillers_en",
+      "wer": 0.0,
+      "cer": 0.0,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.0625,
+      "hypothesis": "Um, so, you know, I think we should, uh, maybe postpone the meeting until next week.",
+      "reference": "um so you know i think we should uh maybe postpone the meeting until next week",
+      "tags": [
+        "clean",
+        "fillers",
+        "synthetic"
+      ],
+      "audio_sha256": "59546f2b6cf5b35303dff94682829032ce5a6f173bafba22fe2dea954b2f87d0",
+      "wall_s": 0.813
+    },
+    {
+      "fixture_id": "numbers_en",
+      "wer": 0.6842,
+      "cer": 0.6301,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.125,
+      "hypothesis": "The code is ABC123. Call me at 5551212.",
+      "reference": "the code is a b c one two three call me at five five five one two one two",
+      "tags": [
+        "numbers",
+        "punctuation",
+        "synthetic"
+      ],
+      "audio_sha256": "eac9b159ed0890fefe5361a272ad7f621c9e3def6d55d5c86211b205ba54eb64",
+      "wall_s": 0.815
+    },
+    {
+      "fixture_id": "multi_sentence_en",
+      "wer": 0.0,
+      "cer": 0.0,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.0526,
+      "hypothesis": "First we need to ship the beta, second we should write the docs, third we can plan the release.",
+      "reference": "first we need to ship the beta second we should write the docs third we can plan the release",
+      "tags": [
+        "clean",
+        "long",
+        "synthetic"
+      ],
+      "audio_sha256": "424fa53e240f576e3f27b358e15341b3398320def2b41ae11d983f235f64fb03",
+      "wall_s": 0.808
+    },
+    {
+      "fixture_id": "longer_en",
+      "wer": 0.0,
+      "cer": 0.0,
+      "silence_false_positive": false,
+      "repetition_ratio": 0.0294,
+      "hypothesis": "This is a slightly longer sample for Aurum. It includes several sentences so we can check timestamps and subtitle output. The weather is fine and the system should remain stable under a short load.",
+      "reference": "this is a slightly longer sample for aurum it includes several sentences so we can check timestamps and subtitle output the weather is fine and the system should remain stable under a short load",
+      "tags": [
+        "clean",
+        "long",
+        "timestamps",
+        "synthetic"
+      ],
+      "audio_sha256": "c6caab5a6e72c8b0d47dc1cbd9ab9af50778dfceeaf0aaf059c6d123198c61fd",
+      "wall_s": 0.819
+    },
+    {
+      "fixture_id": "silence_3s",
+      "wer": 1.0,
+      "cer": 1.0,
+      "silence_false_positive": true,
+      "repetition_ratio": 1.0,
+      "hypothesis": "you",
+      "reference": "",
+      "tags": [
+        "silence"
+      ],
+      "audio_sha256": "45ec296d121c4f9d30789aecabf462fd1336664eb3169f181d998c99a8e7ad2d",
+      "wall_s": 0.803
+    },
+    {
+      "fixture_id": "silence_1s_eval",
+      "wer": 1.0,
+      "cer": 1.0,
+      "silence_false_positive": true,
+      "repetition_ratio": 1.0,
+      "hypothesis": "you",
+      "reference": "",
+      "tags": [
+        "silence"
+      ],
+      "audio_sha256": "643f8a8dc8bd9c19225afffad2becfec5426180b3749cb208abdf1a6c8354efc",
+      "wall_s": 0.797
+    },
+    {
+      "fixture_id": "tone_non_speech",
+      "wer": 1.0,
+      "cer": 1.0,
+      "silence_false_positive": true,
+      "repetition_ratio": 1.0,
+      "hypothesis": "You",
+      "reference": "",
+      "tags": [
+        "noise",
+        "music",
+        "non_speech"
+      ],
+      "audio_sha256": "cb9568ee93b04dba4a309580b45a0369e486682e2e57305ac8f302630bb8e2ea",
+      "wall_s": 0.804
+    }
+  ],
+  "mean_wer": 0.4743,
+  "mean_cer": 0.4384,
+  "silence_false_positives": 3,
+  "mean_repetition_ratio": 0.3259,
+  "notes": "synthetic speech corpus; not a human multi-accent MOS claim",
+  "mean_wer_speech_only": 0.2772
+}

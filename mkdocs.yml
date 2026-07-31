@@ -126,6 +126,8 @@ nav:
       - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md
       - TTS listening scorecard: operations/listening-scorecard.md
+      - Evidence pack (v0.0.4 residual): operations/evidence-v004.md
+      - Credential rotation runbook: operations/credential-rotation-runbook.md
   - Reference:
       - CLI help snapshot: reference/cli-help.md
   - Development:

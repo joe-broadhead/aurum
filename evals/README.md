@@ -4,13 +4,17 @@ Offline, versioned fixtures for **quality** gates (WER/CER, silence FP, repetiti
 TTS objective checks). Performance budgets: `docs/operations/benchmarks.md` and
 `docs/operations/performance-reports.md` (JOE-1739).
 
-## Smoke corpus (v2)
+## Corpora
 
-`corpus.smoke.json` is redistributable synthetic text (CC0) plus optional
-**synthetic audio** under `audio/` (silence + tone, not speech).
+| File | Role |
+|------|------|
+| `corpus.smoke.json` | Text-only smoke (PR unit tests) |
+| `corpus.public-v1.json` | Offline public matrix with synthetic multi-accent speech + silence/noise |
 
 ```bash
 python3 scripts/generate_eval_audio.py
+./scripts/generate_eval_speech.sh   # macOS say + ffmpeg
+AURUM_BIN=target/release/aurum python3 scripts/run_stt_eval_matrix.py
 ```
 
 ```rust
@@ -23,19 +27,19 @@ let report = build_report(&corpus, "tiny-q5_1", "asr", scores);
 
 ### Tags
 
-`clean`, `short`, `long`, `numbers`, `silence`, `noise`, `non_speech`, `accent` (placeholder),
-`punctuation`, `join`.
+`clean`, `short`, `long`, `numbers`, `silence`, `noise`, `non_speech`,
+`accent_us` / `accent_gb` / `accent_au`, `punctuation`, `join`, `synthetic`.
 
 ### What this is not
 
-- Multi-accent licensed speech for production WER claims (bring your own under the same schema).
-- A MOS score — see `docs/operations/listening-scorecard.md`.
+- Licensed **human** multi-accent speech for field WER claims (extend the same schema).
+- A MOS score — see `docs/operations/listening-scorecard.md` and
+  `evals/reports/listening/listening-round-001.json` (pilot only).
 
 ## Reports
 
-Operator reports may be written under `evals/reports/` (typically gitignored).
-Templates/docs: listening scorecard + performance report methodology in
-`docs/operations/`.
+Retained baselines live under `evals/reports/` (see that directory’s README).
+Interpretation: `docs/operations/evidence-v004.md`.
 
 ## Timestamp policy
 

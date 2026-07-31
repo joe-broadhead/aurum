@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "kind": "tts_listening_round",
+  "round_id": "001",
+  "date": "2026-07-31",
+  "method": "single-listener pilot (not blinded, not MOS); scores 1-5 per rubric in docs/operations/listening-scorecard.md",
+  "listener_count": 1,
+  "blinding": false,
+  "hardware": "Apple Silicon macOS; headphones or built-in speakers not recorded",
+  "adapters": {
+    "kitten-nano-int8": {
+      "voice": "Luna",
+      "role": "default"
+    },
+    "kokoro-82m-int8": {
+      "voice": "default pack voice",
+      "role": "opt-in"
+    }
+  },
+  "items": [
+    {
+      "fixture": "tts_short",
+      "kitten": {
+        "intelligibility": 5,
+        "naturalness": 3,
+        "pronunciation": 4,
+        "joins": 5,
+        "notes": "clear short phrase; slightly robotic"
+      },
+      "kokoro": {
+        "intelligibility": 5,
+        "naturalness": 4,
+        "pronunciation": 4,
+        "joins": 5,
+        "notes": "warmer short phrase"
+      }
+    },
+    {
+      "fixture": "tts_numbers",
+      "kitten": {
+        "intelligibility": 4,
+        "naturalness": 3,
+        "pronunciation": 3,
+        "joins": 5,
+        "notes": "numbers OK; date/extension cadence flat"
+      },
+      "kokoro": {
+        "intelligibility": 4,
+        "naturalness": 4,
+        "pronunciation": 4,
+        "joins": 5,
+        "notes": "slightly clearer number pacing"
+      }
+    },
+    {
+      "fixture": "tts_long_join",
+      "kitten": {
+        "intelligibility": 4,
+        "naturalness": 3,
+        "pronunciation": 4,
+        "joins": 3,
+        "notes": "join/pause between sentences audible"
+      },
+      "kokoro": {
+        "intelligibility": 5,
+        "naturalness": 4,
+        "pronunciation": 4,
+        "joins": 4,
+        "notes": "smoother multi-sentence flow"
+      }
+    },
+    {
+      "fixture": "tts_homograph",
+      "kitten": {
+        "intelligibility": 4,
+        "naturalness": 3,
+        "pronunciation": 3,
+        "joins": 5,
+        "notes": "homographs may be wrong; inspect carefully"
+      },
+      "kokoro": {
+        "intelligibility": 4,
+        "naturalness": 4,
+        "pronunciation": 3,
+        "joins": 5,
+        "notes": "still ambiguous on record/lead"
+      }
+    }
+  ],
+  "summary": {
+    "kitten_mean_intelligibility": 4.25,
+    "kitten_mean_naturalness": 3.0,
+    "kokoro_mean_intelligibility": 4.5,
+    "kokoro_mean_naturalness": 4.0,
+    "recommendation": "Keep Kitten as default (MIT-safe, lighter). Kokoro remains opt-in quality alternative. Neither is MOS-certified. Homographs remain a known weakness for both.",
+    "support_tiers": {
+      "kitten-nano-int8": "supported-default",
+      "kokoro-82m-int8": "supported-opt-in"
+    }
+  },
+  "limitations": [
+    "Not blinded",
+    "Single listener",
+    "Not a formal MOS study",
+    "Synthetic text only"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "tts_e2e_wall",
+  "profile": "apple_silicon_metal",
+  "model": "kokoro-82m-int8",
+  "host": "maintainer-apple-silicon-01",
+  "os": "macOS-26.6-arm64-arm-64bit",
+  "machine": "arm64",
+  "aurum_version": "0.0.4",
+  "commit": "6239651e9814ad00d2400b49d2aade4deaa826a9",
+  "samples_ms": [
+    2017.27,
+    1684.78,
+    1839.37
+  ],
+  "p50_ms": 1839.37,
+  "mean_ms": 1847.14,
+  "mean_audio_duration_ms": 2078.1,
+  "rtf_p50": 0.8851,
+  "repetitions": 3,
+  "notes": "warm pack; end-to-end CLI wall time"
+}

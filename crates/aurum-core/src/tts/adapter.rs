@@ -16,7 +16,7 @@ pub const ADAPTER_KITTEN_ONNX_V1: &str = "kitten-onnx-v1";
 /// Deterministic sine fake for conformance (no ONNX) — proves the contract is
 /// not Kitten-specific (JOE-1615/1616).
 pub const ADAPTER_FAKE_SINE_V1: &str = "fake-sine-v1";
-/// Kokoro scaffold (JOE-1617/1618) — not shipped for synthesis until pins land.
+/// Kokoro-82M ONNX adapter (JOE-1617/1618). Product-supported with catalogue pins.
 pub const ADAPTER_KOKORO_ONNX_V0: &str = "kokoro-onnx-v0";
 
 /// Trust level for a model pack.
@@ -234,12 +234,12 @@ pub fn list_adapters() -> Vec<AdapterDescriptor> {
         AdapterDescriptor {
             id: ADAPTER_KOKORO_ONNX_V0,
             version: 0,
-            description: "Kokoro-82M ONNX scaffold (not shipped; see ADR)",
+            description: "Kokoro-82M ONNX + misaki-rs G2P (opt-in catalogue model)",
             required_artifact_roles: &["onnx", "voices", "config"],
             sample_rate_hz: 24_000,
             languages: &["en"],
-            license_requirement: "Apache-2.0 (upstream); MIT binary path TBD",
-            synthesis_supported: false,
+            license_requirement: "Apache-2.0 weights + MIT G2P",
+            synthesis_supported: true,
         },
     ]
 }
@@ -289,7 +289,7 @@ pub fn preflight_manifest(manifest: &ModelPackManifest) -> Result<AdapterDescrip
                 "adapter '{}' is scaffold-only and not enabled for synthesis",
                 adapter.id
             ),
-            hint: "use kitten-onnx-v1 (built-in) or wait for a shipped Kokoro pack".into(),
+            hint: "use kitten-onnx-v1 or kokoro-onnx-v0 with a shipped pack".into(),
         }
         .into());
     }
@@ -358,10 +358,11 @@ mod tests {
     }
 
     #[test]
-    fn kokoro_not_for_synthesis() {
+    fn kokoro_preflight_ok_when_shipped() {
         let mut m = kitten_manifest();
         m.adapter_id = ADAPTER_KOKORO_ONNX_V0.into();
         m.adapter_version = 0;
-        assert!(preflight_manifest(&m).is_err());
+        m.model_id = "kokoro-82m-int8".into();
+        preflight_manifest(&m).unwrap();
     }
 }

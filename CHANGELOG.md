@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1618** Curated Kokoro-82M TTS adapter (opt-in, not default):
+  - Catalogue model `kokoro-82m-int8` with immutable SHA-256 pins for int8 ONNX,
+    voices pack, and config vocab (Apache-2.0 weights)
+  - Adapter `kokoro-onnx-v0` enabled for synthesis (tokens/style/speed @ 24 kHz)
+  - English voice catalogue (US/GB friendly names mapped to pack internal keys)
+  - Kokoro phoneme vocab + misaki-rs G2P (MIT; no GPL espeak)
+  - NPZ loader accepts Kokoro style shape `(rows, 1, dim)`
+  - Docs/ADR updated; Kitten remains the default model
+
 - **JOE-1578** Quality engineering, supply chain and v1.0 release gates:
   - `deny.toml` + CI `cargo audit` / `cargo deny check` security job (JOE-1630)
   - Continuous adversarial parser suite (`adversarial_parsers`) for config, JSON

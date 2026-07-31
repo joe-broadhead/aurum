@@ -120,5 +120,5 @@ pub use tts::{
     verify_pack as verify_tts_pack, write_add_manifest as write_tts_add_manifest,
     write_wav_i16_mono_atomic, write_wav_i16_mono_transaction, BackendKind as TtsBackendKind,
     LocalTtsProvider, SynthesisOptions, SynthesisProvider, SynthesisResult, TrustMode,
-    DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE,
+    DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE, KOKORO_DEFAULT_VOICE, KOKORO_TTS_MODEL,
 };

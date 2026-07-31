@@ -34,4 +34,5 @@ TTS downloads voice packs only when missing (pinned SHA-256). Local synthesis do
 - Never pass a bare `.onnx` file as a “model path.”
 - `local_unverified` is explicit opt-in only; treat it as running untrusted code
   adjacent to the host process.
-- See root [SECURITY.md](../../SECURITY.md) and [TTS guide](../guide/tts.md).
+- See root [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md)
+  and [TTS guide](../guide/tts.md).

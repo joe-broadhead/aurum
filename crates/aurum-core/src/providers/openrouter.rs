@@ -11,7 +11,7 @@
 use super::{
     BackendKind, Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
 };
-use crate::audio::{self, AudioInput, DEFAULT_MAX_UPLOAD_BYTES};
+use crate::audio::{self, AudioInput, DEFAULT_FFMPEG_TIMEOUT, DEFAULT_MAX_UPLOAD_BYTES};
 use crate::error::{ProviderError, Result, UserError};
 use crate::postprocess;
 use crate::remote::{
@@ -194,8 +194,18 @@ impl OpenRouterProvider {
             .samples
             .len()
             .saturating_mul(std::mem::size_of::<f32>());
-        let (upload_path, format) =
-            audio::encode_for_upload(&input.samples, self.max_upload_bytes).await?;
+        // Propagate cancel + absolute encode deadline (JOE-1648 third-pass).
+        let (upload_path, format) = audio::encode_for_upload_with_timeout(
+            &input.samples,
+            self.max_upload_bytes,
+            DEFAULT_FFMPEG_TIMEOUT,
+            options.cancel.clone(),
+        )
+        .await?;
+        if options.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
+            let _ = std::fs::remove_file(&upload_path);
+            return Err(crate::error::ProviderError::Cancelled.into());
+        }
         let cleanup = scopeguard_path(upload_path.clone());
 
         let meta = tokio::fs::metadata(&upload_path)
@@ -310,8 +320,17 @@ impl OpenRouterProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
-        let (upload_path, format) =
-            audio::encode_for_upload(&input.samples, self.max_upload_bytes).await?;
+        let (upload_path, format) = audio::encode_for_upload_with_timeout(
+            &input.samples,
+            self.max_upload_bytes,
+            DEFAULT_FFMPEG_TIMEOUT,
+            options.cancel.clone(),
+        )
+        .await?;
+        if options.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
+            let _ = std::fs::remove_file(&upload_path);
+            return Err(crate::error::ProviderError::Cancelled.into());
+        }
         let cleanup = scopeguard_path(upload_path.clone());
 
         let meta = tokio::fs::metadata(&upload_path)

@@ -154,9 +154,9 @@ impl ContextCache {
         ))
     }
 
+    /// Drop idle STT contexts only; active decode pins keep residency (JOE-1646).
     fn clear(&self) {
-        self.registry.clear();
-        self.flight.clear();
+        let _ = self.registry.clear_idle();
     }
 
     fn contains(&self, model_path: &Path, model_name: &str) -> bool {

@@ -612,7 +612,12 @@ pub fn write_temp_wav(samples: &[f32], dest: &Path) -> Result<()> {
 ///
 /// MP3 encoding uses the same supervised FFmpeg lifecycle as decode: `-nostdin`,
 /// concurrent stderr drain, wall-clock deadline, kill+reap on failure. Destination
-/// is exclusively created (no `-y` clobber). Falls back to WAV if FFmpeg/mp3 fails.
+/// is exclusively created (no `-y` clobber).
+///
+/// WAV fallback is **only** for encoder/codec conversion failures (missing
+/// libmp3lame, non-zero FFmpeg exit for encode reasons). Cancellation, absolute
+/// deadline expiry, and size-cap violations **never** fall back to a successful
+/// WAV (JOE-1648 third-pass residual).
 pub async fn encode_for_upload(
     samples: &[f32],
     max_bytes: usize,
@@ -675,24 +680,46 @@ pub async fn encode_for_upload_with_timeout(
         )
         .await;
 
-        let _ = std::fs::remove_file(&wav_path);
-
         match encode {
             Ok(()) => {
+                let _ = std::fs::remove_file(&wav_path);
                 if let Ok(meta) = std::fs::metadata(&mp3_path) {
                     if meta.len() > 0 && (meta.len() as usize) <= max_bytes {
                         return Ok((mp3_path, "mp3"));
                     }
                 }
                 let _ = std::fs::remove_file(&mp3_path);
+                // Empty / oversize output is a conversion failure → WAV fallback.
+            }
+            Err(e) if is_terminal_upload_control_error(&e) => {
+                let _ = std::fs::remove_file(&mp3_path);
+                let _ = std::fs::remove_file(&wav_path);
+                return Err(e);
             }
             Err(e) => {
                 let _ = std::fs::remove_file(&mp3_path);
-                tracing::debug!(error = %e, "supervised mp3 encode failed; falling back to wav");
+                tracing::debug!(
+                    error = %e,
+                    "supervised mp3 encode failed with codec/conversion error; falling back to wav"
+                );
+                let _ = std::fs::remove_file(&wav_path);
             }
         }
-        // Fall through to recreate wav
+
+        // Re-check control plane before returning fallback success.
+        if let Some(flag) = &cancel {
+            if flag.is_cancelled() {
+                return Err(crate::error::ProviderError::Cancelled.into());
+            }
+        }
         write_temp_wav(samples, &wav_path)?;
+    }
+
+    if let Some(flag) = &cancel {
+        if flag.is_cancelled() {
+            let _ = std::fs::remove_file(&wav_path);
+            return Err(crate::error::ProviderError::Cancelled.into());
+        }
     }
 
     let meta = std::fs::metadata(&wav_path).map_err(|e| EnvironmentError::Other {
@@ -707,6 +734,21 @@ pub async fn encode_for_upload_with_timeout(
         .into());
     }
     Ok((wav_path, "wav"))
+}
+
+/// Errors that must not be rewritten as a successful WAV fallback.
+fn is_terminal_upload_control_error(e: &crate::error::TranscriptionError) -> bool {
+    use crate::error::{EnvironmentError, ProviderError, TranscriptionError, UserError};
+    match e {
+        TranscriptionError::Provider(ProviderError::Cancelled)
+        | TranscriptionError::Provider(ProviderError::DeadlineExceeded)
+        | TranscriptionError::User(UserError::AudioTooLarge { .. }) => true,
+        TranscriptionError::Environment(EnvironmentError::FfmpegFailed { reason }) => {
+            // Supervisor maps wall-clock timeout into this variant.
+            reason.contains("wall-clock deadline") || reason.contains("deadline exceeded")
+        }
+        _ => false,
+    }
 }
 
 /// Run FFmpeg encode with concurrent stderr drain, deadline, cancel, and file-size cap.
@@ -790,13 +832,8 @@ async fn supervise_ffmpeg_encode(
             let _ = child.wait().await;
             stderr_join.abort();
             let _ = stderr_join.await;
-            break Err(EnvironmentError::FfmpegFailed {
-                reason: format!(
-                    "ffmpeg encode exceeded wall-clock deadline ({}s)",
-                    timeout.as_secs()
-                ),
-            }
-            .into());
+            // Distinct from codec failure so upload fallback cannot swallow it.
+            break Err(crate::error::ProviderError::DeadlineExceeded.into());
         }
         if let Some(flag) = &cancel {
             if flag.is_cancelled() {
@@ -979,6 +1016,56 @@ mod tests {
             Err(crate::error::TranscriptionError::User(
                 UserError::AudioTooLong { .. }
             ))
+        ));
+    }
+
+    #[test]
+    fn upload_control_errors_are_not_fallback_eligible() {
+        use crate::error::{EnvironmentError, ProviderError, TranscriptionError, UserError};
+        assert!(is_terminal_upload_control_error(
+            &TranscriptionError::Provider(ProviderError::Cancelled)
+        ));
+        assert!(is_terminal_upload_control_error(
+            &TranscriptionError::Provider(ProviderError::DeadlineExceeded)
+        ));
+        assert!(is_terminal_upload_control_error(&TranscriptionError::User(
+            UserError::AudioTooLarge {
+                decoded_bytes: 9,
+                max_bytes: 1,
+            }
+        )));
+        assert!(is_terminal_upload_control_error(
+            &TranscriptionError::Environment(EnvironmentError::FfmpegFailed {
+                reason: "ffmpeg encode exceeded wall-clock deadline (1s)".into(),
+            })
+        ));
+        // Codec/non-zero exit may fall back to WAV.
+        assert!(!is_terminal_upload_control_error(
+            &TranscriptionError::Environment(EnvironmentError::FfmpegFailed {
+                reason: "ffmpeg encode exited with exit status: 1: Unknown encoder".into(),
+            })
+        ));
+        assert!(!is_terminal_upload_control_error(
+            &TranscriptionError::Environment(EnvironmentError::FfmpegMissing)
+        ));
+    }
+
+    #[tokio::test]
+    async fn encode_for_upload_pre_cancel_does_not_succeed() {
+        let cancel = crate::cancel::CancelFlag::new();
+        cancel.cancel();
+        let samples = vec![0.0f32; 1600];
+        let err = encode_for_upload_with_timeout(
+            &samples,
+            DEFAULT_MAX_UPLOAD_BYTES,
+            std::time::Duration::from_secs(5),
+            Some(cancel),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(
+            err,
+            crate::error::TranscriptionError::Provider(crate::error::ProviderError::Cancelled)
         ));
     }
 }

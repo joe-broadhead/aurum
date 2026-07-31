@@ -128,9 +128,13 @@ impl TtsSessionCache {
         }
     }
 
+    /// Drop idle sessions only. Active registry pins retain their entry and
+    /// weight so a concurrent clear cannot force a second same-key load
+    /// (JOE-1646 third-pass residual).
     fn clear(&self) {
-        self.registry.clear();
-        self.flight.clear();
+        let _ = self.registry.clear_idle();
+        // Do not wipe in-flight singleflight Loading slots (would strand leaders).
+        // Failed TTL slots can stay until natural expiry.
     }
 }
 
@@ -187,9 +191,13 @@ impl LocalTtsProvider {
         self
     }
 
-    /// Drop loaded ONNX sessions process-wide (frees ORT graphs held in RAM).
+    /// Drop **idle** loaded ONNX sessions process-wide (frees ORT graphs held
+    /// in RAM for entries with no active operation pin).
     ///
-    /// Safe to call anytime; the next synthesize/preload reloads from the on-disk pack.
+    /// Active synthesis leases keep their registry entry and residency weight
+    /// until the pin drops — a clear during an in-flight synth cannot make the
+    /// same key reloadable as a second native session (JOE-1646).
+    ///
     /// Does not delete cached files under the TTS cache directory.
     pub fn clear_sessions(&self) {
         TTS_SESSION_CACHE.clear();

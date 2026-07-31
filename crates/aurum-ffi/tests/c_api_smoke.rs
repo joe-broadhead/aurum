@@ -138,3 +138,37 @@ fn capabilities_and_doctor_and_cleanup_job() {
     assert_eq!(unsafe { aurum_engine_shutdown(engine, 2000) }, 0);
     unsafe { aurum_engine_destroy(engine) };
 }
+
+/// Closed / shutdown engines must null out_job before returning (JOE-1647).
+#[test]
+fn job_start_nulls_out_on_closed_engine() {
+    let dir = tempdir().unwrap();
+    let cache = CString::new(dir.path().to_str().unwrap()).unwrap();
+    let cfg = AurumEngineConfigC {
+        cache_dir: cache.as_ptr(),
+        local_only: 1,
+        progress_logging: 0,
+        reserved: [0; 6],
+    };
+    let mut engine: *mut AurumEngine = ptr::null_mut();
+    assert_eq!(unsafe { aurum_engine_create(&cfg, &mut engine) }, 0);
+    assert_eq!(unsafe { aurum_engine_shutdown(engine, 2000) }, 0);
+
+    // Poisoned sentinel: if the API leaves this unchanged, the host would free junk.
+    let mut job = ptr::dangling_mut::<aurum_ffi::AurumJob>();
+    let text = CString::new("hello").unwrap();
+    let st = unsafe { aurum_job_start_cleanup(engine, text.as_ptr(), 1, &mut job) };
+    assert_ne!(st, 0);
+    assert!(
+        job.is_null(),
+        "out_job must be nulled before closed-engine failure"
+    );
+
+    // Invalid cleanup style also nulls (before other work).
+    let mut out: *mut c_char = ptr::dangling_mut::<c_char>();
+    let st = unsafe { aurum_cleanup_rules(text.as_ptr(), 99, &mut out) };
+    assert_ne!(st, 0);
+    assert!(out.is_null(), "out_text must be nulled on invalid style");
+
+    unsafe { aurum_engine_destroy(engine) };
+}

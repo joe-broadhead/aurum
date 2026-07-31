@@ -181,10 +181,36 @@ impl<T> ModelRegistry<T> {
         })
     }
 
-    pub fn clear(&self) {
+    /// Drop **idle** entries only (JOE-1646 third-pass).
+    ///
+    /// Entries with `active_refs > 0` or `pinned` stay in the map with their
+    /// weight so residency accounting remains truthful and a same-key reload
+    /// cannot multiply native sessions while an operation still holds a pin.
+    ///
+    /// Returns `(removed, retained_active)`.
+    pub fn clear_idle(&self) -> (usize, usize) {
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        guard.clear();
-        self.total_weight.store(0, Ordering::SeqCst);
+        let before = guard.len();
+        let mut removed_weight = 0u64;
+        guard.retain(|_, e| {
+            let active = e.active_refs.load(Ordering::SeqCst) > 0 || e.pinned;
+            if !active {
+                removed_weight = removed_weight.saturating_add(e.weight.bytes);
+            }
+            active
+        });
+        if removed_weight > 0 {
+            self.total_weight
+                .fetch_sub(removed_weight, Ordering::SeqCst);
+        }
+        let retained = guard.len();
+        let removed = before.saturating_sub(retained);
+        (removed, retained)
+    }
+
+    /// Alias for [`Self::clear_idle`] — never forcibly drops active leases.
+    pub fn clear(&self) {
+        let _ = self.clear_idle();
     }
 
     /// Remove a specific key if not active.
@@ -430,5 +456,46 @@ mod tests {
                 .load(Ordering::SeqCst),
             0
         );
+    }
+
+    #[test]
+    fn clear_idle_retains_active_and_blocks_reload_multiplication() {
+        let reg = ModelRegistry::new(RegistryConfig {
+            max_entries: 8,
+            max_resident_bytes: 10_000,
+            idle_ttl: None,
+        });
+        // Idle entry is removable.
+        reg.insert(key("idle"), Arc::new(1u32), ResidencyWeight { bytes: 100 })
+            .unwrap();
+        // Active lease must survive clear.
+        let lease = reg
+            .insert_and_pin(
+                key("active"),
+                Arc::new(42u32),
+                ResidencyWeight { bytes: 200 },
+            )
+            .unwrap();
+        assert_eq!(reg.len(), 2);
+        assert_eq!(reg.total_weight(), 300);
+
+        let (removed, retained) = reg.clear_idle();
+        assert_eq!(removed, 1);
+        assert_eq!(retained, 1);
+        assert_eq!(reg.len(), 1);
+        assert_eq!(reg.total_weight(), 200);
+        assert!(reg.get(&key("idle")).is_none());
+        // Same-key lookup still hits the active session (no second load).
+        let again = reg.get_and_pin(&key("active")).unwrap();
+        assert_eq!(**again.value(), 42);
+        assert_eq!(lease.entry().active_refs.load(Ordering::SeqCst), 2);
+        drop(again);
+        drop(lease);
+        // Now idle → clear removes it.
+        let (removed, retained) = reg.clear_idle();
+        assert_eq!(removed, 1);
+        assert_eq!(retained, 0);
+        assert!(reg.is_empty());
+        assert_eq!(reg.total_weight(), 0);
     }
 }

@@ -61,7 +61,12 @@ impl TtsSessionCache {
         ResidencyWeight { bytes }
     }
 
-    fn get_or_load<F>(&self, key: LoadKey, weight: ResidencyWeight, loader: F) -> Result<Arc<LoadedPack>>
+    fn get_or_load<F>(
+        &self,
+        key: LoadKey,
+        weight: ResidencyWeight,
+        loader: F,
+    ) -> Result<Arc<LoadedPack>>
     where
         F: FnOnce() -> Result<LoadedPack>,
     {

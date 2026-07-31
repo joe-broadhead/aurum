@@ -226,10 +226,7 @@ pub unsafe extern "C" fn aurum_engine_create(
 /// On success the pointer is freed and must not be reused. On `AURUM_BUSY` the
 /// engine remains valid and the host may retry close after waiting.
 #[no_mangle]
-pub unsafe extern "C" fn aurum_engine_close(
-    engine: *mut AurumEngine,
-    timeout_ms: u32,
-) -> i32 {
+pub unsafe extern "C" fn aurum_engine_close(engine: *mut AurumEngine, timeout_ms: u32) -> i32 {
     if engine.is_null() {
         return FfiStatus::InvalidArg.as_i32();
     }

@@ -34,11 +34,7 @@ struct BusyGuard<'a> {
 }
 
 impl<'a> BusyGuard<'a> {
-    fn acquire(
-        busy: &'a AtomicBool,
-        closed: &AtomicBool,
-        what: &str,
-    ) -> Result<Self, FfiError> {
+    fn acquire(busy: &'a AtomicBool, closed: &AtomicBool, what: &str) -> Result<Self, FfiError> {
         // Reject closed engines before taking process admission (JOE-1647).
         if closed.load(Ordering::SeqCst) {
             return Err(FfiError::new(
@@ -669,9 +665,7 @@ mod tests {
             progress_logging: false,
         })
         .unwrap();
-        engine
-            .shutdown_engine(Duration::from_secs(1))
-            .unwrap();
+        engine.shutdown_engine(Duration::from_secs(1)).unwrap();
         let err = engine.preload("tiny-q5_1").unwrap_err();
         assert_eq!(err.status, FfiStatus::Shutdown);
         assert!(engine.is_closed());

@@ -76,10 +76,7 @@ pub fn normalize_result(result: TranscriptionResult) -> TranscriptionResult {
 ///
 /// Returns `Some(detail)` when the transcript looks degenerate.
 pub fn detect_repetition_degeneration(text: &str) -> Option<String> {
-    let words: Vec<&str> = text
-        .split_whitespace()
-        .filter(|w| !w.is_empty())
-        .collect();
+    let words: Vec<&str> = text.split_whitespace().filter(|w| !w.is_empty()).collect();
     if words.len() < 40 {
         return None;
     }

@@ -1050,10 +1050,7 @@ mod tests {
                 assert_eq!(pin.len(), 64, "pin length for {}", m.filename);
             }
         }
-        assert!(
-            missing.is_empty(),
-            "missing sha256 pins for: {missing:?}"
-        );
+        assert!(missing.is_empty(), "missing sha256 pins for: {missing:?}");
     }
 
     #[test]

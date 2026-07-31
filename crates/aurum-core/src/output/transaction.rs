@@ -222,10 +222,7 @@ fn check_dest_policy(path: &Path, mode: CommitMode, symlink_policy: SymlinkPolic
                 let ft = meta.file_type();
                 if ft.is_fifo() || ft.is_socket() || ft.is_block_device() || ft.is_char_device() {
                     return Err(UserError::Other {
-                        message: format!(
-                            "output path is not a regular file: {}",
-                            path.display()
-                        ),
+                        message: format!("output path is not a regular file: {}", path.display()),
                     }
                     .into());
                 }
@@ -318,12 +315,7 @@ fn random_suffix() -> String {
 /// Publish `tmp` as `dest` according to `mode`.
 ///
 /// On success, `tmp` no longer exists (consumed by rename or unlinked after link).
-fn publish(
-    tmp: &Path,
-    dest: &Path,
-    mode: CommitMode,
-    symlink_policy: SymlinkPolicy,
-) -> Result<()> {
+fn publish(tmp: &Path, dest: &Path, mode: CommitMode, symlink_policy: SymlinkPolicy) -> Result<()> {
     // Final policy check immediately before publish (covers races after preflight).
     check_dest_policy(dest, mode, symlink_policy)?;
 
@@ -353,16 +345,14 @@ fn publish_noclobber(tmp: &Path, dest: &Path) -> Result<()> {
                 let _ = fs::remove_file(tmp);
                 Ok(())
             }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                Err(UserError::Other {
-                    message: format!(
-                        "output file already exists: {}\n  \
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => Err(UserError::Other {
+                message: format!(
+                    "output file already exists: {}\n  \
                          Hint: pass --force to overwrite, or choose another path.",
-                        dest.display()
-                    ),
-                }
-                .into())
+                    dest.display()
+                ),
             }
+            .into()),
             Err(e) => Err(EnvironmentError::DirectoryAccess {
                 path: dest.display().to_string(),
                 reason: format!("NoClobber publish (hard_link) failed: {e}"),
@@ -684,7 +674,8 @@ mod tests {
             handles.push(thread::spawn(move || {
                 barrier.wait();
                 let body = format!("writer-{i}");
-                OutputTransaction::new(path.as_ref(), CommitMode::NoClobber).commit_bytes(body.as_bytes())
+                OutputTransaction::new(path.as_ref(), CommitMode::NoClobber)
+                    .commit_bytes(body.as_bytes())
             }));
         }
         let mut ok = 0;
@@ -698,6 +689,9 @@ mod tests {
         assert_eq!(ok, 1, "exactly one NoClobber writer must succeed");
         assert_eq!(err, 7);
         let content = fs::read_to_string(path.as_ref()).unwrap();
-        assert!(content.starts_with("writer-"), "winner bytes incomplete: {content}");
+        assert!(
+            content.starts_with("writer-"),
+            "winner bytes incomplete: {content}"
+        );
     }
 }

@@ -264,6 +264,94 @@ impl std::fmt::Debug for Config {
     }
 }
 
+/// Source of an effective config value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigValueSource {
+    Default,
+    File,
+    Environment,
+    Cli,
+}
+
+/// Attribution for key fields (diagnostics only).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigSourceMap {
+    pub provider: ConfigValueSource,
+    pub openrouter_api_key: ConfigValueSource,
+    pub openrouter_base_url: ConfigValueSource,
+    pub tts_model: ConfigValueSource,
+}
+
+impl ConfigSourceMap {
+    fn default_attribution(cfg: &Config) -> Self {
+        let key_src = if std::env::var("OPENROUTER_API_KEY")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some()
+        {
+            ConfigValueSource::Environment
+        } else if cfg.openrouter_api_key.is_some() {
+            ConfigValueSource::File
+        } else {
+            ConfigValueSource::Default
+        };
+        let base_src = if std::env::var("OPENROUTER_BASE_URL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some()
+        {
+            ConfigValueSource::Environment
+        } else {
+            ConfigValueSource::File
+        };
+        let tts_src = if std::env::var("AURUM_TTS_MODEL")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .is_some()
+        {
+            ConfigValueSource::Environment
+        } else {
+            ConfigValueSource::File
+        };
+        Self {
+            provider: if cfg.config_path.is_some() {
+                ConfigValueSource::File
+            } else {
+                ConfigValueSource::Default
+            },
+            openrouter_api_key: key_src,
+            openrouter_base_url: base_src,
+            tts_model: tts_src,
+        }
+    }
+}
+
+/// Redacted JSON-serializable effective config.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffectiveConfigDiagnostic {
+    pub provider: String,
+    pub model: Option<String>,
+    pub language: String,
+    pub output: String,
+    pub timestamps: bool,
+    pub openrouter_api_key: Option<String>,
+    pub openrouter_base_url: String,
+    pub openrouter_default_model: String,
+    pub openrouter_stt_mode: String,
+    pub openrouter_allow_custom_endpoint: bool,
+    pub cleanup_style: String,
+    pub cleanup_provider: String,
+    pub tts_model: String,
+    pub tts_voice: String,
+    pub tts_language: String,
+    pub tts_max_chars: usize,
+    pub tts_timeout_ms: u64,
+    pub config_path: Option<String>,
+    pub cache_dir: String,
+    pub sources: ConfigSourceMap,
+}
+
 impl Config {
     /// Resolve the platform-appropriate config file path.
     pub fn default_config_path() -> Option<PathBuf> {
@@ -291,7 +379,10 @@ impl Config {
         Ok(Self::from_parts(file, path))
     }
 
-    /// Load from an explicit config file path (used in tests).
+    /// Load from an explicit config file path (used in tests / CLI `--config`).
+    ///
+    /// When the path does not exist, returns defaults (historical behavior).
+    /// Prefer [`Self::load_from_required`] when a missing file must be an error.
     pub fn load_from(path: &Path) -> Result<Self> {
         let file = if path.exists() {
             Some(load_config_file(path)?)
@@ -299,6 +390,105 @@ impl Config {
             None
         };
         Ok(Self::from_parts(file, Some(path.to_path_buf())))
+    }
+
+    /// Load from an explicit path; **error** if the file is missing (JOE-1608).
+    pub fn load_from_required(path: &Path) -> Result<Self> {
+        if !path.exists() {
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "config file not found: {}\n  Hint: create it or omit --config to use defaults",
+                    path.display()
+                ),
+            }
+            .into());
+        }
+        let file = load_config_file(path)?;
+        let cfg = Self::from_parts(Some(file), Some(path.to_path_buf()));
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
+    /// Validate provider/model/style/limit cross-fields (JOE-1608).
+    pub fn validate(&self) -> Result<()> {
+        match self.provider.as_str() {
+            "local" | "openrouter" => {}
+            other => {
+                return Err(UserError::InvalidProvider {
+                    provider: other.into(),
+                }
+                .into());
+            }
+        }
+        let _ = crate::output::OutputFormat::parse(&self.output)?;
+        let _ = crate::cleanup::CleanupStyle::parse(&self.cleanup_style)?;
+        let _ = crate::cleanup::CleanupProviderKind::parse(&self.cleanup_provider)?;
+        let _ = crate::providers::OpenRouterSttMode::parse(&self.openrouter_stt_mode)?;
+
+        if self.tts_max_chars == 0 {
+            return Err(UserError::InvalidConfig {
+                reason: "tts.max_chars must be >= 1".into(),
+            }
+            .into());
+        }
+        if self.tts_timeout_ms == 0 {
+            return Err(UserError::InvalidConfig {
+                reason: "tts.timeout_ms must be >= 1".into(),
+            }
+            .into());
+        }
+        // Soft global ceilings (fail rather than silent clamp).
+        if self.tts_max_chars > 500_000 {
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "tts.max_chars {} exceeds safe ceiling 500000",
+                    self.tts_max_chars
+                ),
+            }
+            .into());
+        }
+        if !self.openrouter_base_url.starts_with("https://")
+            && !self.openrouter_base_url.starts_with("http://localhost")
+            && !self.openrouter_base_url.contains("127.0.0.1")
+        {
+            // Allow http only for localhost test servers.
+            if self.openrouter_base_url.starts_with("http://") {
+                return Err(UserError::InvalidConfig {
+                    reason: format!(
+                        "openrouter base_url must use https (got {})",
+                        self.openrouter_base_url
+                    ),
+                }
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Redacted diagnostic view for `--print-effective-config` (JOE-1608).
+    pub fn effective_diagnostic(&self) -> EffectiveConfigDiagnostic {
+        EffectiveConfigDiagnostic {
+            provider: self.provider.clone(),
+            model: self.model.clone(),
+            language: self.language.clone(),
+            output: self.output.clone(),
+            timestamps: self.timestamps,
+            openrouter_api_key: self.openrouter_api_key.as_ref().map(|_| "***".into()),
+            openrouter_base_url: self.openrouter_base_url.clone(),
+            openrouter_default_model: self.openrouter_default_model.clone(),
+            openrouter_stt_mode: self.openrouter_stt_mode.clone(),
+            openrouter_allow_custom_endpoint: self.openrouter_allow_custom_endpoint,
+            cleanup_style: self.cleanup_style.clone(),
+            cleanup_provider: self.cleanup_provider.clone(),
+            tts_model: self.tts_model.clone(),
+            tts_voice: self.tts_voice.clone(),
+            tts_language: self.tts_language.clone(),
+            tts_max_chars: self.tts_max_chars,
+            tts_timeout_ms: self.tts_timeout_ms,
+            config_path: self.config_path.as_ref().map(|p| p.display().to_string()),
+            cache_dir: self.cache_dir.display().to_string(),
+            sources: ConfigSourceMap::default_attribution(self),
+        }
     }
 
     fn from_parts(file: Option<ConfigFile>, config_path: Option<PathBuf>) -> Self {
@@ -321,6 +511,9 @@ impl Config {
             .clone()
             .unwrap_or_else(|| DEFAULT_OPENROUTER_MODEL.to_string());
 
+        // Prefer platform cache; fall back to temp only when ProjectDirs fails
+        // (documented). Library callers that require a real cache should call
+        // `default_cache_dir()` / `validate()` themselves (JOE-1608).
         let cache_dir =
             Self::default_cache_dir().unwrap_or_else(|_| std::env::temp_dir().join("aurum-cache"));
 
@@ -589,7 +782,13 @@ model = "google/gemini-2.5-flash"
         )
         .unwrap();
 
+        // Env takes precedence for the key; isolate this test (JOE-1608).
+        let prev = std::env::var("OPENROUTER_API_KEY").ok();
+        std::env::remove_var("OPENROUTER_API_KEY");
         let cfg = Config::load_from(&path).unwrap();
+        if let Some(v) = prev {
+            std::env::set_var("OPENROUTER_API_KEY", v);
+        }
         assert_eq!(cfg.provider, "openrouter");
         assert_eq!(cfg.model.as_deref(), Some("small"));
         assert_eq!(cfg.language, "en");
@@ -598,6 +797,17 @@ model = "google/gemini-2.5-flash"
         assert_eq!(cfg.openrouter_default_model, "google/gemini-2.5-flash");
         assert_eq!(cfg.cleanup_style, "raw");
         assert_eq!(cfg.cleanup_provider, "rules");
+        assert!(cfg.validate().is_ok());
+        let diag = cfg.effective_diagnostic();
+        assert_eq!(diag.openrouter_api_key.as_deref(), Some("***"));
+    }
+
+    #[test]
+    fn load_from_required_missing_errors() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("missing.toml");
+        let err = Config::load_from_required(&path).unwrap_err();
+        assert!(err.to_string().contains("not found"));
     }
 
     #[test]

@@ -48,9 +48,11 @@ pub mod audio;
 pub mod bench;
 pub mod cache;
 pub mod cancel;
+pub mod capabilities;
 pub mod cleanup;
 pub mod config;
 pub mod download;
+pub mod dto;
 pub mod error;
 pub mod eval;
 pub mod model;
@@ -67,13 +69,18 @@ pub mod window;
 
 pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
 pub use cancel::CancelFlag;
+pub use capabilities::{
+    preflight_cleanup, preflight_stt, preflight_tts, ProviderCapabilities,
+    CAPABILITY_SCHEMA_VERSION,
+};
 pub use cleanup::{
     apply_cleanup, apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupReport,
     CleanupResult, CleanupStyle, OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy,
     TextCleanup,
 };
-pub use config::Config;
-pub use error::{Result, TranscriptionError};
+pub use config::{Config, EffectiveConfigDiagnostic};
+pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
+pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
 pub use eval::{
     build_report, char_error_rate, score_stt, smoke_corpus, word_error_rate, EvalCorpus,
     EvalReport, SttFixture, SttScore,
@@ -85,6 +92,7 @@ pub use output::{
 };
 pub use partial::{PartialSession, PartialSessionConfig, PartialUpdate};
 pub use pcm::PcmBuffer;
+pub use postprocess::{normalize_result_with_report, NormalizationReport};
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,
     TranscriptionProvider, TranscriptionResult,

@@ -4,6 +4,9 @@ use crate::error::Result;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
+// Deserialize remains for BackendKind / options enums only; SynthesisResult is
+// Serialize-only (JOE-1614).
+
 /// Default sample rate produced by the KittenTTS nano engine.
 pub const DEFAULT_SAMPLE_RATE_HZ: u32 = 24_000;
 
@@ -50,7 +53,10 @@ impl Default for SynthesisOptions {
 }
 
 /// Normalized result returned by every TTS provider.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// **Not** deserializable as a whole: PCM must not be reconstructed from JSON
+/// metadata (JOE-1614). Use [`crate::dto::TtsMetaDto`] for external contracts.
+#[derive(Debug, Clone, Serialize)]
 pub struct SynthesisResult {
     /// Mono PCM samples (signed 16-bit).
     #[serde(skip)]

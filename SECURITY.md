@@ -46,6 +46,13 @@ published release and the default branch.
   publish only after reviewed size/digest checks. Cache inventory:
   `aurum cache status|verify`.
 
+## API contracts & secrets (JOE-1575)
+
+- Config diagnostics and `Debug` never print API keys (redacted as `***`).
+- Prefer environment credentials over plaintext file keys.
+- Capability preflight rejects impossible routes before network/decode work.
+- External JSON DTOs exclude raw PCM and native handles.
+
 ## Performance & streaming memory (JOE-1574)
 
 - PCM ring buffers never allocate beyond configured capacity; invalid floats are

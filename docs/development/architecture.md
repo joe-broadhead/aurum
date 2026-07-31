@@ -56,6 +56,12 @@ STT and TTS share error taxonomy, cache root, cancel flags, and config loading �
 6. **ASR ≠ cleanup ≠ TTS** — separate stages and modules  
 7. **MIT binary for default TTS** — no GPL-linked phonemizer on the default path ([TTS guide](../guide/tts.md))
 
+## Public contracts (JOE-1575)
+
+Validated **config**, **capability preflight**, **versioned JSON DTOs**, and a
+stable **error category** map sit at the library boundary. See
+[compatibility.md](compatibility.md) and [migration-0.0.3.md](migration-0.0.3.md).
+
 ## Performance & progressive STT (JOE-1574)
 
 Hot paths keep a **bounded working set**: ring-buffer PCM, streaming decode, and

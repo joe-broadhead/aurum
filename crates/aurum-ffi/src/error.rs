@@ -84,6 +84,7 @@ impl From<TranscriptionError> for FfiError {
                 | UserError::InvalidOutputFormat { .. }
                 | UserError::InvalidProvider { .. }
                 | UserError::MissingApiKey
+                | UserError::UnsupportedCapability { .. }
                 | UserError::Other { .. } => FfiStatus::InvalidArg,
             },
             TranscriptionError::Environment(e) => match e {

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1575** Public API contracts and provider architecture:
+  - Validated config path (`validate`, `load_from_required`, redacted
+    `effective_diagnostic` with source attribution) (JOE-1608)
+  - `NormalizationReport` + validated segment helpers (JOE-1609)
+  - Language-aware rules cleanup; precompiled regexes; no ambiguous contractions;
+    paragraph preservation (JOE-1610)
+  - `AurumError` alias, stable `ErrorCategory`, retryability, refined exit codes
+    (JOE-1611)
+  - Compatibility / deprecation boundary docs (JOE-1612)
+  - Provider capability contracts + preflight routing (JOE-1613)
+  - Versioned JSON DTOs (`SttResultDto`, `TtsMetaDto`, `ErrorDto`); TTS result
+    no longer deserializable as a full domain object with PCM (JOE-1614)
+
 - **JOE-1574** Performance, streaming, and measurable quality:
   - Fixed-capacity PCM ring buffer with NaN/Inf rejection and f64 RMS (JOE-1601)
   - Streaming FFmpeg s16le→f32 and direct WAV i16→f32 without dual full buffers (JOE-1602)

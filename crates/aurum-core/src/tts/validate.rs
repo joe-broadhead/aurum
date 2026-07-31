@@ -47,11 +47,11 @@ pub fn normalize_tts_language(lang: &str) -> Result<String> {
     }
     let key = trimmed.to_ascii_lowercase().replace('_', "-");
     match key.as_str() {
-        "en" | "en-us" => Ok("en".to_string()),
+        "en" | "en-us" | "en-gb" => Ok("en".to_string()),
         _ => Err(UserError::Other {
             message: format!(
                 "unsupported TTS language '{trimmed}'\n  \
-                 Hint: KittenTTS G2P is English-only in this release; use en or en-US."
+                 Hint: local TTS G2P is English-only in this release; use en, en-US, or en-GB."
             ),
         }
         .into()),
@@ -225,11 +225,13 @@ mod tests {
         assert_eq!(normalize_tts_language("en-US").unwrap(), "en");
         assert_eq!(normalize_tts_language("en_us").unwrap(), "en");
         assert_eq!(normalize_tts_language(" EN-us ").unwrap(), "en");
+        assert_eq!(normalize_tts_language("en-GB").unwrap(), "en");
+        assert_eq!(normalize_tts_language("en_gb").unwrap(), "en");
     }
 
     #[test]
     fn language_rejects_unsupported() {
-        for bad in ["fr", "de", "es-ES", "zh", "en-GB", "ja"] {
+        for bad in ["fr", "de", "es-ES", "zh", "ja"] {
             let err = normalize_tts_language(bad).unwrap_err();
             assert_eq!(err.exit_code(), 2, "{bad}");
         }

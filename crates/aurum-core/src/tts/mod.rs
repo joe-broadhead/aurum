@@ -30,6 +30,8 @@ pub mod conformance;
 #[cfg(feature = "tts")]
 pub mod custom;
 #[cfg(feature = "tts")]
+mod kokoro_vocab;
+#[cfg(feature = "tts")]
 pub mod local;
 #[cfg(feature = "tts")]
 mod npz;
@@ -61,7 +63,8 @@ pub use byom::{
 pub use catalogue::{
     ensure_voice_pack, format_model_list, format_voice_list, list_models, list_voices,
     lookup_model, lookup_voice, resolve_voice_for_model, tts_cache_dir, ModelStatus, VoiceInfo,
-    VoiceStatus, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE, PLACEHOLDER_ADAPTER_MODEL,
+    VoiceStatus, DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE, KOKORO_DEFAULT_VOICE, KOKORO_TTS_MODEL,
+    PLACEHOLDER_ADAPTER_MODEL,
 };
 #[cfg(feature = "tts")]
 pub use conformance::{

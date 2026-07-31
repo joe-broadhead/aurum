@@ -5,12 +5,14 @@
 //! never abandon untracked native work: the permit stays held until the ONNX
 //! job returns (honest soft-deadline semantics).
 
-use super::adapter::{TrustMode, ADAPTER_FAKE_SINE_V1, ADAPTER_KITTEN_ONNX_V1};
+use super::adapter::{
+    TrustMode, ADAPTER_FAKE_SINE_V1, ADAPTER_KITTEN_ONNX_V1, ADAPTER_KOKORO_ONNX_V0,
+};
 use super::catalogue::{
     ensure_voice_pack, lookup_model, onnx_path, resolve_voice_for_model, validate_speaking_rate,
     voices_path,
 };
-use super::chunk::{prepare_tts_chunks, TtsChunk, CHUNK_PAUSE_MS};
+use super::chunk::{prepare_tts_chunks_with, PhonemeCodec, TtsChunk, CHUNK_PAUSE_MS};
 use super::conformance::synthesize_fake_sine_ms;
 use super::npz::load_voices_npz;
 use super::pack::load_pack_dir;
@@ -144,12 +146,14 @@ impl LocalTtsProvider {
         allow_unverified: bool,
     ) -> Result<(Arc<LoadedPack>, super::adapter::ModelPackManifest)> {
         let (root, manifest) = load_pack_dir(pack_dir, allow_unverified)?;
-        if manifest.adapter_id != ADAPTER_KITTEN_ONNX_V1 {
+        if manifest.adapter_id != ADAPTER_KITTEN_ONNX_V1
+            && manifest.adapter_id != ADAPTER_KOKORO_ONNX_V0
+        {
             return Err(UserError::InvalidConfig {
                 reason: format!(
-                    "local pack override synthesis currently supports adapter \
-                     '{ADAPTER_KITTEN_ONNX_V1}' (got '{}'); use `aurum tts inspect` \
-                     / conformance for other adapters",
+                    "local pack override synthesis currently supports adapters \
+                     '{ADAPTER_KITTEN_ONNX_V1}' and '{ADAPTER_KOKORO_ONNX_V0}' \
+                     (got '{}'); use `aurum tts inspect` / conformance for others",
                     manifest.adapter_id
                 ),
             }
@@ -255,7 +259,8 @@ fn synthesize_with_pack(
         .into());
     }
 
-    let chunks = prepare_tts_chunks(text, max_tokens)?;
+    let codec = phoneme_codec_for_adapter(adapter);
+    let chunks = prepare_tts_chunks_with(text, max_tokens, codec)?;
     let chunk_count = chunks.len();
     let effective_speed = rate
         * pack
@@ -323,6 +328,14 @@ fn synthesize_with_pack(
     })
 }
 
+fn phoneme_codec_for_adapter(adapter: &str) -> PhonemeCodec {
+    if adapter == ADAPTER_KOKORO_ONNX_V0 {
+        PhonemeCodec::Kokoro
+    } else {
+        PhonemeCodec::Kitten
+    }
+}
+
 fn synthesize_chunk_f32(
     pack: &LoadedPack,
     voice_mat: &super::npz::VoiceMatrix,
@@ -330,12 +343,12 @@ fn synthesize_chunk_f32(
     effective_speed: f32,
 ) -> Result<Vec<f32>> {
     let seq_len = chunk.ids.len();
-    // KittenTTS indexes the style embedding by phoneme sequence length.
+    // Kitten and Kokoro both index style embeddings by phoneme sequence length.
     let style = voice_mat.style_row(seq_len).to_vec();
     let style_dim = style.len();
     let t_ids = Tensor::<i64>::from_array(([1usize, seq_len], chunk.ids.clone())).map_err(|e| {
         ProviderError::Other {
-            message: format!("input_ids tensor: {e}"),
+            message: format!("tokens/input_ids tensor: {e}"),
         }
     })?;
     let t_style = Tensor::<f32>::from_array(([1usize, style_dim], style)).map_err(|e| {
@@ -353,6 +366,7 @@ fn synthesize_chunk_f32(
         .session
         .lock()
         .map_err(|_| crate::error::TranscriptionError::internal("ORT session mutex poisoned"))?;
+    // Positional order matches both Kitten and Kokoro graphs: tokens, style, speed.
     let outputs = session
         .run(ort::inputs![t_ids, t_style, t_speed])
         .map_err(|e| ProviderError::Other {
@@ -474,18 +488,21 @@ fn synthesize_fake_adapter(
     })
 }
 
-/// Resolve a voice for a local pack: prefer catalogue Kitten voices, else pack manifest.
+/// Resolve a voice for a local pack: prefer matching catalogue model voices, else pack manifest.
 fn resolve_pack_voice(
     manifest: &super::adapter::ModelPackManifest,
     requested: &str,
 ) -> Result<(String, String)> {
     let req = requested.trim();
-    let req = if req.is_empty() {
-        super::catalogue::DEFAULT_TTS_VOICE
+    let default_voice = if manifest.adapter_id == ADAPTER_KOKORO_ONNX_V0 {
+        super::catalogue::KOKORO_DEFAULT_VOICE
     } else {
-        req
+        super::catalogue::DEFAULT_TTS_VOICE
     };
-    // Catalogue-friendly voices (Luna, Bella, …) when pack is Kitten-shaped.
+    let req = if req.is_empty() { default_voice } else { req };
+    if let Ok((_, v)) = resolve_voice_for_model(&manifest.model_id, req) {
+        return Ok((v.id.to_string(), v.internal_key.to_string()));
+    }
     if let Ok((_, v)) = resolve_voice_for_model(super::catalogue::DEFAULT_TTS_MODEL, req) {
         return Ok((v.id.to_string(), v.internal_key.to_string()));
     }
@@ -549,7 +566,9 @@ impl SynthesisProvider for LocalTtsProvider {
                     prepared.text_chars,
                 );
             }
-            if manifest.adapter_id != ADAPTER_KITTEN_ONNX_V1 {
+            if manifest.adapter_id != ADAPTER_KITTEN_ONNX_V1
+                && manifest.adapter_id != ADAPTER_KOKORO_ONNX_V0
+            {
                 return Err(UserError::UnsupportedCapability {
                     provider: "tts".into(),
                     model: manifest.model_id,
@@ -557,8 +576,9 @@ impl SynthesisProvider for LocalTtsProvider {
                         "adapter '{}' is not enabled for local pack synthesis",
                         manifest.adapter_id
                     ),
-                    hint: "use kitten-onnx-v1 or fake-sine-v1 packs; see `aurum tts adapters`"
-                        .into(),
+                    hint:
+                        "use kitten-onnx-v1, kokoro-onnx-v0, or fake-sine-v1 packs; see `aurum tts adapters`"
+                            .into(),
                 }
                 .into());
             }
@@ -570,12 +590,11 @@ impl SynthesisProvider for LocalTtsProvider {
             } else {
                 opts.model.clone()
             };
-            // Resolve voice against the built-in Kitten voice table when possible;
-            // otherwise require a manifest voice id and use internal_key from pack.
             let (voice_canonical, voice_internal) = resolve_pack_voice(&manifest, &opts.voice)?;
             validate_speaking_rate(opts.speaking_rate)?;
             resolve_sample_rate(opts.sample_rate_hz, manifest.sample_rate_hz)?;
             let trust = manifest.trust;
+            let adapter = manifest.adapter_id.clone();
             let pack = self
                 .ensure_loaded_from_pack(&pack_dir, opts.allow_unverified)
                 .await?
@@ -594,7 +613,6 @@ impl SynthesisProvider for LocalTtsProvider {
             let opts_owned = opts.clone();
             let pack_clone = Arc::clone(&pack);
             let op_for_worker = op.clone();
-            let adapter = ADAPTER_KITTEN_ONNX_V1.to_string();
             let join = tokio::task::spawn_blocking(move || {
                 let gov = ResourceGovernor::process_global();
                 let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
@@ -803,5 +821,39 @@ mod tests {
         let p = LocalTtsProvider::new(dir.path().to_path_buf()).with_local_only(true);
         p.clear_sessions();
         p.clear_sessions();
+    }
+
+    /// Real Kokoro synthesis smoke (network-free with pre-seeded cache).
+    ///
+    /// ```text
+    /// AURUM_KOKORO_INTEGRATION=1 AURUM_TTS_CACHE=/path/to/cache \
+    ///   cargo test -p aurum-core --lib kokoro_real_synth -- --ignored
+    /// ```
+    #[tokio::test]
+    #[ignore]
+    async fn kokoro_real_synth_from_cache() {
+        if std::env::var("AURUM_KOKORO_INTEGRATION").ok().as_deref() != Some("1") {
+            return;
+        }
+        let cache = std::env::var("AURUM_TTS_CACHE")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".into()))
+                    .join(".cache/aurum")
+            });
+        let p = LocalTtsProvider::new(cache).with_local_only(true);
+        let opts = SynthesisOptions {
+            model: crate::tts::catalogue::KOKORO_TTS_MODEL.into(),
+            voice: crate::tts::catalogue::KOKORO_DEFAULT_VOICE.into(),
+            ..Default::default()
+        };
+        let r = p
+            .synthesize("Hello from Kokoro.", &opts)
+            .await
+            .expect("kokoro synth");
+        assert_eq!(r.sample_rate_hz, 24_000);
+        assert!(!r.pcm_i16_mono.is_empty());
+        assert_eq!(r.adapter.as_deref(), Some(ADAPTER_KOKORO_ONNX_V0));
+        assert!(r.duration_ms > 0);
     }
 }

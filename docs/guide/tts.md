@@ -43,10 +43,26 @@ TEXT='Custom line.' ./scripts/generate_tts_demos.sh
 
 Do **not** commit the generated WAVs; they are rebuildable artifacts of the pinned model pack.
 
+### Opt-in Kokoro-82M (JOE-1618)
+
+Higher-quality **opt-in** model (not the default). First use downloads ~120 MB of
+pinned int8 ONNX + voices (Apache-2.0). Kitten remains the default for size/latency.
+
+```bash
+aurum tts "Hello from Kokoro" --model kokoro-82m-int8 --voice Heart -O /tmp/k.wav
+aurum tts models   # lists both kitten-nano-int8 and kokoro-82m-int8
+aurum tts voices   # Heart, Nicole, … are model-scoped to kokoro-82m-int8
+```
+
+Adapter id: `kokoro-onnx-v0`. See [ADR-001](../development/adr-001-kokoro-tts-adapter.md).
+
 ### Integration test
 
 ```bash
 cargo test -p aurum-core --test tts_synth -- --ignored --nocapture
+# optional Kokoro smoke with pre-seeded cache:
+AURUM_KOKORO_INTEGRATION=1 AURUM_TTS_CACHE=~/.cache/aurum \
+  cargo test -p aurum-core --lib kokoro_real_synth -- --ignored
 ```
 
 The full synth test is `#[ignore]` by default (may download the voice pack). Empty-text validation always runs in `cargo test`.
@@ -57,8 +73,8 @@ The full synth test is `#[ignore]` by default (may download the voice pack). Emp
 |------|----------|-------|
 | `TEXT` / `-` / `--input-file` | exactly one | UTF-8 |
 | `--provider` | no | only `local` |
-| `--model` | no | default `kitten-nano-int8` |
-| `--voice` | no | default `Luna` |
+| `--model` | no | default `kitten-nano-int8`; opt-in `kokoro-82m-int8` |
+| `--voice` | no | default `Luna` (Kitten); use `Heart` with Kokoro |
 | `--language` | no | default `en` |
 | `-o/--output` | no | only `wav` |
 | `--output-file` / `-O` | **yes** for synth | destination path |
@@ -219,7 +235,7 @@ aurum tts adapters
 |---------|-----------|------|
 | `kitten-onnx-v1` | yes (default) | Built-in KittenTTS catalogue |
 | `fake-sine-v1` | yes (fixture) | Deterministic sine for conformance |
-| `kokoro-onnx-v0` | **no** (scaffold) | See [ADR-001](../development/adr-001-kokoro-tts-adapter.md) |
+| `kokoro-onnx-v0` | **yes** (opt-in) | Catalogue model `kokoro-82m-int8`; see [ADR-001](../development/adr-001-kokoro-tts-adapter.md) |
 
 ### Trust modes
 

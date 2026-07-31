@@ -144,8 +144,10 @@ pub fn load_voices_npz(path: &Path) -> Result<HashMap<String, VoiceMatrix>> {
             }
             .into());
         }
+        // Kitten: [rows, cols]. Kokoro: [rows, 1, style_dim] (length × singleton × style).
         let (nrows, ncols) = match shape.as_slice() {
             [r, c] => (*r, *c),
+            [r, 1, c] | [r, c, 1] => (*r, *c),
             [r] => (*r, 1),
             other => {
                 return Err(ProviderError::ModelLoad {

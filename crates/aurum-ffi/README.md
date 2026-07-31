@@ -42,7 +42,7 @@ cargo build -p aurum-ffi --release --no-default-features
 ```
 
 ```toml
-aurum-ffi = "0.0.2"
+aurum-ffi = "0.0.3"
 ```
 
 See [Native embeds](https://joe-broadhead.github.io/aurum/library/ffi/).

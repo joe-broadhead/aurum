@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3] - 2026-07-31
+
+v0.0.3 is a **correctness and safety hotpatch** over the epic-per-PR batch that
+shipped foundations under `0.0.2`. It closes the Track A audit blockers for
+output durability, model identity, residency, FFI lifetime, FFmpeg supervision,
+BYOM containment, and honest model disposition. Formal 1.0 assurance (external
+review, continuous fuzzing, Sigstore/SLSA, multi-RC freeze) remains post-release
+backlog (JOE-1652–1655).
+
 ### Fixed
 
 - **JOE-1647/1648 fourth-pass residuals** (post PR #35 re-audit):
@@ -35,19 +44,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **JOE-1643 / JOE-1644–1650** v0.0.3 audit remediation:
   - **JOE-1644** Output `NoClobber` uses Unix hard-link publish (race-safe vs
     rename-overwrite); file and parent-dir sync errors propagate; temp files
-    created with owner-only mode at create time
+    created with owner-only mode at create time (unique PID+nanos suffix;
+    exclusive `create_new` is the collision gate)
   - **JOE-1645** Every trusted STT catalogue model has reviewed SHA-256 + exact
     size; unpinned downloads refuse to publish; sidecar never authenticates
   - **JOE-1646** STT/TTS residency: registry is sole long-lived owner; singleflight
     only coalesces in-progress loads; TTS sessions share a process-global budget
   - **JOE-1647** FFI engine close waits for exclusive blocking ops; `aurum_engine_close`
-    status API; destroy waits up to 30s; closed engines reject new work
-  - **JOE-1648** Remote upload FFmpeg encode uses supervised lifecycle (`-nostdin`,
-    deadline, stderr cap, no `-y` clobber)
+    status API; destroy frees only after successful drain; closed engines reject
+    new work; complete fallible out-pointer init
+  - **JOE-1648** Decode and upload FFmpeg use supervised lifecycle (`-nostdin`,
+    concurrent drain, deadline/cancel, kill/reap; upload has no `-y` clobber)
   - **JOE-1649** BYOM pack artifacts reject symlinks/path escapes; manifests use
     secure output transactions
   - **JOE-1650** `large-v3-q5_0` marked experimental; repetition degeneration
-    detector; model guidance docs from dogfood (not formal WER)
+    detector in the normalization **report** API (not ordinary CLI/JSON emit);
+    model guidance from dogfood (not formal WER)
 
 ### Added
 
@@ -259,7 +271,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.2...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.3...HEAD
+[0.0.3]: https://github.com/joe-broadhead/aurum/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/joe-broadhead/aurum/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/joe-broadhead/aurum/compare/v0.0.0...v0.0.1
 [0.0.0]: https://github.com/joe-broadhead/aurum/releases/tag/v0.0.0

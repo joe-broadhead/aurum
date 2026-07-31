@@ -50,7 +50,7 @@ Aurum is an on-device **speech CLI** and **Rust library**:
 
 OpenRouter is an **optional** remote path for ASR or cleanup — never the default. TTS has no cloud path in this release.
 
-> **v0.0.2** released. Binaries on [GitHub Releases](https://github.com/joe-broadhead/aurum/releases/tag/v0.0.2). Includes local TTS + `aurum-ffi`. Library API may change before `0.1.0`.
+> **v0.0.3** (release cut — tag after human approval). Binaries on [GitHub Releases](https://github.com/joe-broadhead/aurum/releases/tag/v0.0.3). Includes local TTS + `aurum-ffi`. Library API may change before `0.1.0`.
 
 ## Highlights
 
@@ -88,7 +88,7 @@ aurum tts "Hello from aurum" -O /tmp/hello.wav
 
 ```toml
 # Depend on the library (pin a commit or tag)
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.2" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.3" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).

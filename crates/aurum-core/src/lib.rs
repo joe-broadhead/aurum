@@ -28,7 +28,7 @@
 //! buf.push(&[0.0f32; 1600])?;
 //! let result = provider
 //!     .transcribe_pcm(
-//!         buf.samples(),
+//!         buf.samples().as_slice(),
 //!         &TranscriptionOptions {
 //!             model: "tiny-q5_1".into(),
 //!             language: "en".into(),
@@ -37,7 +37,7 @@
 //!         },
 //!     )
 //!     .await?;
-//! let _ = AudioInput::from_pcm_slice(buf.samples(), WHISPER_SAMPLE_RATE)?;
+//! let _ = AudioInput::from_pcm_slice(buf.samples().as_slice(), WHISPER_SAMPLE_RATE)?;
 //! println!("{}", result.text);
 //! aurum_core::providers::local::clear_context_cache();
 //! # Ok(())

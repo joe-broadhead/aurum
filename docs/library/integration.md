@@ -67,7 +67,7 @@ async fn main() -> aurum_core::Result<()> {
 
     let result = provider
         .transcribe_pcm(
-            buf.samples(),
+            buf.samples().as_slice(),
             &TranscriptionOptions {
                 model: "tiny-q5_1".into(),
                 language: "en".into(),

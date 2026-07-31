@@ -814,6 +814,103 @@ impl Config {
     }
 }
 
+/// On-disk / pre-merge configuration schema (raw).
+///
+/// Prefer [`ValidatedConfig`] at engine and library boundaries (JOE-1779).
+pub type RawConfig = ConfigFile;
+
+/// Configuration that has passed [`Config::validate`] (JOE-1779 / JOE-1654).
+///
+/// Construct only via [`ValidatedConfig::try_from_config`], [`ValidatedConfig::load`],
+/// or related loaders — never by freely mutating a raw [`Config`] without re-validation.
+#[derive(Clone)]
+pub struct ValidatedConfig {
+    inner: Config,
+}
+
+impl std::fmt::Debug for ValidatedConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ValidatedConfig")
+            .field("inner", &self.inner)
+            .finish()
+    }
+}
+
+impl ValidatedConfig {
+    /// Validate and wrap a raw runtime config.
+    pub fn try_from_config(cfg: Config) -> Result<Self> {
+        cfg.validate()?;
+        Ok(Self { inner: cfg })
+    }
+
+    /// Load defaults/file/env and validate.
+    pub fn load() -> Result<Self> {
+        Self::try_from_config(Config::load()?)
+    }
+
+    /// Load an optional path (missing → defaults) then validate.
+    pub fn load_from(path: &Path) -> Result<Self> {
+        Self::try_from_config(Config::load_from(path)?)
+    }
+
+    /// Load a required path then validate.
+    pub fn load_from_required(path: &Path) -> Result<Self> {
+        Self::try_from_config(Config::load_from_required(path)?)
+    }
+
+    pub fn as_config(&self) -> &Config {
+        &self.inner
+    }
+
+    /// Consume into the underlying config (already validated).
+    pub fn into_config(self) -> Config {
+        self.inner
+    }
+
+    /// Apply CLI overrides then re-validate (fail closed).
+    #[allow(clippy::too_many_arguments)]
+    pub fn apply_cli(
+        mut self,
+        provider: Option<&str>,
+        model: Option<&str>,
+        language: Option<&str>,
+        output: Option<&str>,
+        output_file: Option<&Path>,
+        timestamps: bool,
+        verbose: bool,
+        cleanup: Option<&str>,
+        cleanup_provider: Option<&str>,
+        cleanup_model: Option<&str>,
+    ) -> Result<Self> {
+        self.inner.apply_cli(
+            provider,
+            model,
+            language,
+            output,
+            output_file,
+            timestamps,
+            verbose,
+            cleanup,
+            cleanup_provider,
+            cleanup_model,
+        );
+        Self::try_from_config(self.inner)
+    }
+}
+
+impl AsRef<Config> for ValidatedConfig {
+    fn as_ref(&self) -> &Config {
+        &self.inner
+    }
+}
+
+impl std::ops::Deref for ValidatedConfig {
+    type Target = Config;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
 /// Maximum config file size before TOML parse (JOE-1593).
 pub const MAX_CONFIG_BYTES: u64 = 256 * 1024;
 
@@ -1072,5 +1169,48 @@ trust = "verified"
         assert_eq!(cfg.output, "txt");
         assert_eq!(cfg.cleanup_style, "raw");
         assert_eq!(cfg.cleanup_provider, "rules");
+    }
+
+    #[test]
+    fn validated_config_accepts_defaults() {
+        let dir = tempdir().unwrap();
+        let cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        let v = ValidatedConfig::try_from_config(cfg).unwrap();
+        assert_eq!(v.provider, "local");
+        assert_eq!(v.as_config().language, "auto");
+    }
+
+    #[test]
+    fn validated_config_rejects_bad_provider() {
+        let dir = tempdir().unwrap();
+        let mut cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        cfg.provider = "not-a-provider".into();
+        let err = ValidatedConfig::try_from_config(cfg).unwrap_err();
+        assert!(
+            err.to_string().contains("provider") || err.to_string().contains("Invalid"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn validated_apply_cli_revalidates() {
+        let dir = tempdir().unwrap();
+        let cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        let v = ValidatedConfig::try_from_config(cfg).unwrap();
+        let err = v
+            .apply_cli(
+                Some("bogus"),
+                None,
+                None,
+                None,
+                None,
+                false,
+                false,
+                None,
+                None,
+                None,
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("provider") || err.to_string().contains("Invalid"));
     }
 }

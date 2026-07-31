@@ -10,7 +10,7 @@
 //!
 //! The API may change without notice until a deliberate major version.
 //!
-//! ## STT example
+//! ## STT example (provider path)
 //!
 //! ```rust,no_run
 //! use aurum_core::audio::{AudioInput, WHISPER_SAMPLE_RATE};
@@ -43,6 +43,20 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! ## Engine path (preferred for library hosts)
+//!
+//! ```rust,no_run
+//! use aurum_core::AurumEngine;
+//!
+//! # fn demo() -> aurum_core::error::Result<()> {
+//! let engine = AurumEngine::load()?;
+//! let _ = engine.doctor();
+//! let _ = engine.support_bundle(None);
+//! engine.shutdown();
+//! # Ok(())
+//! # }
+//! ```
 
 pub mod audio;
 pub mod batch;
@@ -55,6 +69,7 @@ pub mod config;
 pub mod doctor;
 pub mod download;
 pub mod dto;
+pub mod engine;
 pub mod error;
 pub mod eval;
 pub mod model;
@@ -67,6 +82,7 @@ pub mod profile;
 pub mod providers;
 pub mod remote;
 pub mod runtime;
+pub mod secret;
 pub mod support;
 #[cfg(feature = "tts")]
 pub mod tts;
@@ -88,9 +104,10 @@ pub use cleanup::{
     CleanupResult, CleanupStyle, OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy,
     TextCleanup,
 };
-pub use config::{Config, EffectiveConfigDiagnostic};
+pub use config::{Config, EffectiveConfigDiagnostic, RawConfig, ValidatedConfig};
 pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_SCHEMA_VERSION};
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
+pub use engine::AurumEngine;
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
 pub use eval::{
     build_report, char_error_rate, repetition_ratio, score_stt, silence_false_positive,
@@ -119,6 +136,7 @@ pub use remote::{HardenedHttpClient, RemotePolicy};
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,
 };
+pub use secret::SecretString;
 pub use support::{
     build_support_bundle, default_bundle_path, SupportBundle, SUPPORT_BUNDLE_VERSION,
 };

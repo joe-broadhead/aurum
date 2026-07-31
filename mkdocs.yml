@@ -112,6 +112,7 @@ nav:
   - Library:
       - Overview: library/overview.md
       - Integration: library/integration.md
+      - AurumEngine: library/engine.md
       - Native embeds (FFI): library/ffi.md
       - Partials & cancel: library/partials.md
   - Operations:

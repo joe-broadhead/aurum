@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1654 / JOE-1779 / JOE-1782:** `ValidatedConfig`, `SecretString`, and
+  owned `AurumEngine` (engine-local governor + metrics; process-global model
+  cache residual documented). CLI `doctor` / `support-bundle` use the engine.
+- **JOE-1781:** `Segment::try_new` / `validate` reject NaN/Inf/inverted timings.
+- **JOE-1780:** compatibility classification and `docs/library/engine.md`.
+
 ## [0.0.5] - 2026-07-31
 
 v0.0.5 is the **evidence residual** release after product-proof v0.0.4: a public

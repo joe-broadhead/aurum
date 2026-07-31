@@ -14,7 +14,7 @@ aurum-stt (CLI)              aurum-ffi (C / embedders)
   providers/    local whisper.cpp · openrouter
   postprocess/  ASR markers, clamp, NaN guard
   cleanup/      rules | openrouter LLM
-  tts/          local ONNX KittenTTS · catalogue · wav
+  tts/          adapters · packs · catalogue · KittenTTS · BYOM · wav
   output/       txt · srt · json (STT)
   config/
   error/        user | environment | provider
@@ -69,6 +69,16 @@ streaming output writers. Hosts drive progressive text via **`PartialSession`**
 (stable/unstable revisions, supersession cancel) without Aurum owning the mic.
 Reproducible smoke benches and a versioned WER/CER eval corpus live under
 `aurum_core::bench` / `aurum_core::eval` and `evals/`.
+
+## TTS model platform (JOE-1576)
+
+TTS engines are **adapters**, not bare ONNX paths. Packs carry a versioned
+manifest (`aurum-tts-manifest.json`) with trust modes (`builtin` / `verified` /
+`local_unverified`). Kitten remains the default shipped engine; `fake-sine-v1`
+proves the contract is not Kitten-specific; Kokoro is scaffold-only until
+[ADR-001](adr-001-kokoro-tts-adapter.md) evidence lands (JOE-1617/1618). Custom
+catalogue entries and `aurum tts inspect|verify|add` fail closed on unknown
+adapters, digest mismatch, and reserved ids.
 
 ## Process model cache & runtime (JOE-1573)
 

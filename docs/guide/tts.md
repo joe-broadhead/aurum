@@ -202,3 +202,70 @@ Library hosts that need deterministic teardown should drop the `LocalTtsProvider
 - English default voice only (additional languages out of scope).
 - WAV only (no ogg/mp3/ffmpeg).
 - No remote TTS, streaming, mic playback, voice cloning, or FFI surface for TTS.
+
+## Model platform & safe BYOM (JOE-1576)
+
+Aurum does **not** support “load any ONNX file.” Every pack selects a **known
+adapter** that defines artifacts, tensors, voices, languages, limits, and output
+policy.
+
+### Adapters
+
+```bash
+aurum tts adapters
+```
+
+| Adapter | Synthesis | Role |
+|---------|-----------|------|
+| `kitten-onnx-v1` | yes (default) | Built-in KittenTTS catalogue |
+| `fake-sine-v1` | yes (fixture) | Deterministic sine for conformance |
+| `kokoro-onnx-v0` | **no** (scaffold) | See [ADR-001](../development/adr-001-kokoro-tts-adapter.md) |
+
+### Trust modes
+
+| Mode | Meaning |
+|------|---------|
+| `builtin` | Reviewed catalogue pins only |
+| `verified` | Caller-supplied digests/sizes; all files must match |
+| `local_unverified` | Explicit opt-in (`--allow-unverified`); marked unsupported |
+
+### Pack layout
+
+A model pack is a **directory** containing `aurum-tts-manifest.json` plus the
+adapter-required artifacts (not a bare `.onnx` path):
+
+```bash
+aurum tts inspect /path/to/pack
+aurum tts verify /path/to/pack
+aurum tts add /path/to/pack --adapter fake-sine-v1 --model-id my-tone --trust verified
+# dry-run by default; pass --write-manifest to materialize the JSON
+```
+
+### Local pack override
+
+```bash
+aurum tts "Hello" -O /tmp/a.wav --pack-dir /path/to/pack
+# or config: [tts] pack_dir = "..." / allow_unverified = true
+```
+
+Local packs use a separate cache identity from built-ins and never silently
+override catalogue model IDs.
+
+### Custom catalogue
+
+```toml
+[[tts.custom_models]]
+id = "my-tone"
+adapter = "fake-sine-v1"
+pack_dir = "/path/to/pack"
+trust = "verified"
+license = "CC0"
+```
+
+Custom IDs cannot collide with shipped built-ins. Custom models are never the
+default unless you set `[tts].model` yourself.
+
+### Provenance in honesty JSON
+
+`--emit-json` may include `adapter`, `trust`, and `provenance`
+(`builtin` | `local_pack` | `custom`).

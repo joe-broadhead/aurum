@@ -52,6 +52,8 @@ async fn synth_fixed_phrase_to_wav() {
         timeout_ms: 180_000,
         cancel: None,
         local_only,
+        pack_dir: None,
+        allow_unverified: false,
     };
 
     let result = provider
@@ -120,6 +122,8 @@ async fn synth_long_text_is_chunked_into_one_result() {
         timeout_ms: 300_000,
         cancel: None,
         local_only,
+        pack_dir: None,
+        allow_unverified: false,
     };
 
     let result = provider.synthesize(text, &opts).await.expect("long synth");

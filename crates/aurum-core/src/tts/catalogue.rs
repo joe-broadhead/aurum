@@ -457,23 +457,31 @@ pub fn format_model_list(cache_dir: &Path) -> String {
     out.push_str(&tts_cache_dir(cache_dir).display().to_string());
     out.push_str(")\n\n");
     out.push_str(&format!(
-        "{:<22} {:>10}  {:<8}  {}\n",
-        "NAME", "SIZE", "STATUS", "NOTES"
+        "{:<22} {:>10}  {:<8}  {:<16}  {:<8}  {}\n",
+        "NAME", "SIZE", "STATUS", "ADAPTER", "TRUST", "NOTES"
     ));
     out.push_str(&format!(
-        "{:<22} {:>10}  {:<8}  {}\n",
-        "----", "----", "------", "-----"
+        "{:<22} {:>10}  {:<8}  {:<16}  {:<8}  {}\n",
+        "----", "----", "------", "-------", "-----", "-----"
     ));
     for row in rows {
         let size = format_bytes(row.info.onnx.approx_bytes + row.info.voices.approx_bytes);
         let status = if row.cached { "cached" } else { "—" };
         out.push_str(&format!(
-            "{:<22} {:>10}  {:<8}  {} [{}]\n",
-            row.info.id, size, status, row.info.notes, row.info.license
+            "{:<22} {:>10}  {:<8}  {:<16}  {:<8}  {} [{}] provenance=builtin\n",
+            row.info.id,
+            size,
+            status,
+            row.info.adapter,
+            "builtin",
+            row.info.notes,
+            row.info.license
         ));
     }
     out.push_str(&format!(
-        "\nDefault model: `{DEFAULT_TTS_MODEL}`. Engine: ONNX Runtime + KittenTTS.\n"
+        "\nDefault model: `{DEFAULT_TTS_MODEL}` (trust=builtin). Engine: ONNX Runtime + KittenTTS.\n\
+         Custom models use [[tts.custom_models]] and never shadow built-ins (see `aurum tts adapters`).\n\
+         Bare .onnx paths are not supported — use a pack + manifest + known adapter.\n"
     ));
     out
 }

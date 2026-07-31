@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1576** TTS model platform and safe BYOM:
+  - Versioned adapter contract + `aurum-tts-manifest.json` pack schema
+    (`kitten-onnx-v1`, `fake-sine-v1` conformance fixture, `kokoro-onnx-v0`
+    scaffold) — no bare ONNX loading (JOE-1615)
+  - Trust modes: `builtin` | `verified` | `local_unverified` with digest/size
+    verification and isolated local-pack cache identity (JOE-1619)
+  - Adapter/model-pack conformance suite (fast fixtures every PR) (JOE-1616)
+  - Kokoro feasibility ADR + scaffold adapter (not product-shipped) (JOE-1617)
+  - Validated `[[tts.custom_models]]` catalogue entries (JOE-1620)
+  - CLI: `aurum tts adapters|inspect|verify|add` and synth `--pack-dir` /
+    `--allow-unverified` (JOE-1621)
+  - Honesty JSON / `TtsMetaDto` optional `adapter`, `trust`, `provenance`
+
 - **JOE-1575** Public API contracts and provider architecture:
   - Validated config path (`validate`, `load_from_required`, redacted
     `effective_diagnostic` with source attribution) (JOE-1608)

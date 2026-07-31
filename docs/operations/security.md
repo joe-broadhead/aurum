@@ -27,3 +27,12 @@ See also root [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/S
 Use GitHub Security Advisories.
 
 TTS downloads voice packs only when missing (pinned SHA-256). Local synthesis does not use OpenRouter.
+
+### TTS BYOM (JOE-1576)
+
+- Prefer built-in catalogue or `trust=verified` packs with exact digests.
+- Never pass a bare `.onnx` file as a “model path.”
+- `local_unverified` is explicit opt-in only; treat it as running untrusted code
+  adjacent to the host process.
+- See root [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md)
+  and [TTS guide](../guide/tts.md).

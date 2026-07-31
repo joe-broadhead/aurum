@@ -123,6 +123,30 @@ pub struct TtsSection {
     pub max_chars: usize,
     #[serde(default = "default_tts_timeout_ms")]
     pub timeout_ms: u64,
+    /// Optional default local model-pack directory (JOE-1619). CLI `--pack-dir`
+    /// overrides this. Never shadows built-in catalogue cache identity.
+    #[serde(default)]
+    pub pack_dir: Option<String>,
+    /// Allow `local_unverified` packs when `pack_dir` / CLI pack is used.
+    #[serde(default)]
+    pub allow_unverified: bool,
+    /// Custom catalogue entries for supported adapters (JOE-1620).
+    #[serde(default)]
+    pub custom_models: Vec<CustomTtsModelConfig>,
+}
+
+/// Config file form of `[[tts.custom_models]]` (JOE-1620).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomTtsModelConfig {
+    pub id: String,
+    pub adapter: String,
+    #[serde(default)]
+    pub pack_dir: Option<String>,
+    pub trust: String,
+    #[serde(default)]
+    pub license: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
 }
 
 impl Default for TtsSection {
@@ -134,6 +158,9 @@ impl Default for TtsSection {
             language: default_tts_language(),
             max_chars: default_tts_max_chars(),
             timeout_ms: default_tts_timeout_ms(),
+            pack_dir: None,
+            allow_unverified: false,
+            custom_models: Vec::new(),
         }
     }
 }
@@ -220,6 +247,11 @@ pub struct Config {
     pub tts_language: String,
     pub tts_max_chars: usize,
     pub tts_timeout_ms: u64,
+    /// Optional default pack directory for local override (JOE-1619).
+    pub tts_pack_dir: Option<PathBuf>,
+    pub tts_allow_unverified: bool,
+    /// Validated custom TTS catalogue entries (empty when packs not present yet).
+    pub tts_custom_models: Vec<CustomTtsModelConfig>,
     pub config_path: Option<PathBuf>,
     pub cache_dir: PathBuf,
 }
@@ -258,6 +290,9 @@ impl std::fmt::Debug for Config {
             .field("tts_language", &self.tts_language)
             .field("tts_max_chars", &self.tts_max_chars)
             .field("tts_timeout_ms", &self.tts_timeout_ms)
+            .field("tts_pack_dir", &self.tts_pack_dir)
+            .field("tts_allow_unverified", &self.tts_allow_unverified)
+            .field("tts_custom_models", &self.tts_custom_models)
             .field("config_path", &self.config_path)
             .field("cache_dir", &self.cache_dir)
             .finish()
@@ -347,6 +382,9 @@ pub struct EffectiveConfigDiagnostic {
     pub tts_language: String,
     pub tts_max_chars: usize,
     pub tts_timeout_ms: u64,
+    pub tts_pack_dir: Option<String>,
+    pub tts_allow_unverified: bool,
+    pub tts_custom_model_ids: Vec<String>,
     pub config_path: Option<String>,
     pub cache_dir: String,
     pub sources: ConfigSourceMap,
@@ -370,26 +408,34 @@ impl Config {
     }
 
     /// Load config file from the default location (if present) and merge with env vars.
+    ///
+    /// Always validates `[[tts.custom_models]]` so reserved/builtin IDs cannot
+    /// silently shadow the catalogue (JOE-1576/1620).
     pub fn load() -> Result<Self> {
         let path = Self::default_config_path();
         let file = match &path {
             Some(p) if p.exists() => Some(load_config_file(p)?),
             _ => None,
         };
-        Ok(Self::from_parts(file, path))
+        let cfg = Self::from_parts(file, path);
+        cfg.validate_tts_custom_models()?;
+        Ok(cfg)
     }
 
     /// Load from an explicit config file path (used in tests / CLI `--config`).
     ///
     /// When the path does not exist, returns defaults (historical behavior).
     /// Prefer [`Self::load_from_required`] when a missing file must be an error.
+    /// Validates custom TTS catalogue entries when present.
     pub fn load_from(path: &Path) -> Result<Self> {
         let file = if path.exists() {
             Some(load_config_file(path)?)
         } else {
             None
         };
-        Ok(Self::from_parts(file, Some(path.to_path_buf())))
+        let cfg = Self::from_parts(file, Some(path.to_path_buf()));
+        cfg.validate_tts_custom_models()?;
+        Ok(cfg)
     }
 
     /// Load from an explicit path; **error** if the file is missing (JOE-1608).
@@ -462,6 +508,91 @@ impl Config {
                 .into());
             }
         }
+
+        // Custom TTS catalogue validation (JOE-1620). Entries that reference
+        // missing pack dirs fail closed only when the packs are expected to
+        // exist — we always validate schema uniqueness / reserved ids here.
+        self.validate_tts_custom_models()?;
+        Ok(())
+    }
+
+    /// Validate `[[tts.custom_models]]` uniqueness and reserved namespaces.
+    /// Full pack verification runs when `pack_dir` paths exist on disk.
+    pub fn validate_tts_custom_models(&self) -> Result<()> {
+        #[cfg(feature = "tts")]
+        {
+            use crate::tts::{validate_custom_models, CustomTtsModelEntry, MAX_CUSTOM_MODELS};
+            if self.tts_custom_models.len() > MAX_CUSTOM_MODELS {
+                return Err(UserError::InvalidConfig {
+                    reason: format!(
+                        "too many [[tts.custom_models]] entries ({} > {MAX_CUSTOM_MODELS})",
+                        self.tts_custom_models.len()
+                    ),
+                }
+                .into());
+            }
+            let mut ids = std::collections::HashSet::new();
+            let mut present = Vec::new();
+            for e in &self.tts_custom_models {
+                let id = e.id.trim();
+                if id.is_empty() {
+                    return Err(UserError::InvalidConfig {
+                        reason: "custom TTS model id must be non-empty".into(),
+                    }
+                    .into());
+                }
+                if !ids.insert(id.to_string()) {
+                    return Err(UserError::InvalidConfig {
+                        reason: format!("duplicate custom TTS model id '{id}'"),
+                    }
+                    .into());
+                }
+                if id == crate::tts::DEFAULT_TTS_MODEL
+                    || crate::tts::lookup_model(id)
+                        .map(|m| m.shipped)
+                        .unwrap_or(false)
+                {
+                    return Err(UserError::InvalidConfig {
+                        reason: format!(
+                            "custom model id '{id}' collides with built-in catalogue entry"
+                        ),
+                    }
+                    .into());
+                }
+                let _ = crate::tts::lookup_adapter(&e.adapter)?;
+                let trust = crate::tts::TrustMode::parse(&e.trust)?;
+                if matches!(trust, crate::tts::TrustMode::Builtin) {
+                    return Err(UserError::InvalidConfig {
+                        reason: "custom models cannot use trust=builtin".into(),
+                    }
+                    .into());
+                }
+                if let Some(dir) = e.pack_dir.as_ref().map(PathBuf::from) {
+                    if dir.exists() {
+                        present.push(CustomTtsModelEntry {
+                            id: e.id.clone(),
+                            adapter: e.adapter.clone(),
+                            pack_dir: e.pack_dir.clone(),
+                            trust: e.trust.clone(),
+                            license: e.license.clone(),
+                            notes: e.notes.clone(),
+                        });
+                    }
+                } else {
+                    return Err(UserError::InvalidConfig {
+                        reason: format!(
+                            "custom model '{id}' requires pack_dir (remote custom packs \
+                             are not enabled in v0.0.3)"
+                        ),
+                    }
+                    .into());
+                }
+            }
+            // Verify on-disk packs fail closed.
+            if !present.is_empty() {
+                let _ = validate_custom_models(&present)?;
+            }
+        }
         Ok(())
     }
 
@@ -485,6 +616,13 @@ impl Config {
             tts_language: self.tts_language.clone(),
             tts_max_chars: self.tts_max_chars,
             tts_timeout_ms: self.tts_timeout_ms,
+            tts_pack_dir: self.tts_pack_dir.as_ref().map(|p| p.display().to_string()),
+            tts_allow_unverified: self.tts_allow_unverified,
+            tts_custom_model_ids: self
+                .tts_custom_models
+                .iter()
+                .map(|m| m.id.clone())
+                .collect(),
             config_path: self.config_path.as_ref().map(|p| p.display().to_string()),
             cache_dir: self.cache_dir.display().to_string(),
             sources: ConfigSourceMap::default_attribution(self),
@@ -562,6 +700,9 @@ impl Config {
             } else {
                 file.tts.timeout_ms
             },
+            tts_pack_dir: file.tts.pack_dir.map(PathBuf::from),
+            tts_allow_unverified: file.tts.allow_unverified,
+            tts_custom_models: file.tts.custom_models,
             config_path,
             cache_dir,
         }
@@ -881,6 +1022,43 @@ provider = "rules"
         assert_eq!(
             cfg.cleanup_openrouter_model.as_deref(),
             Some("openai/gpt-audio-mini")
+        );
+    }
+
+    #[test]
+    fn custom_tts_model_cannot_shadow_builtin_on_load() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let default_id = {
+            #[cfg(feature = "tts")]
+            {
+                crate::tts::DEFAULT_TTS_MODEL
+            }
+            #[cfg(not(feature = "tts"))]
+            {
+                "kitten-nano-int8"
+            }
+        };
+        fs::write(
+            &path,
+            format!(
+                r#"
+[tts]
+model = "{default_id}"
+
+[[tts.custom_models]]
+id = "{default_id}"
+adapter = "fake-sine-v1"
+pack_dir = "/tmp/does-not-matter"
+trust = "verified"
+"#
+            ),
+        )
+        .unwrap();
+        let err = Config::load_from(&path).unwrap_err();
+        assert!(
+            err.to_string().contains("collides") || err.to_string().contains("reserved"),
+            "got: {err}"
         );
     }
 

@@ -5,12 +5,15 @@
 //! never abandon untracked native work: the permit stays held until the ONNX
 //! job returns (honest soft-deadline semantics).
 
+use super::adapter::{TrustMode, ADAPTER_FAKE_SINE_V1, ADAPTER_KITTEN_ONNX_V1};
 use super::catalogue::{
     ensure_voice_pack, lookup_model, onnx_path, resolve_voice_for_model, validate_speaking_rate,
     voices_path,
 };
 use super::chunk::{prepare_tts_chunks, TtsChunk, CHUNK_PAUSE_MS};
+use super::conformance::synthesize_fake_sine_ms;
 use super::npz::load_voices_npz;
+use super::pack::load_pack_dir;
 use super::pcm_post::{
     duration_ms_from_pcm, trim_trailing_silence, validate_raw_pcm, TailTrimPolicy, PEAK_LIMIT,
 };
@@ -132,6 +135,83 @@ impl LocalTtsProvider {
 
         Ok(loaded)
     }
+
+    /// Load a verified (or explicitly unverified) local model pack for a supported
+    /// adapter (JOE-1619). Cache key is isolated from built-in catalogue identities.
+    async fn ensure_loaded_from_pack(
+        &self,
+        pack_dir: &Path,
+        allow_unverified: bool,
+    ) -> Result<(Arc<LoadedPack>, super::adapter::ModelPackManifest)> {
+        let (root, manifest) = load_pack_dir(pack_dir, allow_unverified)?;
+        if manifest.adapter_id != ADAPTER_KITTEN_ONNX_V1 {
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "local pack override synthesis currently supports adapter \
+                     '{ADAPTER_KITTEN_ONNX_V1}' (got '{}'); use `aurum tts inspect` \
+                     / conformance for other adapters",
+                    manifest.adapter_id
+                ),
+            }
+            .into());
+        }
+        let onnx_name = manifest
+            .artifact("onnx")
+            .map(|a| a.filename.as_str())
+            .ok_or_else(|| UserError::InvalidConfig {
+                reason: "pack missing onnx artifact".into(),
+            })?;
+        let voices_name = manifest
+            .artifact("voices")
+            .map(|a| a.filename.as_str())
+            .ok_or_else(|| UserError::InvalidConfig {
+                reason: "pack missing voices artifact".into(),
+            })?;
+        let onnx = root.join(onnx_name);
+        let voices_file = root.join(voices_name);
+        let sample_rate = manifest.sample_rate_hz;
+        let catalogue_max = manifest.max_phoneme_tokens;
+        let model_id = manifest.model_id.clone();
+        // Isolate local packs from built-in cache keys.
+        let key = LoadKey::tts(
+            format!("local-pack:{}", manifest.model_id),
+            root.display().to_string(),
+        );
+        if let Some(ready) = self.sessions.get_ready(&key) {
+            return Ok((ready, manifest));
+        }
+        let key_for_load = key.clone();
+        let sessions = Arc::clone(&self.sessions);
+        let speed_priors = load_speed_priors_from_path(
+            &root.join(
+                manifest
+                    .artifact("config")
+                    .map(|a| a.filename.as_str())
+                    .unwrap_or("config.json"),
+            ),
+        );
+
+        let loaded = tokio::task::spawn_blocking(move || {
+            let gov = ResourceGovernor::process_global();
+            sessions.get_or_load(key_for_load, || {
+                let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
+                load_pack(
+                    &onnx,
+                    &voices_file,
+                    sample_rate,
+                    speed_priors,
+                    catalogue_max,
+                    &model_id,
+                )
+            })
+        })
+        .await
+        .map_err(|e| {
+            crate::error::TranscriptionError::internal(format!("TTS pack load join: {e}"))
+        })??;
+
+        Ok((loaded, manifest))
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -144,6 +224,9 @@ fn synthesize_with_pack(
     model_canonical: &str,
     text_chars: usize,
     op: &OpContext,
+    adapter: &str,
+    trust: TrustMode,
+    provenance: &str,
 ) -> Result<SynthesisResult> {
     op.check()?;
 
@@ -234,6 +317,9 @@ fn synthesize_with_pack(
         text_truncated: false,
         chunk_count,
         synthesized_chars: text_chars,
+        adapter: Some(adapter.into()),
+        trust: Some(trust.as_str().into()),
+        provenance: Some(provenance.into()),
     })
 }
 
@@ -324,8 +410,11 @@ fn load_speed_priors(
     cache_dir: &Path,
     info: &super::catalogue::TtsModelInfo,
 ) -> HashMap<String, f32> {
-    let path = super::catalogue::config_path(cache_dir, info);
-    let Ok(bytes) = std::fs::read(&path) else {
+    load_speed_priors_from_path(&super::catalogue::config_path(cache_dir, info))
+}
+
+fn load_speed_priors_from_path(path: &Path) -> HashMap<String, f32> {
+    let Ok(bytes) = std::fs::read(path) else {
         return HashMap::new();
     };
     let Ok(v) = serde_json::from_slice::<serde_json::Value>(&bytes) else {
@@ -342,6 +431,81 @@ fn load_speed_priors(
     out
 }
 
+/// Synthesize via the fake-sine adapter (conformance / custom packs; no ONNX).
+fn synthesize_fake_adapter(
+    opts: &SynthesisOptions,
+    model_id: &str,
+    trust: TrustMode,
+    provenance: &str,
+    text_chars: usize,
+) -> Result<SynthesisResult> {
+    // Map text length to a short bounded duration (deterministic, no network).
+    let duration_ms = ((text_chars as u64).saturating_mul(40)).clamp(50, 2_000);
+    let pcm_f32 = synthesize_fake_sine_ms(duration_ms).map_err(|e| ProviderError::Other {
+        message: format!("fake-sine synth: {e}"),
+    })?;
+    validate_raw_pcm(&pcm_f32, 24_000)?;
+    let pcm = peak_guard_f32_to_i16(&pcm_f32, PEAK_LIMIT);
+    let sample_rate = resolve_sample_rate(opts.sample_rate_hz, 24_000)?;
+    let language = normalize_tts_language(&opts.language).unwrap_or_else(|_| "en".into());
+    let voice = if opts.voice.trim().is_empty() {
+        "Tone".into()
+    } else {
+        opts.voice.clone()
+    };
+    let out_duration_ms = duration_ms_from_pcm(pcm.len(), sample_rate);
+    Ok(SynthesisResult {
+        pcm_i16_mono: pcm,
+        sample_rate_hz: sample_rate,
+        channels: 1,
+        backend_kind: BackendKind::Local,
+        provider: "local".into(),
+        model: model_id.into(),
+        voice,
+        language,
+        duration_ms: out_duration_ms,
+        text_chars,
+        text_truncated: false,
+        chunk_count: 1,
+        synthesized_chars: text_chars,
+        adapter: Some(ADAPTER_FAKE_SINE_V1.into()),
+        trust: Some(trust.as_str().into()),
+        provenance: Some(provenance.into()),
+    })
+}
+
+/// Resolve a voice for a local pack: prefer catalogue Kitten voices, else pack manifest.
+fn resolve_pack_voice(
+    manifest: &super::adapter::ModelPackManifest,
+    requested: &str,
+) -> Result<(String, String)> {
+    let req = requested.trim();
+    let req = if req.is_empty() {
+        super::catalogue::DEFAULT_TTS_VOICE
+    } else {
+        req
+    };
+    // Catalogue-friendly voices (Luna, Bella, …) when pack is Kitten-shaped.
+    if let Ok((_, v)) = resolve_voice_for_model(super::catalogue::DEFAULT_TTS_MODEL, req) {
+        return Ok((v.id.to_string(), v.internal_key.to_string()));
+    }
+    if let Some(v) = manifest
+        .voices
+        .iter()
+        .find(|v| v.id.eq_ignore_ascii_case(req) || v.internal_key.eq_ignore_ascii_case(req))
+    {
+        return Ok((v.id.clone(), v.internal_key.clone()));
+    }
+    let available: Vec<_> = manifest.voices.iter().map(|v| v.id.as_str()).collect();
+    Err(UserError::Other {
+        message: format!(
+            "voice '{req}' not found in pack '{}'; available: {available:?}",
+            manifest.model_id
+        ),
+    }
+    .into())
+}
+
 #[async_trait]
 impl SynthesisProvider for LocalTtsProvider {
     fn name(&self) -> &'static str {
@@ -352,6 +516,110 @@ impl SynthesisProvider for LocalTtsProvider {
         let prepared = prepare_text(text, self.max_chars)?;
         let mut opts = opts.clone();
         opts.language = normalize_tts_language(&opts.language)?;
+
+        // Local pack override path (JOE-1619): never hits network, never shadows
+        // built-in cache identity. Bare ONNX is rejected by load_pack_dir.
+        if let Some(pack_dir) = opts.pack_dir.clone() {
+            let (root, manifest) = load_pack_dir(&pack_dir, opts.allow_unverified)?;
+            let _ = root;
+            if manifest.adapter_id == ADAPTER_FAKE_SINE_V1 {
+                let trust = manifest.trust;
+                // Prefer pack identity over the built-in default when the caller
+                // did not name a distinct custom model id.
+                let model_id = if opts.model.trim().is_empty()
+                    || opts.model == super::catalogue::DEFAULT_TTS_MODEL
+                {
+                    manifest.model_id.clone()
+                } else {
+                    opts.model.clone()
+                };
+                if opts.voice.trim().is_empty() || opts.voice == super::catalogue::DEFAULT_TTS_VOICE
+                {
+                    if let Some(v) = manifest.voices.first() {
+                        opts.voice = v.id.clone();
+                    } else {
+                        opts.voice = "Tone".into();
+                    }
+                }
+                return synthesize_fake_adapter(
+                    &opts,
+                    &model_id,
+                    trust,
+                    "local_pack",
+                    prepared.text_chars,
+                );
+            }
+            if manifest.adapter_id != ADAPTER_KITTEN_ONNX_V1 {
+                return Err(UserError::UnsupportedCapability {
+                    provider: "tts".into(),
+                    model: manifest.model_id,
+                    reason: format!(
+                        "adapter '{}' is not enabled for local pack synthesis",
+                        manifest.adapter_id
+                    ),
+                    hint: "use kitten-onnx-v1 or fake-sine-v1 packs; see `aurum tts adapters`"
+                        .into(),
+                }
+                .into());
+            }
+            // Prefer pack-declared model id for honesty when caller left default.
+            let model_canonical = if opts.model == super::catalogue::DEFAULT_TTS_MODEL
+                || opts.model.trim().is_empty()
+            {
+                manifest.model_id.clone()
+            } else {
+                opts.model.clone()
+            };
+            // Resolve voice against the built-in Kitten voice table when possible;
+            // otherwise require a manifest voice id and use internal_key from pack.
+            let (voice_canonical, voice_internal) = resolve_pack_voice(&manifest, &opts.voice)?;
+            validate_speaking_rate(opts.speaking_rate)?;
+            resolve_sample_rate(opts.sample_rate_hz, manifest.sample_rate_hz)?;
+            let trust = manifest.trust;
+            let pack = self
+                .ensure_loaded_from_pack(&pack_dir, opts.allow_unverified)
+                .await?
+                .0;
+
+            let timeout = Duration::from_millis(if opts.timeout_ms == 0 {
+                super::validate::DEFAULT_TIMEOUT_MS
+            } else {
+                opts.timeout_ms
+            });
+            let op = OpContext::from_optional_cancel(opts.cancel.clone())
+                .with_deadline_from_now(timeout);
+            op.check()?;
+            let text_owned = prepared.text.clone();
+            let text_chars = prepared.text_chars;
+            let opts_owned = opts.clone();
+            let pack_clone = Arc::clone(&pack);
+            let op_for_worker = op.clone();
+            let adapter = ADAPTER_KITTEN_ONNX_V1.to_string();
+            let join = tokio::task::spawn_blocking(move || {
+                let gov = ResourceGovernor::process_global();
+                let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
+                op_for_worker.check()?;
+                synthesize_with_pack(
+                    pack_clone.as_ref(),
+                    &text_owned,
+                    &opts_owned,
+                    &voice_internal,
+                    &voice_canonical,
+                    &model_canonical,
+                    text_chars,
+                    &op_for_worker,
+                    &adapter,
+                    trust,
+                    "local_pack",
+                )
+            })
+            .await
+            .map_err(|e| {
+                crate::error::TranscriptionError::internal(format!("TTS pack synth join: {e}"))
+            })??;
+            return Ok(join);
+        }
+
         let (model_info, voice_info) = resolve_voice_for_model(&opts.model, &opts.voice)?;
         // Canonical IDs for honesty JSON / metadata.
         opts.model = model_info.id.to_string();
@@ -379,6 +647,7 @@ impl SynthesisProvider for LocalTtsProvider {
         let voice_canonical = voice_info.id.to_string();
         let model_canonical = model_info.id.to_string();
         let op_for_worker = op.clone();
+        let adapter = model_info.adapter.to_string();
 
         // Hold the TTS + blocking permit for the entire native job lifetime —
         // even if the caller times out. That keeps concurrency bounded and
@@ -396,6 +665,9 @@ impl SynthesisProvider for LocalTtsProvider {
                 &model_canonical,
                 text_chars,
                 &op_for_worker,
+                &adapter,
+                TrustMode::Builtin,
+                "builtin",
             )
         });
 

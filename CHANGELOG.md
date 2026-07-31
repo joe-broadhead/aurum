@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5] - 2026-07-31
+
+v0.0.5 is the **evidence residual** release after product-proof v0.0.4: a public
+offline STT evaluation corpus with retained model matrix reports, TTS objective
+and pilot listening evidence, and named-hardware performance baselines on Apple
+Silicon Metal.
+
 ### Added
 
 - **JOE-1731:** public offline STT corpus (`evals/corpus.public-v1.json`) with
@@ -327,7 +334,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.4...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.5...HEAD
+[0.0.5]: https://github.com/joe-broadhead/aurum/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/joe-broadhead/aurum/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/joe-broadhead/aurum/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/joe-broadhead/aurum/compare/v0.0.1...v0.0.2

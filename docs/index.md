@@ -71,5 +71,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.4** — binaries + crates.io with STT, local TTS, and `aurum-ffi`.  
+**v0.0.5** — binaries + crates.io with STT, local TTS, and `aurum-ffi`.  
 APIs may change before `0.1.0`; pin a release tag in dependents.

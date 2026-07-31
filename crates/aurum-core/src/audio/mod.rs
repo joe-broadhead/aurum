@@ -213,8 +213,30 @@ fn try_load_wav_direct(
         .into());
     }
 
-    let samples_i16: std::result::Result<Vec<i16>, _> = match spec.sample_format {
-        hound::SampleFormat::Int => reader.into_samples::<i16>().collect(),
+    // Stream i16 → f32 directly into one destination buffer (JOE-1602).
+    // Never materialize a complete i16 vector alongside the f32 output.
+    let samples: Arc<[f32]> = match spec.sample_format {
+        hound::SampleFormat::Int => {
+            let mut out: Vec<f32> = Vec::with_capacity(approx_samples.min(max_decoded_bytes / 4));
+            for sample in reader.into_samples::<i16>() {
+                let s = sample.map_err(|e| UserError::InvalidAudio {
+                    reason: format!("failed reading samples: {e}"),
+                })?;
+                let decoded = out
+                    .len()
+                    .saturating_add(1)
+                    .saturating_mul(std::mem::size_of::<f32>());
+                if decoded > max_decoded_bytes {
+                    return Err(UserError::AudioTooLarge {
+                        decoded_bytes: decoded,
+                        max_bytes: max_decoded_bytes,
+                    }
+                    .into());
+                }
+                out.push(s as f32 / 32768.0);
+            }
+            out.into()
+        }
         hound::SampleFormat::Float => {
             return Err(UserError::InvalidAudio {
                 reason: "float WAV; use ffmpeg path".into(),
@@ -222,16 +244,6 @@ fn try_load_wav_direct(
             .into());
         }
     };
-
-    let samples_i16 = samples_i16.map_err(|e| UserError::InvalidAudio {
-        reason: format!("failed reading samples: {e}"),
-    })?;
-
-    let samples: Arc<[f32]> = samples_i16
-        .iter()
-        .map(|s| *s as f32 / 32768.0)
-        .collect::<Vec<_>>()
-        .into();
 
     let duration_secs = samples.len() as f64 / 16_000.0;
     let decoded_bytes = samples.len().saturating_mul(std::mem::size_of::<f32>());
@@ -371,9 +383,15 @@ pub async fn load_via_ffmpeg_with_timeout(
         }
     }
 
+    // Stream s16le → f32 on the fly (JOE-1602): never keep a full raw s16 buffer
+    // and a full f32 buffer alive at the same time. Carry at most one trailing
+    // odd byte across reads.
     let stdout_task = async {
-        let mut raw: Vec<u8> = Vec::new();
+        let max_samples = max_decoded_bytes / std::mem::size_of::<f32>();
+        let mut samples: Vec<f32> = Vec::with_capacity(max_samples.min(64 * 1024));
         let mut buf = [0u8; 64 * 1024];
+        let mut carry: Option<u8> = None;
+        let mut raw_bytes_seen: usize = 0;
         loop {
             if let Some(flag) = &cancel {
                 if flag.is_cancelled() {
@@ -389,16 +407,51 @@ pub async fn load_via_ffmpeg_with_timeout(
             if n == 0 {
                 break;
             }
-            if raw.len().saturating_add(n) > max_raw_bytes {
+            raw_bytes_seen = raw_bytes_seen.saturating_add(n);
+            if raw_bytes_seen > max_raw_bytes {
                 return Err(UserError::AudioTooLarge {
-                    decoded_bytes: (raw.len() + n) / 2 * std::mem::size_of::<f32>(),
+                    decoded_bytes: (raw_bytes_seen / 2) * std::mem::size_of::<f32>(),
                     max_bytes: max_decoded_bytes,
                 }
                 .into());
             }
-            raw.extend_from_slice(&buf[..n]);
+
+            let mut offset = 0usize;
+            if let Some(lo) = carry.take() {
+                if n == 0 {
+                    carry = Some(lo);
+                    break;
+                }
+                let hi = buf[0];
+                offset = 1;
+                let s = i16::from_le_bytes([lo, hi]);
+                samples.push(s as f32 / 32768.0);
+            }
+
+            let rem = &buf[offset..n];
+            let pairs = rem.len() / 2;
+            if samples.len().saturating_add(pairs) > max_samples {
+                return Err(UserError::AudioTooLarge {
+                    decoded_bytes: (samples.len() + pairs) * std::mem::size_of::<f32>(),
+                    max_bytes: max_decoded_bytes,
+                }
+                .into());
+            }
+            for chunk in rem.chunks_exact(2) {
+                let s = i16::from_le_bytes([chunk[0], chunk[1]]);
+                samples.push(s as f32 / 32768.0);
+            }
+            if rem.len() % 2 == 1 {
+                carry = Some(rem[rem.len() - 1]);
+            }
         }
-        Ok::<Vec<u8>, crate::error::TranscriptionError>(raw)
+        if carry.is_some() {
+            return Err(UserError::InvalidAudio {
+                reason: "ffmpeg produced misaligned PCM data".into(),
+            }
+            .into());
+        }
+        Ok::<Vec<f32>, crate::error::TranscriptionError>(samples)
     };
 
     let stderr_task = async {
@@ -433,7 +486,7 @@ pub async fn load_via_ffmpeg_with_timeout(
     .await;
 
     match drain {
-        Ok(Ok((raw, stderr_bytes))) => {
+        Ok(Ok((samples_vec, stderr_bytes))) => {
             // Bound the final wait so a stuck child after pipe close cannot hang forever.
             let status = match tokio::time::timeout(
                 std::time::Duration::from_secs(30),
@@ -469,26 +522,13 @@ pub async fn load_via_ffmpeg_with_timeout(
                     .collect::<String>();
                 return Err(UserError::InvalidAudio { reason: short }.into());
             }
-            if raw.is_empty() {
+            if samples_vec.is_empty() {
                 return Err(UserError::InvalidAudio {
                     reason: "ffmpeg produced no audio data (empty or corrupt file?)".into(),
                 }
                 .into());
             }
-            if !raw.len().is_multiple_of(2) {
-                return Err(UserError::InvalidAudio {
-                    reason: "ffmpeg produced misaligned PCM data".into(),
-                }
-                .into());
-            }
-            let samples: Arc<[f32]> = raw
-                .chunks_exact(2)
-                .map(|c| {
-                    let s = i16::from_le_bytes([c[0], c[1]]);
-                    s as f32 / 32768.0
-                })
-                .collect::<Vec<_>>()
-                .into();
+            let samples: Arc<[f32]> = samples_vec.into();
             let duration_secs = samples.len() as f64 / 16_000.0;
             if duration_secs + 0.05 >= max_duration_secs {
                 return Err(UserError::AudioTooLong {

@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1574** Performance, streaming, and measurable quality:
+  - Fixed-capacity PCM ring buffer with NaN/Inf rejection and f64 RMS (JOE-1601)
+  - Streaming FFmpeg s16le→f32 and direct WAV i16→f32 without dual full buffers (JOE-1602)
+  - Dedicated OpenRouter multipart streams from disk (no base64); chat path drops raw
+    before JSON (JOE-1603)
+  - Streaming TXT/SRT/JSON writers with output byte budget into secure transactions
+    (JOE-1604)
+  - `PartialSession` v2: VAD/energy, stable/unstable text, revisions, inflight cap (JOE-1605)
+  - Benchmark schema + PR-safe smoke micro-benches and budgets (JOE-1606)
+  - Versioned smoke eval corpus with WER/CER scoring and machine-readable reports
+    (JOE-1607)
+
 - **JOE-1573** Runtime lifecycle, concurrency, and resource governance:
   - Synchronized FFI lifecycle Running → ShuttingDown → Stopped; `aurum_shutdown_ex`
     returns `AURUM_ERR_BUSY` and does not clear contexts while work is active (JOE-1594)

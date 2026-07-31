@@ -56,6 +56,14 @@ STT and TTS share error taxonomy, cache root, cancel flags, and config loading �
 6. **ASR ≠ cleanup ≠ TTS** — separate stages and modules  
 7. **MIT binary for default TTS** — no GPL-linked phonemizer on the default path ([TTS guide](../guide/tts.md))
 
+## Performance & progressive STT (JOE-1574)
+
+Hot paths keep a **bounded working set**: ring-buffer PCM, streaming decode, and
+streaming output writers. Hosts drive progressive text via **`PartialSession`**
+(stable/unstable revisions, supersession cancel) without Aurum owning the mic.
+Reproducible smoke benches and a versioned WER/CER eval corpus live under
+`aurum_core::bench` / `aurum_core::eval` and `evals/`.
+
 ## Process model cache & runtime (JOE-1573)
 
 `LocalWhisperProvider` loads Whisper contexts through **singleflight** (one native

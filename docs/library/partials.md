@@ -1,60 +1,47 @@
 # Partials & cancel
 
-Aurum does **not** run a background streaming whisper loop. Dictation hosts can
-still show interim text by:
+Aurum does **not** run a background streaming whisper loop and does **not** own
+the microphone. Dictation hosts should prefer **`PartialSession`** (JOE-1605)
+for stable/unstable text, monotonic revisions, and supersession cancel.
 
-1. Accumulating mic PCM in `PcmBuffer` (or your own `Vec<f32>`)
-2. Using `PartialWindowPolicy` / `PartialClock`
-3. Calling `transcribe_pcm` on a rolling slice when the clock is ready
-4. Calling `transcribe_pcm` on the full buffer at finalize
-5. Using `CancelFlag` if the user cancels mid-hold
-
-## Example
+## Recommended: `PartialSession`
 
 ```rust
-use aurum_core::cancel::CancelFlag;
-use aurum_core::pcm::PcmBuffer;
+use aurum_core::partial::PartialSession;
 use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
-use aurum_core::window::{PartialClock, PartialWindowPolicy};
 use std::path::PathBuf;
 
 # async fn demo() -> aurum_core::Result<()> {
 let provider = LocalWhisperProvider::new(PathBuf::from("/tmp/aurum-cache"))
     .with_progress(false)
     .with_local_only(true);
-provider.preload("tiny-q5_1").await?;
 
-let mut buf = PcmBuffer::dictation();
-let mut clock = PartialClock::new(PartialWindowPolicy::dictation());
-let cancel = CancelFlag::new();
-
+let mut session = PartialSession::dictation();
 // on each mic chunk:
-// buf.push(&chunk)?;
-// if let Some(slice) = clock.take_partial_slice(buf.samples()) {
-//     let partial = provider.transcribe_pcm(slice, &TranscriptionOptions {
+// session.push(&chunk)?;
+// if let Some(cancel) = session.begin_partial() {
+//     let window = session.partial_window_samples();
+//     let opts = TranscriptionOptions {
 //         model: "tiny-q5_1".into(),
 //         language: "en".into(),
 //         timestamps: false,
-//         cancel: Some(cancel.clone()),
-//     }).await?;
-//     // show partial.text in UI
+//         cancel: Some(cancel),
+//     };
+//     match provider.transcribe_pcm(window.as_slice(), &opts).await {
+//         Ok(r) => { let u = session.on_decode_result(&r.text, None); /* UI */ }
+//         Err(_) => session.end_partial(),
+//     }
 // }
-
-// on cancel:
-// cancel.cancel();
-
-// on release / finalize:
-let final_opts = TranscriptionOptions {
-    model: "tiny-q5_1".into(),
-    language: "en".into(),
-    timestamps: false,
-    cancel: Some(cancel.clone()),
-};
-let _final = provider.transcribe_pcm(buf.samples(), &final_opts).await?;
+// on release:
+// let final_r = provider.transcribe_pcm(session.buffer().samples().as_slice(), &opts).await?;
+// let done = session.finalize(&final_r.text, None);
 aurum_core::providers::local::clear_context_cache();
 # Ok(())
 # }
 ```
+
+`PartialWindowPolicy` / `PartialClock` remain available for simple loops (used
+internally by `PartialSession` for energy/interval gates).
 
 ## Defaults (dictation-oriented)
 
@@ -64,5 +51,6 @@ aurum_core::providers::local::clear_context_cache();
 | Rolling window | ~15 s |
 | Interval | ~1.2 s |
 | Energy gate | RMS on the **decode window** |
+| Max inflight partials | 1 (supersede/cancel extras) |
 
-Tune via `PartialWindowPolicy` / `with_min_rms`.
+Tune via `PartialSessionConfig` / `PartialWindowPolicy`.

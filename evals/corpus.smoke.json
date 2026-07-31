@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "name": "aurum-smoke-v1",
+  "stt": [
+    {
+      "id": "clean_short_en",
+      "language": "en",
+      "reference": "hello world",
+      "tags": ["clean", "short"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "numbers_en",
+      "language": "en",
+      "reference": "the meeting is at 3 30 pm",
+      "tags": ["numbers"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "silence_empty",
+      "language": "en",
+      "reference": "",
+      "tags": ["silence"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0"
+    }
+  ],
+  "tts": [
+    {
+      "id": "tts_short",
+      "text": "Hello from Aurum.",
+      "tags": ["short"],
+      "duration_ms_min": 200,
+      "duration_ms_max": 5000,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "tts_numbers",
+      "text": "Call me at extension 42.",
+      "tags": ["numbers"],
+      "duration_ms_min": 300,
+      "duration_ms_max": 8000,
+      "license": "synthetic CC0"
+    }
+  ]
+}

@@ -46,6 +46,15 @@ published release and the default branch.
   publish only after reviewed size/digest checks. Cache inventory:
   `aurum cache status|verify`.
 
+## Performance & streaming memory (JOE-1574)
+
+- PCM ring buffers never allocate beyond configured capacity; invalid floats are
+  rejected before native DSP.
+- FFmpeg decode converts s16le chunks to f32 on the fly (no dual full raw+f32
+  buffers). Remote dedicated STT streams multipart from disk without a full
+  base64 intermediate.
+- Output formatters enforce a hard byte budget before publish.
+
 ## Runtime concurrency & resource governance (JOE-1573)
 
 - Process lifecycle admission blocks new work after shutdown begins; context

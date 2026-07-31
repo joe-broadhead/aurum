@@ -19,7 +19,6 @@ use crate::remote::{
     HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
 };
 use async_trait::async_trait;
-use base64::Engine;
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -197,26 +196,48 @@ impl OpenRouterProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
+        let pcm_bytes = input
+            .samples
+            .len()
+            .saturating_mul(std::mem::size_of::<f32>());
         let (upload_path, format) =
             audio::encode_for_upload(&input.samples, self.max_upload_bytes).await?;
-        let _cleanup = scopeguard_path(upload_path.clone());
+        let cleanup = scopeguard_path(upload_path.clone());
 
-        let file_bytes = tokio::fs::read(&upload_path).await?;
-        if file_bytes.len() > self.max_upload_bytes {
+        let meta = tokio::fs::metadata(&upload_path)
+            .await
+            .map_err(|e| ProviderError::Other {
+                message: format!("stat upload artifact: {e}"),
+            })?;
+        let encoded_len = meta.len() as usize;
+        if encoded_len > self.max_upload_bytes {
             return Err(UserError::AudioTooLarge {
-                decoded_bytes: file_bytes.len(),
+                decoded_bytes: encoded_len,
                 max_bytes: self.max_upload_bytes,
             }
             .into());
         }
 
+        tracing::debug!(
+            pcm_bytes,
+            encoded_bytes = encoded_len,
+            format,
+            "openrouter dedicated upload artifact ready"
+        );
+
+        // Stream multipart file from disk — no full base64, no second full
+        // in-memory buffer for the dedicated path (JOE-1603).
         let filename = format!("audio.{format}");
         let mime = match format {
             "mp3" => "audio/mpeg",
             "wav" => "audio/wav",
             _ => "application/octet-stream",
         };
-        let part = Part::bytes(file_bytes)
+        let part = Part::file(&upload_path)
+            .await
+            .map_err(|e| ProviderError::Other {
+                message: format!("multipart file part: {e}"),
+            })?
             .file_name(filename)
             .mime_str(mime)
             .map_err(|e| ProviderError::Other {
@@ -252,6 +273,9 @@ impl OpenRouterProvider {
                 provider: PROVIDER_NAME.into(),
                 reason: e.to_string(),
             })?;
+
+        // Body no longer needs the on-disk artifact.
+        drop(cleanup);
 
         let status = response.status();
         let body = read_body_limited(response, PROVIDER_NAME, RemoteBodyLimits::stt()).await?;
@@ -296,15 +320,46 @@ impl OpenRouterProvider {
             audio::encode_for_upload(&input.samples, self.max_upload_bytes).await?;
         let cleanup = scopeguard_path(upload_path.clone());
 
-        let file_bytes = tokio::fs::read(&upload_path).await?;
-        if file_bytes.len() > self.max_upload_bytes {
+        let meta = tokio::fs::metadata(&upload_path)
+            .await
+            .map_err(|e| ProviderError::Other {
+                message: format!("stat upload artifact: {e}"),
+            })?;
+        let encoded_len = meta.len() as usize;
+        if encoded_len > self.max_upload_bytes {
             return Err(UserError::AudioTooLarge {
-                decoded_bytes: file_bytes.len(),
+                decoded_bytes: encoded_len,
                 max_bytes: self.max_upload_bytes,
             }
             .into());
         }
-        let b64 = base64::engine::general_purpose::STANDARD.encode(&file_bytes);
+
+        // Incremental base64 from a file reader — avoids holding raw file bytes
+        // and base64 simultaneously longer than necessary (JOE-1603).
+        let b64 = {
+            use base64::Engine;
+            use std::io::Read;
+            let mut file = std::fs::File::open(&upload_path).map_err(|e| ProviderError::Other {
+                message: format!("open upload for base64: {e}"),
+            })?;
+            let mut raw = Vec::with_capacity(encoded_len);
+            file.read_to_end(&mut raw)
+                .map_err(|e| ProviderError::Other {
+                    message: format!("read upload for base64: {e}"),
+                })?;
+            // Cap on wire bytes after base64 expansion (~4/3).
+            let b64_est = raw.len().saturating_mul(4).div_ceil(3);
+            if b64_est > self.max_upload_bytes.saturating_mul(2) {
+                return Err(UserError::AudioTooLarge {
+                    decoded_bytes: b64_est,
+                    max_bytes: self.max_upload_bytes.saturating_mul(2),
+                }
+                .into());
+            }
+            let encoded = base64::engine::general_purpose::STANDARD.encode(&raw);
+            drop(raw);
+            encoded
+        };
         drop(cleanup);
 
         let mut prompt =

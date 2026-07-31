@@ -28,7 +28,7 @@
 //! buf.push(&[0.0f32; 1600])?;
 //! let result = provider
 //!     .transcribe_pcm(
-//!         buf.samples(),
+//!         buf.samples().as_slice(),
 //!         &TranscriptionOptions {
 //!             model: "tiny-q5_1".into(),
 //!             language: "en".into(),
@@ -37,7 +37,7 @@
 //!         },
 //!     )
 //!     .await?;
-//! let _ = AudioInput::from_pcm_slice(buf.samples(), WHISPER_SAMPLE_RATE)?;
+//! let _ = AudioInput::from_pcm_slice(buf.samples().as_slice(), WHISPER_SAMPLE_RATE)?;
 //! println!("{}", result.text);
 //! aurum_core::providers::local::clear_context_cache();
 //! # Ok(())
@@ -45,14 +45,17 @@
 //! ```
 
 pub mod audio;
+pub mod bench;
 pub mod cache;
 pub mod cancel;
 pub mod cleanup;
 pub mod config;
 pub mod download;
 pub mod error;
+pub mod eval;
 pub mod model;
 pub mod output;
+pub mod partial;
 pub mod pcm;
 pub mod postprocess;
 pub mod providers;
@@ -71,11 +74,16 @@ pub use cleanup::{
 };
 pub use config::Config;
 pub use error::{Result, TranscriptionError};
+pub use eval::{
+    build_report, char_error_rate, score_stt, smoke_corpus, word_error_rate, EvalCorpus,
+    EvalReport, SttFixture, SttScore,
+};
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
 pub use output::{
-    commit_text, format_result, write_result_to_path, CommitMode, OutputFormat, OutputTransaction,
-    SymlinkPolicy,
+    commit_text, format_result, write_result, write_result_to_path, CommitMode, OutputFormat,
+    OutputTransaction, SymlinkPolicy, DEFAULT_MAX_OUTPUT_BYTES,
 };
+pub use partial::{PartialSession, PartialSessionConfig, PartialUpdate};
 pub use pcm::PcmBuffer;
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,

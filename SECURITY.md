@@ -46,6 +46,17 @@ published release and the default branch.
   publish only after reviewed size/digest checks. Cache inventory:
   `aurum cache status|verify`.
 
+## Runtime concurrency & resource governance (JOE-1573)
+
+- Process lifecycle admission blocks new work after shutdown begins; context
+  caches clear only when the active-op count is proven zero.
+- ResourceGovernor enforces permits for model loads, local STT/TTS, remote jobs,
+  blocking work, CPU threads, and soft memory reservations. Overload yields a
+  typed error rather than unbounded host exhaustion.
+- Singleflight coalesces concurrent cold loads of the same model key.
+- TTS caller timeouts are soft deadlines: native ONNX work remains tracked and
+  holds permits until it returns (hard-kill requires an outer process sandbox).
+
 ## Output file commits
 
 User-visible output files (transcripts, cleanup text, TTS WAV) use a shared

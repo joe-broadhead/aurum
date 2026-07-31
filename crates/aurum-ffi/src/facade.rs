@@ -1,7 +1,7 @@
 //! Pure Rust façade — single source of behavior for C (and future UniFFI).
 
 use crate::error::{FfiError, FfiStatus};
-use crate::runtime;
+use crate::runtime::{self, ShutdownOutcome};
 use crate::types::{
     CleanupStyle, EngineConfig, Segment, TranscribeOpts, Transcript, AURUM_SAMPLE_RATE,
 };
@@ -9,42 +9,52 @@ use aurum_core::cancel::CancelFlag;
 use aurum_core::cleanup::{cleanup_text, RulesCleanup, TextCleanup};
 use aurum_core::providers::local::clear_context_cache;
 use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
-use std::path::PathBuf;
+use aurum_core::runtime::OpAdmission;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
+use std::time::Duration;
 
-/// RAII guard: sets engine `busy` and process-wide active-op count; clears on drop
-/// (including panic unwinds through `block_on`).
+/// RAII guard: sets engine `busy` and process lifecycle active count; clears on
+/// drop (including panic unwinds through `block_on`).
 struct BusyGuard<'a> {
     busy: &'a AtomicBool,
+    _admission: OpAdmission<'static>,
 }
 
 impl<'a> BusyGuard<'a> {
     fn acquire(busy: &'a AtomicBool, what: &str) -> Result<Self, FfiError> {
+        // Process admission first so shutdown races cannot leave a half-admitted op.
+        let admission = runtime::begin_op()?;
         if busy
             .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
             .is_err()
         {
+            // Drop admission immediately — engine is busy, not process-rejected.
+            drop(admission);
             return Err(FfiError::state(format!(
                 "{what} already in progress on this engine (one exclusive op at a time)"
             )));
         }
-        runtime::begin_op();
-        Ok(Self { busy })
+        Ok(Self {
+            busy,
+            _admission: admission,
+        })
     }
 }
 
 impl Drop for BusyGuard<'_> {
     fn drop(&mut self) {
         self.busy.store(false, Ordering::SeqCst);
-        runtime::end_op();
+        // OpAdmission drop unregisters the process active count.
     }
 }
 
 /// Local STT engine handle for embedders.
 pub struct Engine {
     provider: LocalWhisperProvider,
-    cancel: CancelFlag,
+    /// Currently published cancel token for the in-flight exclusive op (if any).
+    /// Fresh per operation — never reset a shared engine-global flag across ops.
+    active_cancel: Mutex<Option<CancelFlag>>,
     /// True while preload or transcribe is in flight on this handle.
     busy: AtomicBool,
     last_error: Mutex<String>,
@@ -58,12 +68,12 @@ impl Engine {
                 "cache_dir is required (host must supply a writable model cache path)",
             ));
         }
-        let provider = LocalWhisperProvider::new(PathBuf::from(config.cache_dir.trim()))
+        let provider = LocalWhisperProvider::new(std::path::PathBuf::from(config.cache_dir.trim()))
             .with_progress(config.progress_logging)
             .with_local_only(config.local_only);
         Ok(Self {
             provider,
-            cancel: CancelFlag::new(),
+            active_cancel: Mutex::new(None),
             busy: AtomicBool::new(false),
             last_error: Mutex::new(String::new()),
         })
@@ -95,6 +105,18 @@ impl Engine {
 
     fn store_err(&self, err: &FfiError) {
         self.set_error(err.message.clone());
+    }
+
+    fn publish_cancel(&self, flag: CancelFlag) {
+        if let Ok(mut g) = self.active_cancel.lock() {
+            *g = Some(flag);
+        }
+    }
+
+    fn clear_cancel(&self) {
+        if let Ok(mut g) = self.active_cancel.lock() {
+            *g = None;
+        }
     }
 
     /// Whether the ggml file is present for `model`.
@@ -142,14 +164,20 @@ impl Engine {
     }
 
     /// Request cooperative cancel of the in-flight transcription (if any).
+    ///
+    /// Targets only the currently published job token — never a future op.
     pub fn cancel(&self) {
-        self.cancel.cancel();
+        if let Ok(g) = self.active_cancel.lock() {
+            if let Some(flag) = g.as_ref() {
+                flag.cancel();
+            }
+        }
     }
 
     /// Transcribe mono PCM at [`AURUM_SAMPLE_RATE`] Hz.
     ///
     /// At most one exclusive op (preload/transcribe) per engine at a time.
-    /// Cancel flag is reset at start. On panic inside inference, busy is still
+    /// Cancel flag is fresh per call. On panic inside inference, busy is still
     /// released via [`BusyGuard`].
     pub fn transcribe_pcm(
         &self,
@@ -181,7 +209,17 @@ impl Engine {
             }
         };
 
-        self.cancel.reset();
+        let cancel = CancelFlag::new();
+        self.publish_cancel(cancel.clone());
+        // Clear published token when this scope ends (success, error, or panic).
+        struct ClearCancel<'a>(&'a Engine);
+        impl Drop for ClearCancel<'_> {
+            fn drop(&mut self) {
+                self.0.clear_cancel();
+            }
+        }
+        let _clear = ClearCancel(self);
+
         let language = if opts.language.trim().is_empty() {
             "auto".to_string()
         } else {
@@ -191,7 +229,7 @@ impl Engine {
             model: model.to_string(),
             language,
             timestamps: opts.timestamps,
-            cancel: Some(self.cancel.clone()),
+            cancel: Some(cancel),
         };
 
         // Synchronous block_on: no *extra* FFI-side buffer copy. Core still copies once
@@ -240,8 +278,8 @@ impl Engine {
 
 /// On-device rules cleanup (no network, no engine handle required).
 ///
-/// Does not participate in engine busy / `ACTIVE_OPS` accounting (pure string work;
-/// no whisper context). `shutdown`'s drain waits only for preload/transcribe.
+/// Does not participate in engine busy / lifecycle active accounting (pure string
+/// work; no whisper context). `shutdown`'s drain waits only for preload/transcribe.
 pub fn cleanup_rules(text: &str, style: CleanupStyle) -> Result<String, FfiError> {
     let rules = RulesCleanup::new();
     let core_style = style.to_core();
@@ -254,13 +292,33 @@ pub fn cleanup_rules(text: &str, style: CleanupStyle) -> Result<String, FfiError
     }
 }
 
-/// Process-level teardown: wait for in-flight engine ops, clear whisper cache, stop new work.
+/// Process-level teardown with a timeout.
+///
+/// On success (`Ok`), active count is zero and the whisper context cache is cleared.
+/// On timeout (`Err` with `Busy`), caches are **not** cleared — native work may still
+/// hold contexts. The lifecycle remains ShuttingDown / not accepting new work.
+pub fn shutdown_with_timeout(timeout: Duration) -> Result<(), FfiError> {
+    match runtime::shutdown_runtime(timeout) {
+        ShutdownOutcome::Stopped => {
+            clear_context_cache();
+            Ok(())
+        }
+        ShutdownOutcome::Busy { active } => Err(FfiError::new(
+            FfiStatus::Busy,
+            format!("shutdown timed out with {active} active operation(s); contexts not cleared"),
+        )),
+    }
+}
+
+/// Process-level teardown: drain in-flight engine ops (default timeout), then clear
+/// whisper cache only if drain succeeded.
 ///
 /// Hosts must not start new calls after this. Safe to call with no engines left.
 /// Prefer destroy engines first; then `shutdown` before process exit (Metal).
+///
+/// For a status-returning drain with custom timeout, use [`shutdown_with_timeout`].
 pub fn shutdown() {
-    runtime::shutdown_runtime(); // rejects new work + brief drain of ACTIVE_OPS
-    clear_context_cache();
+    let _ = shutdown_with_timeout(runtime::DEFAULT_SHUTDOWN_TIMEOUT);
 }
 
 #[cfg(test)]
@@ -417,5 +475,19 @@ mod tests {
         let err = b.preload("tiny-q5_1").unwrap_err();
         assert_eq!(err.status, FfiStatus::ModelNotReady);
         assert!(!b.busy.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn cancel_without_active_op_is_noop() {
+        let dir = tempdir().unwrap();
+        let engine = Engine::new(EngineConfig {
+            cache_dir: dir.path().display().to_string(),
+            local_only: true,
+            progress_logging: false,
+        })
+        .unwrap();
+        engine.cancel(); // must not poison a future op
+        let err = engine.preload("tiny-q5_1").unwrap_err();
+        assert_eq!(err.status, FfiStatus::ModelNotReady);
     }
 }

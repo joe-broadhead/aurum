@@ -11,7 +11,7 @@ Partials and hold-to-talk UX stay in the host.
 | Header | [`crates/aurum-ffi/include/aurum.h`](https://github.com/joe-broadhead/aurum/blob/master/crates/aurum-ffi/include/aurum.h) |
 | Crate | `aurum-ffi` (workspace; not required for CLI users) |
 | Sample rate | **16 000 Hz** mono `float32` |
-| ABI | `AURUM_ABI_VERSION` (currently `1`) |
+| ABI | `AURUM_ABI_VERSION` (currently `1`; additive status codes `BUSY`/`DEADLINE`/`OVERLOAD`) |
 
 ## Build
 
@@ -57,7 +57,7 @@ aurum_ffi::shutdown(); // before process exit (Metal-safe)
 | `aurum_engine_transcribe_pcm` | Decode |
 | `aurum_engine_cancel` | Cooperative cancel (other thread OK) |
 | `aurum_cleanup_rules` | On-device text cleanup (no engine required) |
-| `aurum_shutdown` | Drain in-flight engine ops + clear whisper cache |
+| `aurum_shutdown` / `aurum_shutdown_ex` | Drain exclusive ops; clear whisper cache only when idle (`BUSY` if still active) |
 
 Zero-initialize config/opts structs (`reserved` must be `0`).
 
@@ -77,7 +77,7 @@ Zero-initialize config/opts structs (`reserved` must be `0`).
 | Offline | `local_only = 1` |
 | Cancel | `aurum_engine_cancel` mid-hold |
 | Cleanup | Separate stage after ASR (`cleanup_rules`) |
-| Exit | `destroy` all engines, then `aurum_shutdown` |
+| Exit | `destroy` all engines, then `aurum_shutdown` / `aurum_shutdown_ex` (prefer the latter if you need `BUSY`) |
 | Partials | Host loop + rolling PCM window; see [Partials](partials.md) |
 
 ## Related

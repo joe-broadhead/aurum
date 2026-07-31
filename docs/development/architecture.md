@@ -56,8 +56,16 @@ STT and TTS share error taxonomy, cache root, cancel flags, and config loading �
 6. **ASR ≠ cleanup ≠ TTS** — separate stages and modules  
 7. **MIT binary for default TTS** — no GPL-linked phonemizer on the default path ([TTS guide](../guide/tts.md))
 
-## Process model cache
+## Process model cache & runtime (JOE-1573)
 
-`LocalWhisperProvider` keeps a process-global `WhisperContext` map keyed by model
-path. Drop contexts via `clear_context_cache()` (or `aurum_shutdown` from FFI)
-before process exit so Metal/ggml teardown does not assert.
+`LocalWhisperProvider` loads Whisper contexts through **singleflight** (one native
+load per key under concurrency) and a **weighted residency registry**. TTS sessions
+use the same singleflight pattern. A process **`ResourceGovernor`** admits model
+loads, local STT/TTS jobs, remote work, blocking pool slots, CPU threads, and soft
+memory reservations — overload returns typed `ProviderError::Overload` rather than
+exhausting the host.
+
+FFI uses a synchronized **lifecycle** (`Running → ShuttingDown → Stopped`). Prefer
+`aurum_shutdown_ex` when the host needs a `BUSY` status; context caches clear only
+when the active-op count reaches zero. Drop contexts via `clear_context_cache()`
+(or successful shutdown) before process exit so Metal/ggml teardown does not assert.

@@ -1,4 +1,9 @@
 //! Local ONNX KittenTTS provider (MIT binary path — no GPL phonemizer).
+//!
+//! Session loading is singleflight-coalesced (JOE-1597). Concurrent synthesis is
+//! bounded by the process [`ResourceGovernor`] (JOE-1596/1600). Caller timeouts
+//! never abandon untracked native work: the permit stays held until the ONNX
+//! job returns (honest soft-deadline semantics).
 
 use super::catalogue::{
     ensure_voice_pack, lookup_model, onnx_path, resolve_voice_for_model, validate_speaking_rate,
@@ -15,6 +20,7 @@ use super::validate::{
 };
 use super::wav::peak_guard_f32_to_i16;
 use crate::error::{ProviderError, Result, UserError};
+use crate::runtime::{LoadKey, OpContext, ResourceGovernor, Singleflight};
 use async_trait::async_trait;
 use ort::session::Session;
 use ort::value::Tensor;
@@ -24,13 +30,18 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// On-device KittenTTS via ONNX Runtime + misaki-rs G2P (no espeak / GPL).
+///
+/// Pool size is intentionally 1 session per model (serial inference under a
+/// mutex). Throughput concurrency is governed by ResourceGovernor TTS permits
+/// rather than unbounded parallel ONNX sessions (memory cost of multi-session
+/// pools is not free for mobile/desktop defaults).
 pub struct LocalTtsProvider {
     cache_dir: PathBuf,
     show_progress: bool,
     local_only: bool,
     max_chars: usize,
-    /// Lazily loaded sessions keyed by model id.
-    sessions: Mutex<HashMap<String, Arc<LoadedPack>>>,
+    /// Singleflight-backed session cache keyed by model id.
+    sessions: Arc<Singleflight<LoadedPack>>,
 }
 
 struct LoadedPack {
@@ -50,7 +61,7 @@ impl LocalTtsProvider {
             show_progress: false,
             local_only: false,
             max_chars: DEFAULT_MAX_CHARS,
-            sessions: Mutex::new(HashMap::new()),
+            sessions: Arc::new(Singleflight::default()),
         }
     }
 
@@ -74,19 +85,13 @@ impl LocalTtsProvider {
     /// Safe to call anytime; the next synthesize/preload reloads from the on-disk pack.
     /// Does not delete cached files under the TTS cache directory.
     pub fn clear_sessions(&self) {
-        if let Ok(mut guard) = self.sessions.lock() {
-            guard.clear();
-        }
+        self.sessions.clear();
     }
 
     async fn ensure_loaded(&self, model: &str, local_only: bool) -> Result<Arc<LoadedPack>> {
-        {
-            let guard = self.sessions.lock().map_err(|_| {
-                crate::error::TranscriptionError::internal("TTS session map poisoned")
-            })?;
-            if let Some(pack) = guard.get(model) {
-                return Ok(Arc::clone(pack));
-            }
+        let key = LoadKey::tts(model, self.cache_dir.join(model).display().to_string());
+        if let Some(ready) = self.sessions.get_ready(&key) {
+            return Ok(ready);
         }
 
         let info = lookup_model(model)?;
@@ -103,31 +108,33 @@ impl LocalTtsProvider {
         let speed_priors = load_speed_priors(&self.cache_dir, info);
         let sample_rate = info.sample_rate_hz;
         let catalogue_max = info.max_phoneme_tokens;
+        let key_for_load = key.clone();
+        let model_id = model.to_string();
+        let sessions = Arc::clone(&self.sessions);
 
+        // Load on a blocking thread; singleflight ensures one native load per key.
         let loaded = tokio::task::spawn_blocking(move || {
-            load_pack(
-                &onnx,
-                &voices_file,
-                sample_rate,
-                speed_priors,
-                catalogue_max,
-            )
+            let gov = ResourceGovernor::process_global();
+            sessions.get_or_load(key_for_load, || {
+                let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
+                load_pack(
+                    &onnx,
+                    &voices_file,
+                    sample_rate,
+                    speed_priors,
+                    catalogue_max,
+                    &model_id,
+                )
+            })
         })
         .await
         .map_err(|e| crate::error::TranscriptionError::internal(format!("TTS load join: {e}")))??;
 
-        let arc = Arc::new(loaded);
-        let mut guard = self
-            .sessions
-            .lock()
-            .map_err(|_| crate::error::TranscriptionError::internal("TTS session map poisoned"))?;
-        let entry = guard
-            .entry(model.to_string())
-            .or_insert_with(|| Arc::clone(&arc));
-        Ok(Arc::clone(entry))
+        Ok(loaded)
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn synthesize_with_pack(
     pack: &LoadedPack,
     text: &str,
@@ -136,12 +143,9 @@ fn synthesize_with_pack(
     voice_canonical: &str,
     model_canonical: &str,
     text_chars: usize,
+    op: &OpContext,
 ) -> Result<SynthesisResult> {
-    if let Some(flag) = &opts.cancel {
-        if flag.is_cancelled() {
-            return Err(ProviderError::Cancelled.into());
-        }
-    }
+    op.check()?;
 
     let rate = validate_speaking_rate(opts.speaking_rate)?;
     let sample_rate = resolve_sample_rate(opts.sample_rate_hz, pack.sample_rate_hz)?;
@@ -185,11 +189,7 @@ fn synthesize_with_pack(
     let trim_policy = TailTrimPolicy::default();
 
     for (index, chunk) in chunks.iter().enumerate() {
-        if let Some(flag) = &opts.cancel {
-            if flag.is_cancelled() {
-                return Err(ProviderError::Cancelled.into());
-            }
-        }
+        op.check()?;
         let chunk_audio =
             synthesize_chunk_f32(pack, voice_mat, chunk, effective_speed).map_err(|err| {
                 ProviderError::Other {
@@ -287,15 +287,16 @@ fn load_pack(
     sample_rate_hz: u32,
     speed_priors: HashMap<String, f32>,
     catalogue_max_tokens: usize,
+    model_label: &str,
 ) -> Result<LoadedPack> {
     let session = Session::builder()
         .map_err(|e| ProviderError::ModelLoad {
-            model: onnx.display().to_string(),
+            model: model_label.to_string(),
             reason: format!("ORT session builder: {e}"),
         })?
         .commit_from_file(onnx)
         .map_err(|e| ProviderError::ModelLoad {
-            model: onnx.display().to_string(),
+            model: model_label.to_string(),
             reason: format!("load ONNX: {e}"),
         })?;
     let voices = load_voices_npz(voices_file)?;
@@ -361,17 +362,14 @@ impl SynthesisProvider for LocalTtsProvider {
         let local_only = opts.local_only || self.local_only;
         let pack = self.ensure_loaded(&opts.model, local_only).await?;
 
-        if let Some(flag) = &opts.cancel {
-            if flag.is_cancelled() {
-                return Err(ProviderError::Cancelled.into());
-            }
-        }
-
         let timeout = Duration::from_millis(if opts.timeout_ms == 0 {
             super::validate::DEFAULT_TIMEOUT_MS
         } else {
             opts.timeout_ms
         });
+        let op =
+            OpContext::from_optional_cancel(opts.cancel.clone()).with_deadline_from_now(timeout);
+        op.check()?;
 
         let text_owned = prepared.text.clone();
         let text_chars = prepared.text_chars;
@@ -380,9 +378,15 @@ impl SynthesisProvider for LocalTtsProvider {
         let voice_internal = voice_info.internal_key.to_string();
         let voice_canonical = voice_info.id.to_string();
         let model_canonical = model_info.id.to_string();
-        let cancel_on_timeout = opts.cancel.clone();
+        let op_for_worker = op.clone();
 
+        // Hold the TTS + blocking permit for the entire native job lifetime —
+        // even if the caller times out. That keeps concurrency bounded and
+        // prevents unlimited background native work accumulation (JOE-1600).
         let join = tokio::task::spawn_blocking(move || {
+            let gov = ResourceGovernor::process_global();
+            let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
+            op_for_worker.check()?;
             synthesize_with_pack(
                 pack_clone.as_ref(),
                 &text_owned,
@@ -391,25 +395,33 @@ impl SynthesisProvider for LocalTtsProvider {
                 &voice_canonical,
                 &model_canonical,
                 text_chars,
+                &op_for_worker,
             )
         });
 
-        match tokio::time::timeout(timeout, join).await {
-            Ok(Ok(result)) => result,
-            Ok(Err(e)) => Err(crate::error::TranscriptionError::internal(format!(
-                "TTS synth join: {e}"
-            ))),
-            Err(_elapsed) => {
-                if let Some(flag) = cancel_on_timeout {
-                    flag.cancel();
+        // Pin the join handle so a soft deadline can detach a reaper without
+        // abandoning the permit while native work still runs (JOE-1600).
+        let join = join;
+        tokio::select! {
+            join_res = join => {
+                match join_res {
+                    Ok(result) => result,
+                    Err(e) => Err(crate::error::TranscriptionError::internal(format!(
+                        "TTS synth join: {e}"
+                    ))),
                 }
-                Err(ProviderError::Other {
-                    message: format!(
-                        "TTS synthesis exceeded timeout ({} ms)",
-                        timeout.as_millis()
-                    ),
-                }
-                .into())
+            }
+            _ = tokio::time::sleep(timeout) => {
+                // Soft deadline: cooperative cancel so chunk loops exit when
+                // possible. The blocking task retains the ResourceGovernor permit
+                // until it returns; we cannot safely abort in-process ONNX.
+                op.cancel.cancel();
+                // Note: `join` was moved into select; when this arm wins, the
+                // JoinHandle is dropped. Tokio does not cancel spawn_blocking
+                // work on JoinHandle drop — the worker continues and drops the
+                // permit when the closure returns. That keeps concurrency honest
+                // (permits stay occupied) without a reaper task.
+                Err(ProviderError::DeadlineExceeded.into())
             }
         }
     }

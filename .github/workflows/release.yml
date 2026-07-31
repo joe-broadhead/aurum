@@ -88,10 +88,12 @@ jobs:
       - name: Security gate
         run: |
           set -euo pipefail
+          # JOE-1715: exact reviewed versions only — no fallback to latest.
           # cargo-audit >= 0.22 required for CVSS 4.0 entries in advisory-db (2026+).
-          cargo install cargo-audit --locked --version 0.22.2 || cargo install cargo-audit --locked
+          cargo install cargo-audit --locked --version 0.22.2 --force
           # 0.19+ for unmaintained=workspace policy in deny.toml
-          cargo install cargo-deny --locked --version 0.19.0 || cargo install cargo-deny --locked
+          cargo install cargo-deny --locked --version 0.19.0 --force
+          ./scripts/check_security_tool_pins.sh
           cargo audit
           cargo deny check
       - name: SBOM inventory

@@ -18,3 +18,4 @@
 *.pdb
 release-assets/
 release-notes.md
+evals/reports/*.json

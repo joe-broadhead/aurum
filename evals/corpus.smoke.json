@@ -1,6 +1,6 @@
 {
-  "version": 1,
-  "name": "aurum-smoke-v1",
+  "version": 2,
+  "name": "aurum-smoke-v2",
   "stt": [
     {
       "id": "clean_short_en",
@@ -14,7 +14,7 @@
       "id": "numbers_en",
       "language": "en",
       "reference": "the meeting is at 3 30 pm",
-      "tags": ["numbers"],
+      "tags": ["numbers", "punctuation"],
       "timestamps_expected_reliable": true,
       "license": "synthetic CC0"
     },
@@ -22,9 +22,35 @@
       "id": "silence_empty",
       "language": "en",
       "reference": "",
+      "audio": "audio/silence_1s.wav",
       "tags": ["silence"],
       "timestamps_expected_reliable": true,
       "license": "synthetic CC0"
+    },
+    {
+      "id": "tone_non_speech",
+      "language": "en",
+      "reference": "",
+      "audio": "audio/tone_440_1s.wav",
+      "tags": ["noise", "music", "non_speech"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "long_phrase_en",
+      "language": "en",
+      "reference": "the quick brown fox jumps over the lazy dog near the river bank",
+      "tags": ["clean", "long"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "accent_placeholder_en",
+      "language": "en",
+      "reference": "schedule the call for tomorrow morning",
+      "tags": ["accent", "placeholder"],
+      "timestamps_expected_reliable": true,
+      "license": "synthetic CC0 — replace with licensed multi-accent speech"
     }
   ],
   "tts": [
@@ -39,9 +65,17 @@
     {
       "id": "tts_numbers",
       "text": "Call me at extension 42.",
-      "tags": ["numbers"],
+      "tags": ["numbers", "abbreviations"],
       "duration_ms_min": 300,
       "duration_ms_max": 8000,
+      "license": "synthetic CC0"
+    },
+    {
+      "id": "tts_long_join",
+      "text": "First sentence ends here. Second sentence starts now and continues for a bit longer.",
+      "tags": ["long", "join"],
+      "duration_ms_min": 500,
+      "duration_ms_max": 20000,
       "license": "synthetic CC0"
     }
   ]

@@ -44,13 +44,13 @@ flowchart LR
   P --> W[atomic mono WAV]
 ```
 
-STT and TTS share error taxonomy, cache root, cancel flags, and config loading — but **modules stay separate** (`providers/` vs `tts/`). FFI does not expose TTS in this MVP.
+STT and TTS share error taxonomy, cache root, cancel flags, and config loading — but **modules stay separate** (`providers/` vs `tts/`). The C ABI (**v2**) exposes local STT, rules cleanup, and **local TTS jobs** ([FFI guide](../library/ffi.md)); remote OpenRouter and microphone ownership remain out of the FFI surface.
 
 ## Design rules
 
-1. **CLI owns UX** — progress, first-run tips, OpenRouter SRT policy, TTS overwrite policy  
+1. **CLI owns UX** — progress, first-run tips, OpenRouter SRT policy, TTS overwrite policy, batch manifests, support bundles  
 2. **Core owns truth** — providers return normalized results + honesty fields  
-3. **FFI owns a narrow embed surface** — PCM, preload, cancel, rules cleanup ([guide](../library/ffi.md)); no TTS ABI yet  
+3. **FFI owns a narrow embed surface** — PCM, preload, cancel, rules cleanup, local TTS jobs, doctor/capabilities ([guide](../library/ffi.md)); contracts remain provisional until 1.0  
 4. **Fail closed** — bad magic, oversized audio, missing keys, offline missing models/voices, bad SHA-256  
 5. **No default network** except explicit model/voice download or remote STT provider  
 6. **ASR ≠ cleanup ≠ TTS** — separate stages and modules  

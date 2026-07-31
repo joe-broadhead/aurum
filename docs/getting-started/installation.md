@@ -18,10 +18,35 @@ sudo apt install build-essential cmake pkg-config ffmpeg
 # install rustup from https://rustup.rs
 ```
 
+## Recommended: verified release binary
+
+```bash
+# One-shot (curl) — installs latest GitHub Release binary after SHA256 verify
+curl -fsSL https://raw.githubusercontent.com/joe-broadhead/aurum/master/scripts/install.sh \
+  | bash -s -- --from-release
+
+# Or from a clone:
+./scripts/install.sh --from-release
+AURUM_VERSION=v0.0.4 ./scripts/install.sh --from-release
+```
+
+Default install directory: `~/.local/bin` (`AURUM_INSTALL_DIR` to override).
+
+```bash
+./scripts/install.sh --uninstall   # removes binary only; keeps cache + config
+```
+
+| Asset | Platform |
+|-------|----------|
+| `aurum-macos-arm64` | Apple Silicon |
+| `aurum-macos-x86_64` | *(not shipped — build from source; see note)* |
+| `aurum-linux-x86_64` | Linux GNU |
+| `aurum-windows-x86_64.exe` | Windows |
+
 ## From crates.io
 
 ```bash
-cargo install aurum-stt
+cargo install aurum-stt --locked
 aurum --version
 ```
 
@@ -30,7 +55,7 @@ Package name is `aurum-stt` (the `aurum` crate name is already taken on crates.i
 Library:
 
 ```toml
-aurum-core = "0.0.3"
+aurum-core = "0.0.4"
 ```
 
 ## From source
@@ -38,9 +63,19 @@ aurum-core = "0.0.3"
 ```bash
 git clone https://github.com/joe-broadhead/aurum.git
 cd aurum
-./scripts/install.sh
+./scripts/install.sh --from-source
 # equivalent: cargo install --path crates/aurum --locked --force
 aurum --version
+```
+
+## Shell completions and man page
+
+```bash
+aurum completions bash > /usr/local/etc/bash_completion.d/aurum
+aurum completions zsh  > ~/.zfunc/_aurum
+aurum completions fish > ~/.config/fish/completions/aurum.fish
+aurum completions powershell > aurum.ps1
+aurum man | sudo tee /usr/local/share/man/man1/aurum.1 >/dev/null
 ```
 
 ## Intel Mac (x86_64)
@@ -54,25 +89,6 @@ cargo install aurum-stt --locked
 ```
 
 Apple Silicon uses the `aurum-macos-arm64` release asset.
-
-## From GitHub Releases
-
-After a tagged release, download the binary for your platform from
-[Releases](https://github.com/joe-broadhead/aurum/releases), verify `SHA256SUMS`,
-and place it on your `PATH`:
-
-```bash
-chmod +x aurum-macos-arm64
-sudo mv aurum-macos-arm64 /usr/local/bin/aurum
-aurum --version
-```
-
-| Asset | Platform |
-|-------|----------|
-| `aurum-macos-arm64` | Apple Silicon |
-| `aurum-macos-x86_64` | *(not shipped — build from source; see note)* |
-| `aurum-linux-x86_64` | Linux GNU |
-| `aurum-windows-x86_64.exe` | Windows |
 
 ## Library only (`aurum-core`)
 

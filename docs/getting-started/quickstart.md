@@ -38,6 +38,28 @@ aurum tts voices
 
 See [TTS](../guide/tts.md).
 
+## Batch a folder
+
+```bash
+aurum batch ./lectures --output-dir ./out --profile speed
+aurum batch ./lectures -O ./out --resume --retry-failed
+```
+
+## Profiles (optional)
+
+```bash
+aurum models recommend --profile balance
+aurum talk.m4a --profile quality
+# product default remains `base` when --profile is omitted
+```
+
+## Support bundle
+
+```bash
+aurum doctor
+aurum support-bundle -O /tmp/aurum-support.json
+```
+
 ## Cleanup (optional)
 
 ```bash

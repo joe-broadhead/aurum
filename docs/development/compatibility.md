@@ -12,7 +12,8 @@ makes pre-1.0 change **predictable and honest**.
 | `ValidatedConfig`, `AurumEngine` | **provisional → stable-at-0.x** | Preferred library entry; owns governor/metrics/STT(+TTS) pools |
 | `SttContextPool` / `TtsSessionPool` | **provisional** | Engine-local by default; process-global helpers for CLI |
 | `SecretString` | **stable-at-0.x** | Debug/Display never expose payload |
-| `Segment::try_new` / `validate` | **stable-at-0.x** | Prefer over free construction for timings |
+| `Segment` (private fields + accessors) | **stable-at-0.x** | `try_new` / `validate` / getters (JOE-1786) |
+| `SampleRateHz` / `FiniteDurationSecs` / `ModelId` | **provisional** | Domain primitives |
 | `TranscriptionResult::try_local` / `try_openrouter` | **stable-at-0.x** | Fail-closed builders |
 | Process-global STT/TTS pools | **legacy shared default** | Used only when constructing providers without an engine |
 | `SttResultDto` `schema_version = 1` | **stable-at-0.x** | Unknown future fields: ignore on read when possible; unsupported version → error |

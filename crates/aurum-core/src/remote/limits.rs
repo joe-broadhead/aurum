@@ -149,21 +149,21 @@ pub fn validate_segments(
     let mut total_chars = 0usize;
     let mut prev_end = 0.0f64;
     for (i, seg) in segments.iter().enumerate() {
-        if !seg.start.is_finite() || !seg.end.is_finite() {
+        if !seg.start().is_finite() || !seg.end().is_finite() {
             return Err(ProviderError::InvalidProviderPayload {
                 provider: provider.into(),
                 reason: format!("segment {i} has non-finite timestamps"),
             }
             .into());
         }
-        if seg.start < 0.0 || seg.end < 0.0 {
+        if seg.start() < 0.0 || seg.end() < 0.0 {
             return Err(ProviderError::InvalidProviderPayload {
                 provider: provider.into(),
                 reason: format!("segment {i} has negative timestamps"),
             }
             .into());
         }
-        if seg.end < seg.start {
+        if seg.end() < seg.start() {
             return Err(ProviderError::InvalidProviderPayload {
                 provider: provider.into(),
                 reason: format!("segment {i} end < start"),
@@ -176,7 +176,7 @@ pub fn validate_segments(
         } else {
             f64::MAX
         };
-        if seg.start > bound || seg.end > bound {
+        if seg.start() > bound || seg.end() > bound {
             return Err(ProviderError::InvalidProviderPayload {
                 provider: provider.into(),
                 reason: format!("segment {i} timestamps exceed media duration"),
@@ -184,7 +184,7 @@ pub fn validate_segments(
             .into());
         }
         // Ordered with limited overlap (start may equal previous end).
-        if seg.start + 0.001 < prev_end - 30.0 {
+        if seg.start() + 0.001 < prev_end - 30.0 {
             // Allow modest overlap but reject severe reordering.
             return Err(ProviderError::InvalidProviderPayload {
                 provider: provider.into(),
@@ -192,9 +192,9 @@ pub fn validate_segments(
             }
             .into());
         }
-        prev_end = seg.end.max(prev_end);
+        prev_end = seg.end().max(prev_end);
 
-        let sc = seg.text.chars().count();
+        let sc = seg.text().chars().count();
         if sc > limits.max_segment_chars {
             return Err(ProviderError::LimitExceeded {
                 reason: format!(
@@ -236,27 +236,19 @@ mod tests {
 
     #[test]
     fn rejects_nonfinite_segment() {
-        let segs = vec![Segment {
-            start: f64::NAN,
-            end: 1.0,
-            text: "hi".into(),
-        }];
+        let segs = vec![Segment::from_parts_unchecked(
+            f64::NAN,
+            1.0,
+            "hi".to_string(),
+        )];
         assert!(validate_segments(&segs, 10.0, TranscriptLimits::default(), "t").is_err());
     }
 
     #[test]
     fn accepts_normal_segments() {
         let segs = vec![
-            Segment {
-                start: 0.0,
-                end: 1.0,
-                text: "a".into(),
-            },
-            Segment {
-                start: 1.0,
-                end: 2.0,
-                text: "b".into(),
-            },
+            Segment::from_parts_unchecked(0.0, 1.0, "a".to_string()),
+            Segment::from_parts_unchecked(1.0, 2.0, "b".to_string()),
         ];
         validate_segments(&segs, 2.0, TranscriptLimits::default(), "t").unwrap();
     }

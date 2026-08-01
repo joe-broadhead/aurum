@@ -158,12 +158,12 @@ pub fn normalize_result_with_report(
 
     let mut cleaned_segments = Vec::with_capacity(result.segments.len());
     for mut seg in result.segments.drain(..) {
-        let before = seg.text.clone();
-        seg.text = strip_markers(&seg.text);
-        if seg.text != before {
+        let before = seg.text().to_string();
+        seg.set_text(strip_markers(seg.text()));
+        if seg.text() != before {
             report.markers_stripped = true;
         }
-        let trimmed = seg.text.trim();
+        let trimmed = seg.text().trim();
         if trimmed.is_empty() || is_only_marker(trimmed) {
             report.dropped_segments += 1;
             report.events.push(NormalizationEvent {
@@ -172,9 +172,9 @@ pub fn normalize_result_with_report(
             });
             continue;
         }
-        seg.text = trimmed.to_string();
+        seg.set_text(trimmed.to_string());
 
-        if !seg.start.is_finite() || !seg.end.is_finite() {
+        if !seg.start().is_finite() || !seg.end().is_finite() {
             report.dropped_segments += 1;
             report.events.push(NormalizationEvent {
                 code: "drop_segment".into(),
@@ -185,25 +185,27 @@ pub fn normalize_result_with_report(
 
         let mut repaired = false;
         if result.duration_secs > 0.0 {
-            let ns = seg.start.clamp(0.0, result.duration_secs);
-            let ne = seg.end.clamp(0.0, result.duration_secs);
-            if ns != seg.start || ne != seg.end {
+            let ns = seg.start().clamp(0.0, result.duration_secs);
+            let ne = seg.end().clamp(0.0, result.duration_secs);
+            if ns != seg.start() || ne != seg.end() {
                 repaired = true;
             }
-            seg.start = ns;
-            seg.end = ne;
+            seg.set_start(ns);
+            seg.set_end(ne);
         } else {
-            if seg.start < 0.0 {
-                seg.start = 0.0;
+            if seg.start() < 0.0 {
+                seg.set_start(0.0);
                 repaired = true;
             }
-            if seg.end < 0.0 {
-                seg.end = 0.0;
+            if seg.end() < 0.0 {
+                seg.set_end(0.0);
                 repaired = true;
             }
         }
-        if seg.end < seg.start {
-            std::mem::swap(&mut seg.start, &mut seg.end);
+        if seg.end() < seg.start() {
+            let (a, b) = (seg.start(), seg.end());
+            seg.set_start(b);
+            seg.set_end(a);
             repaired = true;
             report.events.push(NormalizationEvent {
                 code: "swap_timestamps".into(),
@@ -237,7 +239,7 @@ pub fn normalize_result_with_report(
 fn join_segment_text(segments: &[Segment]) -> String {
     let mut out = String::new();
     for seg in segments {
-        let t = seg.text.trim();
+        let t = seg.text().trim();
         if t.is_empty() {
             continue;
         }
@@ -286,11 +288,11 @@ pub fn validated_segment(start: f64, end: f64, text: impl Into<String>) -> Optio
     if text.trim().is_empty() {
         return None;
     }
-    Some(Segment {
+    Some(Segment::from_parts_unchecked(
         start,
         end,
-        text: text.trim().to_string(),
-    })
+        text.trim().to_string(),
+    ))
 }
 
 #[cfg(test)]
@@ -325,16 +327,8 @@ mod tests {
         let r = TranscriptionResult::local(
             "x".into(),
             vec![
-                Segment {
-                    start: f64::NAN,
-                    end: 1.0,
-                    text: "bad".into(),
-                },
-                Segment {
-                    start: 0.0,
-                    end: 1.0,
-                    text: "good".into(),
-                },
+                Segment::from_parts_unchecked(f64::NAN, 1.0, "bad".to_string()),
+                Segment::from_parts_unchecked(0.0, 1.0, "good".to_string()),
             ],
             None,
             "m".into(),
@@ -342,7 +336,7 @@ mod tests {
         );
         let (out, report) = normalize_result_with_report(r);
         assert_eq!(out.segments.len(), 1);
-        assert_eq!(out.segments[0].text, "good");
+        assert_eq!(out.segments[0].text(), "good");
         assert!(report.dropped_segments >= 1);
     }
 

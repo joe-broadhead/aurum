@@ -478,9 +478,9 @@ impl Engine {
                         .segments
                         .into_iter()
                         .map(|s| Segment {
-                            start_s: s.start,
-                            end_s: s.end,
-                            text: s.text,
+                            start_s: s.start(),
+                            end_s: s.end(),
+                            text: s.text().to_string(),
                         })
                         .collect(),
                     cleanup_style: CleanupStyle::Raw,

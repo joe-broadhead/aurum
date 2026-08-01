@@ -10,8 +10,7 @@ use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
 use aurum_core::output::{self, commit_text, CommitMode, OutputFormat};
 use aurum_core::providers::{
-    BackendKind, LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, TranscriptionOptions,
-    TranscriptionProvider,
+    BackendKind, OpenRouterProvider, OpenRouterSttMode, TranscriptionOptions, TranscriptionProvider,
 };
 use aurum_core::remote::RemotePolicy;
 use aurum_core::SynthesisProvider;
@@ -716,7 +715,10 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         eprintln!("aurum: tts provider=local model={model} voice={voice} …");
     }
 
-    let provider = aurum_core::LocalTtsProvider::new(cfg.cache_dir.clone())
+    // Prefer engine-owned TTS pool + governor (JOE-1795).
+    let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
+    let provider = engine
+        .local_tts()?
         .with_progress(true)
         .with_local_only(cli.local_only)
         .with_max_chars(cfg.tts_max_chars);
@@ -1030,14 +1032,18 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
 
     let mut result = match provider_name.as_str() {
         "local" => {
-            let provider = LocalWhisperProvider::new(cfg.cache_dir.clone()).with_progress(true);
+            // Prefer engine-owned STT pool + governor (JOE-1795).
+            let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
+            let provider = engine.local_whisper()?.with_progress(true);
             if cli.verbose {
                 eprintln!(
-                    "aurum: provider=local model={model} backend={:?}",
+                    "aurum: provider=local model={model} backend={:?} (engine pool)",
                     BackendKind::Asr
                 );
             }
-            provider.transcribe(&audio, &options).await?
+            let out = provider.transcribe(&audio, &options).await?;
+            engine.shutdown();
+            out
         }
         "openrouter" => {
             let policy = RemotePolicy {

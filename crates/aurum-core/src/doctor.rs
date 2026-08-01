@@ -202,6 +202,22 @@ pub fn run_doctor(cfg: &Config) -> DoctorReport {
     // Disk free space (best-effort).
     checks.push(disk_space_check(&cfg.cache_dir));
 
+    // Writable cache probe (JOE-1783): create/delete a tiny file when possible.
+    checks.push(cache_writable_check(&cfg.cache_dir));
+
+    // Explicit offline contract: default doctor never downloads or opens network.
+    checks.push(DoctorCheck {
+        id: "offline".into(),
+        ok: true,
+        severity: DoctorSeverity::Info,
+        summary: "doctor performed no network or download".into(),
+        detail: Some(
+            "default doctor is offline-only; use explicit remote commands for connectivity checks"
+                .into(),
+        ),
+        hint: None,
+    });
+
     let ok = checks
         .iter()
         .all(|c| c.ok || matches!(c.severity, DoctorSeverity::Info | DoctorSeverity::Warn));
@@ -298,10 +314,91 @@ fn disk_space_check(path: &Path) -> DoctorCheck {
     }
 }
 
+fn cache_writable_check(path: &Path) -> DoctorCheck {
+    use std::fs;
+    use std::io::Write;
+    let create = || -> std::io::Result<()> {
+        fs::create_dir_all(path)?;
+        let probe = path.join(".aurum-doctor-write-probe");
+        {
+            let mut f = fs::File::create(&probe)?;
+            f.write_all(b"ok")?;
+        }
+        fs::remove_file(&probe)?;
+        Ok(())
+    };
+    match create() {
+        Ok(()) => DoctorCheck {
+            id: "cache_writable".into(),
+            ok: true,
+            severity: DoctorSeverity::Info,
+            summary: "cache directory is writable".into(),
+            detail: Some(path.display().to_string()),
+            hint: None,
+        },
+        Err(e) => DoctorCheck {
+            id: "cache_writable".into(),
+            ok: false,
+            severity: DoctorSeverity::Error,
+            summary: "cache directory is not writable".into(),
+            detail: Some(format!("{}: {e}", path.display())),
+            hint: Some("fix permissions or choose another cache root".into()),
+        },
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Config;
+    use crate::secret::SecretString;
     use tempfile::tempdir;
+
+    #[test]
+    fn doctor_is_offline_and_includes_core_checks() {
+        let dir = tempdir().unwrap();
+        let mut cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        cfg.cache_dir = dir.path().join("cache");
+        let report = run_doctor(&cfg);
+        let ids: Vec<_> = report.checks.iter().map(|c| c.id.as_str()).collect();
+        assert!(ids.contains(&"version"));
+        assert!(ids.contains(&"config"));
+        assert!(ids.contains(&"cache_dir"));
+        assert!(ids.contains(&"ffmpeg"));
+        assert!(ids.contains(&"secrets_redacted"));
+        assert!(ids.contains(&"offline"));
+        assert!(ids.contains(&"cache_writable"));
+        assert!(report
+            .checks
+            .iter()
+            .any(|c| c.id == "offline" && c.ok && c.summary.contains("no network")));
+        // JSON must not contain secret-shaped key material from a set key.
+        cfg.openrouter_api_key = Some(SecretString::new("sk-super-secret-token-value"));
+        let report2 = run_doctor(&cfg);
+        let json = report2.to_json_pretty().unwrap();
+        assert!(!json.contains("sk-super-secret-token-value"));
+        assert!(report2
+            .checks
+            .iter()
+            .any(|c| c.id == "secrets_redacted" && c.ok));
+    }
+
+    #[test]
+    fn doctor_flags_unwritable_cache() {
+        let dir = tempdir().unwrap();
+        let mut cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        // Point at a non-directory path so create_dir_all fails when a file exists.
+        let file = dir.path().join("not-a-dir");
+        std::fs::write(&file, b"x").unwrap();
+        cfg.cache_dir = file;
+        let report = run_doctor(&cfg);
+        let w = report
+            .checks
+            .iter()
+            .find(|c| c.id == "cache_writable")
+            .expect("cache_writable check");
+        assert!(!w.ok);
+    }
 
     #[test]
     fn doctor_runs_on_defaults() {

@@ -51,17 +51,15 @@ impl TranscriptionOptions {
 
 /// A single timed segment of transcript text.
 ///
-/// Prefer [`Segment::try_new`] for validated construction. Fields stay public for
-/// 0.0.x ergonomics/serde but invalid values are rejected via
-/// [`Segment::try_new`] / [`Segment::validate`] (JOE-1781 / JOE-1786 progressive).
-/// `Deserialize` is an **untrusted DTO path** — always validate before trusting timings.
+/// Fields are **private** (JOE-1786). Construct with [`Segment::try_new`] (fail closed)
+/// or deserialize then [`Segment::validate`]. Prefer accessors over free mutation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Segment {
     /// Start time in seconds.
-    pub start: f64,
+    start: f64,
     /// End time in seconds.
-    pub end: f64,
-    pub text: String,
+    end: f64,
+    text: String,
 }
 
 impl Segment {
@@ -74,6 +72,42 @@ impl Segment {
         };
         s.validate()?;
         Ok(s)
+    }
+
+    /// Construct without validation (trusted provider/postprocess paths and tests).
+    ///
+    /// Prefer [`Segment::try_new`] for host-facing construction. Callers that
+    /// skip validation must treat the segment as untrusted until [`Segment::validate`].
+    pub fn from_parts_unchecked(start: f64, end: f64, text: impl Into<String>) -> Self {
+        Self {
+            start,
+            end,
+            text: text.into(),
+        }
+    }
+
+    pub fn start(&self) -> f64 {
+        self.start
+    }
+
+    pub fn end(&self) -> f64 {
+        self.end
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn set_start(&mut self, start: f64) {
+        self.start = start;
+    }
+
+    pub fn set_end(&mut self, end: f64) {
+        self.end = end;
+    }
+
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
     }
 
     /// Validate timestamp finite-ness and ordering.
@@ -316,11 +350,11 @@ mod tests {
 
     #[test]
     fn try_local_rejects_nan_segment() {
-        let segs = vec![Segment {
-            start: f64::NAN,
-            end: 1.0,
-            text: "x".into(),
-        }];
+        let segs = vec![Segment::from_parts_unchecked(
+            f64::NAN,
+            1.0,
+            "x".to_string(),
+        )];
         assert!(TranscriptionResult::try_local("x".into(), segs, None, "m".into(), 1.0).is_err());
     }
 

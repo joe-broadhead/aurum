@@ -552,11 +552,7 @@ fn parse_transcriptions_body(
         }
         return Ok((
             text.clone(),
-            vec![Segment {
-                start: 0.0,
-                end: duration,
-                text,
-            }],
+            vec![Segment::from_parts_unchecked(0.0, duration, text)],
             false,
         ));
     }
@@ -579,11 +575,7 @@ fn parse_transcriptions_body(
         if let Some(raw_segs) = parsed.segments {
             let segments: Vec<Segment> = raw_segs
                 .into_iter()
-                .map(|s| Segment {
-                    start: s.start,
-                    end: s.end,
-                    text: s.text,
-                })
+                .map(|s| Segment::from_parts_unchecked(s.start, s.end, s.text))
                 .collect();
             // Dedicated verbose_json segments are treated as engine-derived.
             return Ok((text, segments, true));
@@ -592,11 +584,7 @@ fn parse_transcriptions_body(
 
     Ok((
         text.clone(),
-        vec![Segment {
-            start: 0.0,
-            end: duration,
-            text,
-        }],
+        vec![Segment::from_parts_unchecked(0.0, duration, text)],
         false,
     ))
 }
@@ -619,11 +607,7 @@ fn parse_chat_content(
     }
 
     let text = content.to_string();
-    let segments = vec![Segment {
-        start: 0.0,
-        end: duration,
-        text: text.clone(),
-    }];
+    let segments = vec![Segment::from_parts_unchecked(0.0, duration, text.clone())];
     (text, segments)
 }
 

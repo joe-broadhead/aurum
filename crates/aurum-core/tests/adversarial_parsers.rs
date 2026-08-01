@@ -70,16 +70,8 @@ fn format_srt_handles_empty_and_reordered_segments() {
     let result = TranscriptionResult::local(
         "hi".into(),
         vec![
-            Segment {
-                start: 2.0,
-                end: 3.0,
-                text: "later".into(),
-            },
-            Segment {
-                start: 0.0,
-                end: 1.0,
-                text: "first".into(),
-            },
+            Segment::from_parts_unchecked(2.0, 3.0, "later".to_string()),
+            Segment::from_parts_unchecked(0.0, 1.0, "first".to_string()),
         ],
         Some("en".into()),
         "tiny".into(),
@@ -135,18 +127,14 @@ fn remote_transcript_bounds_reject_expansion_and_nan_segments() {
     assert!(validate_text_bounds(&"x".repeat(200), Some(10), limits, "test").is_err());
     assert!(validate_text_bounds(&"x".repeat(50), Some(10), limits, "test").is_err()); // 5x expand
 
-    let segs = vec![Segment {
-        start: f64::NAN,
-        end: 1.0,
-        text: "x".into(),
-    }];
+    let segs = vec![Segment::from_parts_unchecked(
+        f64::NAN,
+        1.0,
+        "x".to_string(),
+    )];
     assert!(validate_segments(&segs, 10.0, limits, "test").is_err());
 
-    let segs = vec![Segment {
-        start: 2.0,
-        end: 1.0,
-        text: "x".into(),
-    }];
+    let segs = vec![Segment::from_parts_unchecked(2.0, 1.0, "x".to_string())];
     assert!(validate_segments(&segs, 10.0, limits, "test").is_err());
 }
 

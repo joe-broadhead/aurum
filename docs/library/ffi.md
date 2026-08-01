@@ -13,13 +13,38 @@ Partials and hold-to-talk UX stay in the host.
 | Sample rate | **16 000 Hz** mono `float32` |
 | ABI | `AURUM_ABI_VERSION` **2** (jobs, capabilities, doctor, TTS jobs; v1 blocking surface kept) |
 
-## Build
+## Build & install (JOE-1785)
 
 ```bash
 cargo build -p aurum-ffi --release
 # → target/release/libaurum_ffi.{a,dylib,so} or aurum_ffi.dll
-# link with include/aurum.h
+# header: crates/aurum-ffi/include/aurum.h
 ```
+
+### Downstream C11 / C++17 (CI-qualified on Linux/macOS)
+
+```bash
+INC=crates/aurum-ffi/include
+LIB=target/release
+
+# C11 job smoke
+cc -std=c11 -I "$INC" crates/aurum-ffi/examples/job_cleanup.c \
+  -L "$LIB" -laurum_ffi -lpthread -ldl -lm -o /tmp/aurum_job_cleanup
+
+# C++17 RAII engine
+c++ -std=c++17 -I "$INC" crates/aurum-ffi/examples/engine_raii.cpp \
+  -L "$LIB" -laurum_ffi -lpthread -ldl -lm -o /tmp/aurum_engine_raii
+```
+
+Windows MSVC host-link of these staticlib examples is deferred; Unix CI runs the
+lifecycle smoke. ABI constant/layout guards live in `crates/aurum-ffi/tests/abi_layout.rs`.
+
+### Engine vs process pools
+
+Rust library hosts should prefer `aurum_core::AurumEngine` (engine-local STT/TTS
+pools). The FFI `AurumEngine` handle currently uses process-global whisper/TTS
+residency on destroy/shutdown paths for Metal safety — see header lifetime notes
+and JOE-1795 for full migration.
 
 Rust hosts can use the same façade without C:
 

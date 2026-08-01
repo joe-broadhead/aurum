@@ -74,11 +74,17 @@ let engine = AurumEngine::new(validated);
 `Config.openrouter_api_key` is `Option<SecretString>`. Use
 `Config::openrouter_api_key_exposed()` only when constructing a remote client.
 
-## Segment / result construction
+## Segment / result construction (JOE-1786)
+
+`Segment` fields are **private**. Use accessors (`start()`, `end()`, `text()`)
+and construct with `try_new` (fail closed) or `from_parts_unchecked` only on
+trusted paths.
 
 ```rust
-use aurum_core::{Segment, TranscriptionResult};
+use aurum_core::{Segment, TranscriptionResult, SampleRateHz, ModelId};
 
+let _rate = SampleRateHz::whisper();
+let _model = ModelId::try_new("tiny-q5_1")?;
 let seg = Segment::try_new(0.0, 1.2, "hello")?; // rejects NaN / inverted
 let result = TranscriptionResult::try_local(
     "hello".into(),

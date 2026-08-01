@@ -495,11 +495,7 @@ fn run_whisper(
             full_text.push(' ');
         }
         full_text.push_str(text);
-        segments.push(Segment {
-            start,
-            end,
-            text: text.to_string(),
-        });
+        segments.push(Segment::from_parts_unchecked(start, end, text.to_string()));
     }
 
     let lang_id = state.full_lang_id_from_state();

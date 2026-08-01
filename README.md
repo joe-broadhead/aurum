@@ -50,7 +50,7 @@ Aurum is an on-device **speech CLI** and **Rust library**:
 
 OpenRouter is an **optional** remote path for ASR or cleanup — never the default. TTS has no cloud path in this release.
 
-> **v0.0.8** — Group C engine ownership: engine-local STT/TTS pools + high-level engine APIs. Library API remains provisional on the 0.0.x line.
+> **v0.0.9** — Group D: private Segment domain, doctor privacy checks, ABI snapshots, CLI engine pools. Library API remains provisional on the 0.0.x line.
 
 ## Highlights
 
@@ -98,7 +98,7 @@ Agent skills for coding agents: [`skills/`](skills/).
 
 ```toml
 # Depend on the library (pin a commit or tag)
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.8" }
+aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.9" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).

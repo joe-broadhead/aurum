@@ -16,9 +16,9 @@ Reusable **on-device speech I/O** library for [Aurum](https://github.com/joe-bro
 ## Depend
 
 ```toml
-aurum-core = "0.0.8"
+aurum-core = "0.0.9"
 # STT only (smaller): default-features = false
-# git: tag = "v0.0.8"
+# git: tag = "v0.0.9"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

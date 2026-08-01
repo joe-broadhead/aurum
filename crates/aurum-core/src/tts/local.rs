@@ -38,19 +38,30 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-/// Process-global TTS residency (JOE-1646): registry owns ready packs; singleflight
-/// only coalesces in-progress loads. Multiple `LocalTtsProvider` handles share it.
-struct TtsSessionCache {
+/// TTS pack residency + singleflight loader (JOE-1784).
+///
+/// Own one per [`crate::AurumEngine`], or share via [`process_global_tts_pool`].
+pub struct TtsSessionPool {
     flight: Singleflight<LoadedPack>,
     registry: ModelRegistry<LoadedPack>,
 }
 
-impl TtsSessionCache {
-    fn new() -> Self {
+impl Default for TtsSessionPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TtsSessionPool {
+    pub fn new() -> Self {
         Self {
             flight: Singleflight::default(),
             registry: ModelRegistry::new(RegistryConfig::default()),
         }
+    }
+
+    pub fn resident_len(&self) -> usize {
+        self.registry.len()
     }
 
     fn weight_for(onnx: &Path) -> ResidencyWeight {
@@ -66,6 +77,7 @@ impl TtsSessionCache {
         &self,
         key: LoadKey,
         weight: ResidencyWeight,
+        gov: &Arc<ResourceGovernor>,
         loader: F,
     ) -> Result<RegistryPin<LoadedPack>>
     where
@@ -95,7 +107,7 @@ impl TtsSessionCache {
                     .into());
                 }
                 Ok(Some(leader)) => {
-                    let gov = ResourceGovernor::process_global();
+                    let gov = Arc::clone(gov);
                     let load_result = (|| -> Result<Arc<LoadedPack>> {
                         let _permit = gov.acquire(crate::runtime::PermitKind::ModelLoad, None)?;
                         Ok(Arc::new(loader()?))
@@ -131,14 +143,19 @@ impl TtsSessionCache {
     /// Drop idle sessions only. Active registry pins retain their entry and
     /// weight so a concurrent clear cannot force a second same-key load
     /// (JOE-1646 third-pass residual).
-    fn clear(&self) {
+    pub fn clear(&self) {
         let _ = self.registry.clear_idle();
         // Do not wipe in-flight singleflight Loading slots (would strand leaders).
         // Failed TTL slots can stay until natural expiry.
     }
 }
 
-static TTS_SESSION_CACHE: Lazy<TtsSessionCache> = Lazy::new(TtsSessionCache::new);
+static PROCESS_TTS_POOL: Lazy<Arc<TtsSessionPool>> = Lazy::new(|| Arc::new(TtsSessionPool::new()));
+
+/// Process-global TTS pool used by default providers / CLI (JOE-1784).
+pub fn process_global_tts_pool() -> Arc<TtsSessionPool> {
+    Arc::clone(&PROCESS_TTS_POOL)
+}
 
 /// On-device KittenTTS via ONNX Runtime + misaki-rs G2P (no espeak / GPL).
 ///
@@ -147,13 +164,16 @@ static TTS_SESSION_CACHE: Lazy<TtsSessionCache> = Lazy::new(TtsSessionCache::new
 /// rather than unbounded parallel ONNX sessions (memory cost of multi-session
 /// pools is not free for mobile/desktop defaults).
 ///
-/// Loaded packs participate in the process-global weighted residency registry
-/// (JOE-1646) so multiple provider handles cannot silently multiply sessions.
+/// Loaded packs participate in a weighted residency registry (JOE-1646 /
+/// JOE-1784). Default providers share the process-global pool; engines own
+/// isolated pools.
 pub struct LocalTtsProvider {
     cache_dir: PathBuf,
     show_progress: bool,
     local_only: bool,
     max_chars: usize,
+    pool: Arc<TtsSessionPool>,
+    governor: Arc<ResourceGovernor>,
 }
 
 struct LoadedPack {
@@ -168,11 +188,26 @@ struct LoadedPack {
 
 impl LocalTtsProvider {
     pub fn new(cache_dir: PathBuf) -> Self {
+        Self::with_runtime(
+            cache_dir,
+            process_global_tts_pool(),
+            ResourceGovernor::process_global(),
+        )
+    }
+
+    /// Construct with an explicit TTS pool and governor (JOE-1784 / engine path).
+    pub fn with_runtime(
+        cache_dir: PathBuf,
+        pool: Arc<TtsSessionPool>,
+        governor: Arc<ResourceGovernor>,
+    ) -> Self {
         Self {
             cache_dir,
             show_progress: false,
             local_only: false,
             max_chars: DEFAULT_MAX_CHARS,
+            pool,
+            governor,
         }
     }
 
@@ -191,8 +226,11 @@ impl LocalTtsProvider {
         self
     }
 
-    /// Drop **idle** loaded ONNX sessions process-wide (frees ORT graphs held
-    /// in RAM for entries with no active operation pin).
+    pub fn pool(&self) -> &Arc<TtsSessionPool> {
+        &self.pool
+    }
+
+    /// Drop **idle** loaded ONNX sessions in **this provider's** pool.
     ///
     /// Active synthesis leases keep their registry entry and residency weight
     /// until the pin drops — a clear during an in-flight synth cannot make the
@@ -200,7 +238,7 @@ impl LocalTtsProvider {
     ///
     /// Does not delete cached files under the TTS cache directory.
     pub fn clear_sessions(&self) {
-        TTS_SESSION_CACHE.clear();
+        self.pool.clear();
     }
 
     async fn ensure_loaded_pin(
@@ -209,7 +247,7 @@ impl LocalTtsProvider {
         local_only: bool,
     ) -> Result<RegistryPin<LoadedPack>> {
         let key = LoadKey::tts(model, self.cache_dir.join(model).display().to_string());
-        if let Some(pin) = TTS_SESSION_CACHE.registry.get_and_pin(&key) {
+        if let Some(pin) = self.pool.registry.get_and_pin(&key) {
             return Ok(pin);
         }
 
@@ -229,10 +267,12 @@ impl LocalTtsProvider {
         let catalogue_max = info.max_phoneme_tokens;
         let key_for_load = key.clone();
         let model_id = model.to_string();
-        let weight = TtsSessionCache::weight_for(&onnx);
+        let weight = TtsSessionPool::weight_for(&onnx);
+        let pool = Arc::clone(&self.pool);
+        let gov = Arc::clone(&self.governor);
 
         let pin = tokio::task::spawn_blocking(move || {
-            TTS_SESSION_CACHE.get_or_load_pin(key_for_load, weight, || {
+            pool.get_or_load_pin(key_for_load, weight, &gov, || {
                 load_pack(
                     &onnx,
                     &voices_file,
@@ -292,7 +332,7 @@ impl LocalTtsProvider {
             format!("local-pack:{}", manifest.model_id),
             root.display().to_string(),
         );
-        if let Some(pin) = TTS_SESSION_CACHE.registry.get_and_pin(&key) {
+        if let Some(pin) = self.pool.registry.get_and_pin(&key) {
             return Ok((pin, manifest));
         }
         let key_for_load = key.clone();
@@ -304,10 +344,12 @@ impl LocalTtsProvider {
                     .unwrap_or("config.json"),
             ),
         );
-        let weight = TtsSessionCache::weight_for(&onnx);
+        let weight = TtsSessionPool::weight_for(&onnx);
+        let pool = Arc::clone(&self.pool);
+        let gov = Arc::clone(&self.governor);
 
         let pin = tokio::task::spawn_blocking(move || {
-            TTS_SESSION_CACHE.get_or_load_pin(key_for_load, weight, || {
+            pool.get_or_load_pin(key_for_load, weight, &gov, || {
                 load_pack(
                     &onnx,
                     &voices_file,
@@ -722,11 +764,11 @@ impl SynthesisProvider for LocalTtsProvider {
             let text_chars = prepared.text_chars;
             let opts_owned = opts.clone();
             let op_for_worker = op.clone();
+            let gov = Arc::clone(&self.governor);
             let join = tokio::task::spawn_blocking(move || {
                 // Move registry pin into the worker so soft outer deadlines cannot
                 // release residency while ONNX is still running (JOE-1646).
                 let _lease = lease;
-                let gov = ResourceGovernor::process_global();
                 let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
                 op_for_worker.check()?;
                 synthesize_with_pack(
@@ -777,12 +819,12 @@ impl SynthesisProvider for LocalTtsProvider {
         let model_canonical = model_info.id.to_string();
         let op_for_worker = op.clone();
         let adapter = model_info.adapter.to_string();
+        let gov = Arc::clone(&self.governor);
 
         // Hold the TTS + blocking permit and registry pin for the entire native
         // job lifetime — even if the caller soft-times out (JOE-1600 / JOE-1646).
         let join = tokio::task::spawn_blocking(move || {
             let _lease = lease;
-            let gov = ResourceGovernor::process_global();
             let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
             op_for_worker.check()?;
             synthesize_with_pack(

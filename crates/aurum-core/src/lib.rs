@@ -53,7 +53,8 @@
 //! let engine = AurumEngine::load()?;
 //! let _ = engine.doctor();
 //! let _ = engine.support_bundle(None);
-//! engine.shutdown();
+//! // engine.transcribe_pcm(&samples, &opts).await?; // STT on engine pools
+//! engine.shutdown(); // closes + clears idle models in *this* engine only
 //! # Ok(())
 //! # }
 //! ```
@@ -128,6 +129,7 @@ pub use profile::{
     format_recommendation, resolve_profile, ProfileResolution, QualityProfile,
     PROFILE_EVIDENCE_VERSION,
 };
+pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,
     TranscriptionProvider, TranscriptionResult,
@@ -148,10 +150,11 @@ pub use tts::{
     format_inspect as format_tts_inspect, format_model_list as format_tts_model_list,
     format_voice_list as format_tts_voice_list, inspect_pack as inspect_tts_pack,
     list_adapters as list_tts_adapters, list_models as list_tts_models,
-    list_voices as list_tts_voices, propose_add_local as propose_tts_add_local,
-    resolve_voice_for_model, run_kitten_catalogue_conformance, run_pack_conformance,
-    verify_pack as verify_tts_pack, write_add_manifest as write_tts_add_manifest,
-    write_wav_i16_mono_atomic, write_wav_i16_mono_transaction, BackendKind as TtsBackendKind,
-    LocalTtsProvider, SynthesisOptions, SynthesisProvider, SynthesisResult, TrustMode,
+    list_voices as list_tts_voices, process_global_tts_pool,
+    propose_add_local as propose_tts_add_local, resolve_voice_for_model,
+    run_kitten_catalogue_conformance, run_pack_conformance, verify_pack as verify_tts_pack,
+    write_add_manifest as write_tts_add_manifest, write_wav_i16_mono_atomic,
+    write_wav_i16_mono_transaction, BackendKind as TtsBackendKind, LocalTtsProvider,
+    SynthesisOptions, SynthesisProvider, SynthesisResult, TrustMode, TtsSessionPool,
     DEFAULT_TTS_MODEL, DEFAULT_TTS_VOICE, KOKORO_DEFAULT_VOICE, KOKORO_TTS_MODEL,
 };

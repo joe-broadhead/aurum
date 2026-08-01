@@ -51,8 +51,10 @@ impl TranscriptionOptions {
 
 /// A single timed segment of transcript text.
 ///
-/// Prefer [`Segment::try_new`] for validated construction. `Deserialize` is an
-/// **untrusted DTO path** — call [`Segment::validate`] before trusting timings.
+/// Prefer [`Segment::try_new`] for validated construction. Fields stay public for
+/// 0.0.x ergonomics/serde but invalid values are rejected via
+/// [`Segment::try_new`] / [`Segment::validate`] (JOE-1781 / JOE-1786 progressive).
+/// `Deserialize` is an **untrusted DTO path** — always validate before trusting timings.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Segment {
     /// Start time in seconds.

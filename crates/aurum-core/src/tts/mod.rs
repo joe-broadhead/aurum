@@ -77,7 +77,7 @@ pub use custom::{
     CustomTtsModel, CustomTtsModelEntry, MAX_CUSTOM_MODELS,
 };
 #[cfg(feature = "tts")]
-pub use local::LocalTtsProvider;
+pub use local::{process_global_tts_pool, LocalTtsProvider, TtsSessionPool};
 #[cfg(feature = "tts")]
 pub use pack::{
     custom_pack_cache_dir, load_pack_dir, sha256_file, verify_pack_artifacts, write_fake_sine_pack,

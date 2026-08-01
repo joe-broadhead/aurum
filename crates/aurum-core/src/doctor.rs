@@ -315,17 +315,41 @@ fn disk_space_check(path: &Path) -> DoctorCheck {
 }
 
 fn cache_writable_check(path: &Path) -> DoctorCheck {
-    use std::fs;
+    use std::fs::{self, OpenOptions};
     use std::io::Write;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    // JOE-1916 / F-003: exclusive create_new with unpredictable name; never follow
+    // a pre-existing symlink at a predictable probe path. Always remove on exit.
     let create = || -> std::io::Result<()> {
         fs::create_dir_all(path)?;
-        let probe = path.join(".aurum-doctor-write-probe");
-        {
-            let mut f = fs::File::create(&probe)?;
-            f.write_all(b"ok")?;
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let probe = path.join(format!(
+            ".aurum-doctor-write-{}-{nanos}",
+            std::process::id()
+        ));
+        // Guard: if a symlink already exists at our random name (astronomically rare),
+        // refuse rather than following it.
+        if probe.symlink_metadata().is_ok() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::AlreadyExists,
+                "probe path unexpectedly exists",
+            ));
         }
-        fs::remove_file(&probe)?;
-        Ok(())
+        let write_result = (|| -> std::io::Result<()> {
+            let mut f = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&probe)?;
+            f.write_all(b"ok")?;
+            f.sync_all()?;
+            Ok(())
+        })();
+        let _ = fs::remove_file(&probe);
+        write_result
     };
     match create() {
         Ok(()) => DoctorCheck {
@@ -398,6 +422,41 @@ mod tests {
             .find(|c| c.id == "cache_writable")
             .expect("cache_writable check");
         assert!(!w.ok);
+    }
+
+    #[test]
+    fn cache_writable_probe_does_not_clobber_preexisting_symlink_target() {
+        // Ensure a fixed-name attacker path is not used; probe is random exclusive.
+        let dir = tempdir().unwrap();
+        let cache = dir.path().join("cache");
+        std::fs::create_dir_all(&cache).unwrap();
+        let victim = dir.path().join("victim-secret");
+        std::fs::write(&victim, b"keep-me").unwrap();
+        // Plant a predictable-name symlink like the old probe path.
+        let decoy = cache.join(".aurum-doctor-write-probe");
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&victim, &decoy).unwrap();
+        }
+        #[cfg(not(unix))]
+        {
+            // On Windows, skip symlink plant if privileges missing; still assert writable.
+            let _ = decoy;
+        }
+        let check = cache_writable_check(&cache);
+        assert!(check.ok, "writable cache should pass: {:?}", check);
+        // Victim must be intact (we never open the decoy path).
+        assert_eq!(std::fs::read(&victim).unwrap(), b"keep-me");
+        // No leftover random probe files (ignore the planted fixed-name decoy).
+        let leftovers: Vec<_> = std::fs::read_dir(&cache)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                name.starts_with(".aurum-doctor-write-") && name != ".aurum-doctor-write-probe"
+            })
+            .collect();
+        assert!(leftovers.is_empty(), "probe leftovers: {leftovers:?}");
     }
 
     #[test]

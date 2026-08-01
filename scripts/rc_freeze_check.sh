@@ -40,4 +40,11 @@ assert "ERROR_SCHEMA_VERSION: u32 = 1" in dto
 print("schema/ABI constant spot-check OK")
 PY
 
+echo "== native inventory via SBOM (JOE-1902) =="
+./scripts/generate_sbom.sh dist/sbom
+test -f dist/sbom/native-components.md
+grep -q 'whisper-rs' dist/sbom/native-components.md
+grep -q 'ffmpeg' dist/sbom/native-components.md
+echo "native-components.md OK"
+
 echo "rc_freeze_check.sh OK"

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17] - 2026-08-01
+
+v0.0.17 is **Group L — RC exit + external review pack**: exit report generator,
+reviewer brief, downstream consumer gate, and frozen native inventory.
+
+### Added
+
+- **JOE-1904:** `scripts/generate_rc_exit_report.sh` + `docs/operations/rc-exit.md`
+  (human sign-off left blank).
+- **JOE-1901:** `docs/operations/external-review-brief.md` + findings disposition
+  template for independent review.
+- **JOE-1903:** `scripts/rc_downstream_check.sh` (minimal Rust consumer + C/C++
+  FFI examples) + CI `rc-exit-pack`.
+- **JOE-1902:** `native-components.md` includes locked whisper/ort/toolchain
+  versions from cargo metadata; freeze check requires it.
+
 ## [0.0.16] - 2026-08-01
 
 v0.0.16 is **Group K — RC freeze foundations**: compatibility freeze inventory,

@@ -17,6 +17,8 @@ Quick map of production docs (read this first):
 | RC dogfood | [RC dogfood](rc-dogfood.md) |
 | RC rollback | [RC rollback](rc-rollback.md) |
 | Support / security-fix policy | [Support policy](support-policy.md) |
+| RC exit report | [RC exit](rc-exit.md) |
+| External security review brief | [External review brief](external-review-brief.md) |
 | Supply chain | [Supply chain](../development/supply-chain.md) |
 | Compatibility | [Compatibility](../development/compatibility.md) |
 | Migration 0.0.3 | [Migration](../development/migration-0.0.3.md) |

@@ -196,18 +196,65 @@ else
   echo "cargo-cyclonedx not installed; using generated aurum.cdx.json (required)."
 fi
 
-cat > "${OUT_DIR}/native-components.md" <<EOF
-# Native / runtime components
+# Pin native crate versions from locked metadata for RC freeze evidence (JOE-1902).
+WHISPER_RS_VER="$(python3 - <<'PY' "${OUT_DIR}/cargo-metadata.json"
+import json,sys
+meta=json.loads(open(sys.argv[1]).read())
+for p in meta.get("packages",[]):
+    if p["name"]=="whisper-rs":
+        print(p["version"]); break
+else:
+    print("unknown")
+PY
+)"
+WHISPER_SYS_VER="$(python3 - <<'PY' "${OUT_DIR}/cargo-metadata.json"
+import json,sys
+meta=json.loads(open(sys.argv[1]).read())
+for p in meta.get("packages",[]):
+    if p["name"]=="whisper-rs-sys":
+        print(p["version"]); break
+else:
+    print("unknown")
+PY
+)"
+ORT_VER="$(python3 - <<'PY' "${OUT_DIR}/cargo-metadata.json"
+import json,sys
+meta=json.loads(open(sys.argv[1]).read())
+for p in meta.get("packages",[]):
+    if p["name"]=="ort":
+        print(p["version"]); break
+else:
+    print("optional/unknown")
+PY
+)"
+MISAKI_VER="$(python3 - <<'PY' "${OUT_DIR}/cargo-metadata.json"
+import json,sys
+meta=json.loads(open(sys.argv[1]).read())
+for p in meta.get("packages",[]):
+    if p["name"]=="misaki-rs":
+        print(p["version"]); break
+else:
+    print("optional/unknown")
+PY
+)"
+RUSTC_VER="$(rustc --version 2>/dev/null || echo unknown)"
+HOST_TRIPLE="$(rustc -vV 2>/dev/null | sed -n 's/^host: //p' || echo unknown)"
 
-| Component | Role | Notes |
-|-----------|------|-------|
-| whisper-rs / whisper.cpp | Local STT | Native code; platform-specific (Metal on macOS) |
-| ort (ONNX Runtime) | Local TTS | Vendor prebuilts via \`download-binaries\` when feature \`tts\` |
-| ffmpeg | STT decode | **System** dependency; not bundled |
-| misaki-rs | TTS G2P | MIT; default TTS path |
+cat > "${OUT_DIR}/native-components.md" <<EOF
+# Native / runtime components (JOE-1902 freeze inventory)
+
+| Component | Locked version / contract | Role | Notes |
+|-----------|---------------------------|------|-------|
+| whisper-rs | \`${WHISPER_RS_VER}\` | Local STT Rust bindings | Platform-specific (Metal on macOS) |
+| whisper-rs-sys | \`${WHISPER_SYS_VER}\` | whisper.cpp build | Native C++; see crate build scripts |
+| ort (ONNX Runtime) | \`${ORT_VER}\` | Local TTS | Prebuilts via \`download-binaries\` when feature \`tts\` |
+| misaki-rs | \`${MISAKI_VER}\` | TTS G2P | MIT; default TTS path |
+| ffmpeg | **system** (not bundled) | STT non-WAV decode | Must be on PATH; doctor fail-closed if missing |
+| rustc / host | \`${RUSTC_VER}\` / \`${HOST_TRIPLE}\` | Build toolchain | MSRV in workspace \`rust-version\` |
 
 Source commit: \`${commit}\`
-Version: \`${version}\`
+Aurum version: \`${version}\`
+Generated: \`${date_utc}\`
 
 Formal SBOMs in this directory: \`aurum.cdx.json\` (CycloneDX 1.5), \`aurum.spdx.json\` (SPDX 2.3 lite).
 EOF

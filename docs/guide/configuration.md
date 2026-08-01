@@ -3,20 +3,27 @@
 ## Precedence
 
 1. **CLI flags**
-2. **Environment**: OpenRouter (`OPENROUTER_API_KEY`, `OPENROUTER_BASE_URL`) and TTS (`AURUM_TTS_*`)
+2. **Environment**: provider secrets (`OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `XAI_API_KEY`), OpenRouter base URL, and TTS (`AURUM_TTS_*`)
 3. **Config file**
 4. **Built-in defaults**
+
+A provider is **never** selected merely because its API key is present. Omitted STT/TTS `provider` remains `local`.
 
 ## Environment
 
 | Variable | Purpose |
 |----------|---------|
-| `OPENROUTER_API_KEY` | Remote ASR / cleanup auth (preferred over file) |
-| `OPENROUTER_BASE_URL` | Override API base (tests / proxies) |
+| `OPENROUTER_API_KEY` | OpenRouter auth (preferred over file `api_key`) |
+| `OPENROUTER_BASE_URL` | Override OpenRouter API base (tests / proxies) |
+| `OPENAI_API_KEY` | OpenAI provider-scoped secret |
+| `ELEVENLABS_API_KEY` | ElevenLabs provider-scoped secret |
+| `XAI_API_KEY` | xAI provider-scoped secret |
 | `AURUM_TTS_MODEL` | Override `[tts].model` |
 | `AURUM_TTS_VOICE` | Override `[tts].voice` |
 | `AURUM_TTS_LANGUAGE` | Override `[tts].language` |
 | `RUST_LOG` | Tracing filters |
+
+Secrets are stored as redacting `SecretString` values. Effective-config / doctor / support output shows **presence only** (`***`), never plaintext.
 
 ## Config file
 
@@ -28,23 +35,20 @@ Resolved via the `directories` crate (app name `aurum`):
 | Linux | `~/.config/aurum/config.toml` |
 | Windows | `%APPDATA%\aurum\config.toml` |
 
+### Canonical schema (preferred)
+
 ```toml
-[default]
-provider = "local"
+[stt]
+provider = "local"          # local | openrouter | openai | xai
 model = "base"
 language = "auto"
-output = "txt"
-
-[cleanup]
-style = "raw"              # raw | clean | bullets | professional | summary
-provider = "rules"         # rules | openrouter
-# openrouter_model = "google/gemini-2.5-flash-lite"
 
 [tts]
-provider = "local"
+provider = "local"          # local | openrouter | openai | elevenlabs | xai
 model = "kitten-nano-int8"
 voice = "Luna"
 language = "en"
+speaking_rate = 1.0
 max_chars = 5000
 timeout_ms = 120000
 # Optional local pack override (directory with aurum-tts-manifest.json — not a bare .onnx)
@@ -59,11 +63,50 @@ timeout_ms = 120000
 # trust = "verified"   # verified | local_unverified (never builtin)
 # license = "CC0"
 
+[cleanup]
+style = "raw"              # raw | clean | bullets | professional | summary
+provider = "rules"         # rules | openrouter
+# openrouter_model = "google/gemini-2.5-flash-lite"
+
+# Named provider options + optional file secrets (prefer env vars for keys).
+# Unknown [providers.*] keys fail closed.
+
+# [providers.openrouter]
+# stt_mode = "auto"          # auto | chat | transcriptions
+# model = "google/gemini-2.5-flash"
+# base_url = "https://openrouter.ai/api/v1"
+# allow_custom_endpoint = false
+# use_system_proxy = false
+
+# [providers.openai]
+# base_url = "https://api.openai.com/v1"
+
+# [providers.elevenlabs]
+# [providers.xai]
+```
+
+### Legacy compatibility
+
+These sections still load with **identical effective behaviour** when the new sections are absent:
+
+```toml
+[default]
+provider = "local"
+model = "base"
+language = "auto"
+output = "txt"
+
 [openrouter]
-# api_key = "sk-or-..."    # prefer env var
+# api_key — prefer OPENROUTER_API_KEY
 # model = "google/gemini-2.5-flash-lite"
 # base_url = "https://openrouter.ai/api/v1"
 ```
+
+**Conflict rule:** if both old and new sections are present and disagree (e.g. `[default]` vs `[stt]`, or `[openrouter]` vs `[providers.openrouter]`), Aurum fails closed with an actionable `InvalidConfig` error. It does not silently pick one. When values agree, load succeeds. Prefer migrating to `[stt]` and `[providers.*]` only.
+
+### `local_only`
+
+When `local_only` is set on the runtime/validated config (CLI offline flag and library builders), validation rejects a remote STT or TTS provider **before** encoding, upload, or request construction.
 
 ## Safety limits
 
@@ -74,6 +117,7 @@ timeout_ms = 120000
 | Max remote upload (STT) | ~24 MB compressed |
 | Max TTS characters | 5000 (`[tts].max_chars`) |
 | TTS timeout | 120000 ms (`[tts].timeout_ms`) |
+| TTS speaking rate | 1.0, allowed range (0, 4] |
 
 Whisper special tokens such as `[BLANK_AUDIO]` are stripped. Segment timestamps
 are clamped to audio duration.

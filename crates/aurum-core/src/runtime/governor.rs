@@ -96,7 +96,12 @@ impl GovernorConfig {
         }
     }
 
-    /// Validate configuration (reject zero / inverted budgets).
+    /// Reviewed hard ceiling for CPU-thread budget (JOE-1917).
+    pub const MAX_CPU_THREADS_CEILING: usize = 256;
+    /// Reviewed hard ceiling for concurrent permits of a single kind.
+    pub const MAX_PERMIT_CEILING: usize = 4096;
+
+    /// Validate configuration (reject zero / inverted / above-ceiling budgets).
     pub fn validate(&self) -> Result<()> {
         if self.max_model_loads == 0
             || self.max_local_stt == 0
@@ -109,6 +114,33 @@ impl GovernorConfig {
                 reason: "governor permit and CPU budgets must be >= 1".into(),
             }
             .into());
+        }
+        if self.max_cpu_threads > Self::MAX_CPU_THREADS_CEILING {
+            return Err(crate::error::UserError::InvalidConfig {
+                reason: format!(
+                    "max_cpu_threads {} exceeds reviewed ceiling {}",
+                    self.max_cpu_threads,
+                    Self::MAX_CPU_THREADS_CEILING
+                ),
+            }
+            .into());
+        }
+        for (name, v) in [
+            ("max_model_loads", self.max_model_loads),
+            ("max_local_stt", self.max_local_stt),
+            ("max_local_tts", self.max_local_tts),
+            ("max_remote", self.max_remote),
+            ("max_blocking", self.max_blocking),
+        ] {
+            if v > Self::MAX_PERMIT_CEILING {
+                return Err(crate::error::UserError::InvalidConfig {
+                    reason: format!(
+                        "{name} {v} exceeds reviewed ceiling {}",
+                        Self::MAX_PERMIT_CEILING
+                    ),
+                }
+                .into());
+            }
         }
         Ok(())
     }
@@ -133,9 +165,12 @@ impl CounterPool {
             if cur >= self.max {
                 return false;
             }
+            let Some(next) = cur.checked_add(1) else {
+                return false;
+            };
             if self
                 .in_use
-                .compare_exchange(cur, cur + 1, Ordering::SeqCst, Ordering::SeqCst)
+                .compare_exchange(cur, next, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
                 return true;
@@ -144,8 +179,21 @@ impl CounterPool {
     }
 
     fn release(&self) {
-        let prev = self.in_use.fetch_sub(1, Ordering::SeqCst);
-        debug_assert!(prev > 0, "permit released more times than acquired");
+        // Saturating: never wrap under zero if a bug double-releases.
+        loop {
+            let cur = self.in_use.load(Ordering::SeqCst);
+            if cur == 0 {
+                debug_assert!(false, "permit released more times than acquired");
+                return;
+            }
+            if self
+                .in_use
+                .compare_exchange(cur, cur - 1, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                return;
+            }
+        }
     }
 
     fn in_use(&self) -> usize {
@@ -183,8 +231,10 @@ impl Default for ResourceGovernor {
 }
 
 impl ResourceGovernor {
-    pub fn new(config: GovernorConfig) -> Self {
-        Self {
+    /// Build a governor after validating `config` (JOE-1917).
+    pub fn try_new(config: GovernorConfig) -> Result<Self> {
+        config.validate()?;
+        Ok(Self {
             model_loads: CounterPool::new(config.max_model_loads),
             local_stt: CounterPool::new(config.max_local_stt),
             local_tts: CounterPool::new(config.max_local_tts),
@@ -196,7 +246,13 @@ impl ResourceGovernor {
             wait_mutex: Mutex::new(()),
             waiters: Condvar::new(),
             config,
-        }
+        })
+    }
+
+    /// Build a governor. Panics if `config` fails validation.
+    /// Prefer [`Self::try_new`] at public SDK boundaries.
+    pub fn new(config: GovernorConfig) -> Self {
+        Self::try_new(config).expect("GovernorConfig::validate failed")
     }
 
     /// Wake all permit waiters (called after any resource release).
@@ -442,14 +498,25 @@ impl ResourceGovernor {
     }
 
     fn try_reserve_cpu(&self, n: usize) -> bool {
+        if n == 0 {
+            return true;
+        }
+        // Cap requested threads to the configured budget so usize::MAX cannot wrap
+        // past the check (JOE-1917).
+        if n > self.config.max_cpu_threads {
+            return false;
+        }
         loop {
             let cur = self.cpu_threads_in_use.load(Ordering::SeqCst);
-            if cur + n > self.config.max_cpu_threads {
+            let Some(next) = cur.checked_add(n) else {
+                return false;
+            };
+            if next > self.config.max_cpu_threads {
                 return false;
             }
             if self
                 .cpu_threads_in_use
-                .compare_exchange(cur, cur + n, Ordering::SeqCst, Ordering::SeqCst)
+                .compare_exchange(cur, next, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
             {
                 return true;
@@ -458,10 +525,22 @@ impl ResourceGovernor {
     }
 
     fn release_cpu(&self, n: usize) {
-        if n > 0 {
-            self.cpu_threads_in_use.fetch_sub(n, Ordering::SeqCst);
-            self.notify_waiters();
+        if n == 0 {
+            return;
         }
+        // Saturating subtract so a bug cannot wrap under zero and inflate budget.
+        loop {
+            let cur = self.cpu_threads_in_use.load(Ordering::SeqCst);
+            let next = cur.saturating_sub(n);
+            if self
+                .cpu_threads_in_use
+                .compare_exchange(cur, next, Ordering::SeqCst, Ordering::SeqCst)
+                .is_ok()
+            {
+                break;
+            }
+        }
+        self.notify_waiters();
     }
 
     /// How many Whisper threads a new STT job should use given remaining budget.
@@ -659,5 +738,39 @@ mod tests {
             ..GovernorConfig::default()
         };
         assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn try_new_rejects_invalid_and_accepts_default() {
+        assert!(ResourceGovernor::try_new(GovernorConfig::default()).is_ok());
+        let bad = GovernorConfig {
+            max_cpu_threads: 0,
+            ..GovernorConfig::default()
+        };
+        assert!(ResourceGovernor::try_new(bad).is_err());
+        let over = GovernorConfig {
+            max_cpu_threads: GovernorConfig::MAX_CPU_THREADS_CEILING + 1,
+            ..GovernorConfig::default()
+        };
+        assert!(ResourceGovernor::try_new(over).is_err());
+    }
+
+    #[test]
+    fn cpu_reserve_rejects_usize_max_without_wrap() {
+        let g = ResourceGovernor::new(GovernorConfig {
+            max_cpu_threads: 4,
+            max_local_stt: 1,
+            ..GovernorConfig::default()
+        });
+        assert!(!g.try_reserve_cpu(usize::MAX));
+        assert!(!g.try_reserve_cpu(5));
+        assert!(g.try_reserve_cpu(3));
+        assert!(!g.try_reserve_cpu(2)); // 3+2 > 4
+        g.release_cpu(3);
+        assert!(g.try_reserve_cpu(4));
+        g.release_cpu(4);
+        // double-release must not wrap under zero into huge free budget
+        g.release_cpu(4);
+        assert_eq!(g.stats().cpu_threads, 0);
     }
 }

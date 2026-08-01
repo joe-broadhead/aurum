@@ -268,13 +268,25 @@ jobs:
           export AURUM_EXPECT_COMMIT="$(git -C "${GITHUB_WORKSPACE}" rev-parse HEAD)"
           export AURUM_REQUIRE_COSIGN=1
           export AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER="https://token.actions.githubusercontent.com"
-          export AURUM_COSIGN_CERTIFICATE_IDENTITY="https://github.com/joe-broadhead/aurum/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}"
+          # OIDC subject follows the workflow *trigger* ref, not the checked-out tag.
+          # - tag push → refs/tags/vX.Y.Z
+          # - workflow_dispatch (release-tag helper) → refs/heads/master
+          #   (GITHUB_TOKEN tag pushes do not re-trigger workflows, so Tag Release
+          #   dispatches this workflow from the default branch.)
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            COSIGN_IDENTITY="https://github.com/joe-broadhead/aurum/.github/workflows/release.yml@refs/heads/master"
+          else
+            COSIGN_IDENTITY="https://github.com/joe-broadhead/aurum/.github/workflows/release.yml@refs/tags/${RELEASE_TAG}"
+          fi
+          export AURUM_COSIGN_CERTIFICATE_IDENTITY="${COSIGN_IDENTITY}"
+          echo "cosign_verify_identity=${COSIGN_IDENTITY}"
           "${GITHUB_WORKSPACE}/scripts/verify_release_assets.sh" .
 
       - name: Extract changelog section
         id: notes
         env:
           RELEASE_VERSION: ${{ needs.validate.outputs.release_version }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -284,6 +296,18 @@ jobs:
           pat = rf"## \[{re.escape(ver)}\][^\n]*\n(.*?)(?=\n## |\Z)"
           m = re.search(pat, text, re.S)
           body = m.group(1).strip() if m else f"Release v{ver}"
+          event = os.environ.get("GITHUB_EVENT_NAME", "")
+          # workflow_dispatch (Tag Release helper) signs under refs/heads/master OIDC.
+          if event == "workflow_dispatch":
+              cosign_id = (
+                  "https://github.com/joe-broadhead/aurum/.github/workflows/"
+                  "release.yml@refs/heads/master"
+              )
+          else:
+              cosign_id = (
+                  "https://github.com/joe-broadhead/aurum/.github/workflows/"
+                  f"release.yml@refs/tags/v{ver}"
+              )
           # Append cosign identity hint for operators (JOE-1882).
           body += (
               "\n\n### Supply chain verify\n\n"
@@ -292,10 +316,11 @@ jobs:
               f"export AURUM_EXPECT_TAG=v{ver}\n"
               "export AURUM_REQUIRE_COSIGN=1\n"
               "export AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER=https://token.actions.githubusercontent.com\n"
-              f"export AURUM_COSIGN_CERTIFICATE_IDENTITY="
-              f"https://github.com/joe-broadhead/aurum/.github/workflows/release.yml@refs/tags/v{ver}\n"
+              f"export AURUM_COSIGN_CERTIFICATE_IDENTITY={cosign_id}\n"
               "./scripts/verify_release_assets.sh ./release-assets\n"
               "```\n"
+              "Note: `workflow_dispatch` releases use the master workflow OIDC "
+              "subject; pure tag-push releases use the tag subject.\n"
               "See docs/operations/provenance.md.\n"
           )
           pathlib.Path("release-notes.md").write_text(body + "\n")

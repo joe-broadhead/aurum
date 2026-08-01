@@ -81,6 +81,7 @@ pub mod partial;
 pub mod pcm;
 pub mod postprocess;
 pub mod profile;
+pub mod provider_platform;
 pub mod providers;
 pub mod remote;
 pub mod runtime;
@@ -131,6 +132,7 @@ pub use profile::{
     format_recommendation, resolve_profile, ProfileResolution, QualityProfile,
     PROFILE_EVIDENCE_VERSION,
 };
+pub use provider_platform::{ProviderBuildContext, ProviderId, ProviderRegistry};
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,

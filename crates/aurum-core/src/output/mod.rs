@@ -207,23 +207,23 @@ pub fn write_result_to_path_with_limit(
 }
 
 fn write_txt<W: Write>(result: &TranscriptionResult, w: &mut W) -> io::Result<()> {
-    let text = result.text.trim();
+    let text = result.text().trim();
     w.write_all(text.as_bytes())?;
     w.write_all(b"\n")?;
     Ok(())
 }
 
 fn write_srt<W: Write>(result: &TranscriptionResult, w: &mut W) -> io::Result<()> {
-    if result.segments.is_empty() {
-        if result.text.trim().is_empty() {
+    if result.segments().is_empty() {
+        if result.text().trim().is_empty() {
             return Ok(());
         }
-        let end = if result.duration_secs > 0.0 {
-            result.duration_secs
+        let end = if result.duration_secs() > 0.0 {
+            result.duration_secs()
         } else {
             1.0
         };
-        if !end.is_finite() || result.duration_secs < 0.0 {
+        if !end.is_finite() || result.duration_secs() < 0.0 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 "invalid transcript duration for SRT",
@@ -234,13 +234,13 @@ fn write_srt<W: Write>(result: &TranscriptionResult, w: &mut W) -> io::Result<()
             "1\n{} --> {}\n{}\n",
             format_ts(0.0),
             format_ts(end),
-            result.text.trim().replace(['\r', '\n'], " ")
+            result.text().trim().replace(['\r', '\n'], " ")
         )?;
         return Ok(());
     }
 
     let mut cue = 1usize;
-    for seg in &result.segments {
+    for seg in result.segments() {
         if !seg.start().is_finite() || !seg.end().is_finite() || seg.end() < seg.start() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -342,10 +342,10 @@ mod tests {
     #[test]
     fn json_includes_cleanup_metadata() {
         let mut r = sample_result();
-        r.cleanup_style = crate::cleanup::CleanupStyle::Clean;
-        r.cleanup_provider = Some(crate::cleanup::CleanupProviderKind::Rules);
-        r.original_text = Some("um hello".into());
-        r.text = "Hello.".into();
+        r.set_cleanup_style(crate::cleanup::CleanupStyle::Clean);
+        r.set_cleanup_provider(Some(crate::cleanup::CleanupProviderKind::Rules));
+        r.set_original_text(Some("um hello".into()));
+        r.set_text("Hello.");
         let s = format_result(&r, OutputFormat::Json).unwrap();
         let v: serde_json::Value = serde_json::from_str(&s).unwrap();
         assert_eq!(v["cleanup_style"], "clean");
@@ -395,7 +395,10 @@ mod tests {
     #[test]
     fn invalid_srt_timestamps_rejected() {
         let mut r = sample_result();
-        r.segments[0].set_end(f64::NAN);
+        {
+            let segs = r.segments_mut();
+            segs[0].set_end(f64::NAN);
+        }
         let err = write_result(&r, OutputFormat::Srt, Vec::new()).unwrap_err();
         assert!(err.to_string().contains("timestamp") || err.to_string().contains("invalid"));
     }

@@ -20,9 +20,9 @@ fn from_pcm_rejects_wrong_rate() {
 #[test]
 fn from_pcm_ok() {
     let audio = AudioInput::from_pcm_slice(&[0.1; 1600], WHISPER_SAMPLE_RATE).unwrap();
-    assert_eq!(audio.sample_rate, 16_000);
-    assert!((audio.duration_secs - 0.1).abs() < 1e-6);
-    assert!(audio.source_path.to_string_lossy().starts_with("pcm://"));
+    assert_eq!(audio.sample_rate(), 16_000);
+    assert!((audio.duration_secs() - 0.1).abs() < 1e-6);
+    assert!(audio.source_path().to_string_lossy().starts_with("pcm://"));
 }
 
 #[test]

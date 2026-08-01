@@ -132,7 +132,7 @@ pub fn normalize_result_with_report(
 ) -> (TranscriptionResult, NormalizationReport) {
     let mut report = NormalizationReport::default();
 
-    if let Some(detail) = detect_repetition_degeneration(&result.text) {
+    if let Some(detail) = detect_repetition_degeneration(result.text()) {
         report.events.push(NormalizationEvent {
             code: "degeneration_repetition".into(),
             detail,
@@ -140,24 +140,27 @@ pub fn normalize_result_with_report(
     }
 
     // Backend / reliability consistency.
-    if matches!(result.backend_kind, BackendKind::LlmAssisted) && result.timestamps_reliable {
-        result.timestamps_reliable = false;
+    if matches!(result.backend_kind(), BackendKind::LlmAssisted) && result.timestamps_reliable() {
+        result.set_timestamps_reliable(false);
         report.events.push(NormalizationEvent {
             code: "backend_reliability".into(),
             detail: "LLM-assisted backend cannot claim reliable timestamps".into(),
         });
     }
 
-    if !result.duration_secs.is_finite() || result.duration_secs < 0.0 {
+    let duration = result.duration_secs();
+    if !duration.is_finite() || duration < 0.0 {
         report.events.push(NormalizationEvent {
             code: "duration".into(),
-            detail: format!("non-finite or negative duration {}", result.duration_secs),
+            detail: format!("non-finite or negative duration {duration}"),
         });
-        result.duration_secs = 0.0;
+        result.set_duration_secs(0.0);
     }
+    let duration = result.duration_secs();
 
-    let mut cleaned_segments = Vec::with_capacity(result.segments.len());
-    for mut seg in result.segments.drain(..) {
+    let raw_segments = std::mem::take(result.segments_mut());
+    let mut cleaned_segments = Vec::with_capacity(raw_segments.len());
+    for mut seg in raw_segments {
         let before = seg.text().to_string();
         seg.set_text(strip_markers(seg.text()));
         if seg.text() != before {
@@ -184,9 +187,9 @@ pub fn normalize_result_with_report(
         }
 
         let mut repaired = false;
-        if result.duration_secs > 0.0 {
-            let ns = seg.start().clamp(0.0, result.duration_secs);
-            let ne = seg.end().clamp(0.0, result.duration_secs);
+        if duration > 0.0 {
+            let ns = seg.start().clamp(0.0, duration);
+            let ne = seg.end().clamp(0.0, duration);
             if ns != seg.start() || ne != seg.end() {
                 repaired = true;
             }
@@ -217,19 +220,21 @@ pub fn normalize_result_with_report(
         }
         cleaned_segments.push(seg);
     }
-    result.segments = cleaned_segments;
+    result.set_segments(cleaned_segments);
 
-    if !result.segments.is_empty() {
-        result.text = join_segment_text(&result.segments);
+    if !result.segments().is_empty() {
+        result.set_text(join_segment_text(result.segments()));
     } else {
-        let before = result.text.clone();
-        result.text = strip_markers(&result.text);
-        if result.text != before {
+        let before = result.text().to_string();
+        let stripped = strip_markers(&before);
+        if stripped != before {
             report.markers_stripped = true;
         }
-        result.text = result.text.trim().to_string();
-        if is_only_marker(&result.text) {
-            result.text.clear();
+        let trimmed = stripped.trim().to_string();
+        if is_only_marker(&trimmed) {
+            result.set_text(String::new());
+        } else {
+            result.set_text(trimmed);
         }
     }
 
@@ -335,8 +340,8 @@ mod tests {
             2.0,
         );
         let (out, report) = normalize_result_with_report(r);
-        assert_eq!(out.segments.len(), 1);
-        assert_eq!(out.segments[0].text(), "good");
+        assert_eq!(out.segments().len(), 1);
+        assert_eq!(out.segments()[0].text(), "good");
         assert!(report.dropped_segments >= 1);
     }
 
@@ -344,9 +349,9 @@ mod tests {
     fn llm_backend_clears_reliable_flag() {
         let mut r =
             TranscriptionResult::openrouter("hi".into(), vec![], None, "m".into(), 1.0, true);
-        r.timestamps_reliable = true;
+        r.set_timestamps_reliable(true);
         let (out, report) = normalize_result_with_report(r);
-        assert!(!out.timestamps_reliable);
+        assert!(!out.timestamps_reliable());
         assert!(!report.is_clean());
     }
 

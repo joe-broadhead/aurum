@@ -1,13 +1,16 @@
 //! Pure Rust façade — single source of behavior for C (and future UniFFI).
 //!
-//! ## Ownership (JOE-1622 / JOE-1625)
+//! ## Ownership (JOE-1622 / JOE-1625 / JOE-1810)
 //!
-//! * Each [`Engine`] owns cache policy, exclusive busy state, cancel publication,
-//!   metrics sink, and a [`JobController`] for async jobs.
-//! * Process-wide Tokio runtime + whisper context cache remain shared (documented
-//!   convenience); **engine shutdown** drains that engine's jobs only and does
-//!   not poison other engines.
-//! * Process [`shutdown`] / [`shutdown_with_timeout`] close admission globally.
+//! * Each [`Engine`] owns **engine-local** STT/TTS model pools, a resource
+//!   governor, cache policy, exclusive busy state, cancel publication, metrics
+//!   sink, and a [`JobController`] for async jobs.
+//! * Jobs and blocking STT/TTS share those pools — not the process-global
+//!   residual used by bare `LocalWhisperProvider::new` / CLI non-engine paths.
+//! * Process-wide Tokio runtime remains shared; **engine shutdown** drains and
+//!   clears **that engine's** pools only and does not poison other engines.
+//! * Process [`shutdown`] / [`shutdown_with_timeout`] close admission globally
+//!   and clear the process-global STT cache (for non-engine residual users).
 
 use crate::error::{FfiError, FfiStatus};
 use crate::jobs::{Job, JobController};
@@ -18,9 +21,11 @@ use crate::types::{
 use aurum_core::cancel::CancelFlag;
 use aurum_core::cleanup::{cleanup_text, RulesCleanup, TextCleanup};
 use aurum_core::observability::Metrics;
-use aurum_core::providers::local::clear_context_cache;
+use aurum_core::providers::local::{clear_context_cache, SttContextPool};
 use aurum_core::providers::{LocalWhisperProvider, TranscriptionOptions};
-use aurum_core::runtime::OpAdmission;
+use aurum_core::runtime::{OpAdmission, ResourceGovernor};
+#[cfg(feature = "tts")]
+use aurum_core::tts::TtsSessionPool;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
@@ -95,10 +100,15 @@ impl Drop for BusyGuard<'_> {
     }
 }
 
-/// Local STT/TTS engine handle for embedders (explicit ownership, JOE-1622).
+/// Local STT/TTS engine handle for embedders (explicit ownership, JOE-1622 / JOE-1810).
 pub struct Engine {
     cache_dir: PathBuf,
     local_only: bool,
+    /// Engine-local Whisper context residency (not process-global).
+    stt_pool: Arc<SttContextPool>,
+    #[cfg(feature = "tts")]
+    tts_pool: Arc<TtsSessionPool>,
+    governor: Arc<ResourceGovernor>,
     provider: LocalWhisperProvider,
     /// Currently published cancel token for the in-flight exclusive op (if any).
     /// Fresh per operation — never reset a shared engine-global flag across ops.
@@ -132,15 +142,27 @@ impl Engine {
             ));
         }
         let cache_dir = PathBuf::from(config.cache_dir.trim());
-        let provider = LocalWhisperProvider::new(cache_dir.clone())
-            .with_progress(config.progress_logging)
-            .with_local_only(config.local_only);
+        let stt_pool = Arc::new(SttContextPool::new());
+        #[cfg(feature = "tts")]
+        let tts_pool = Arc::new(TtsSessionPool::new());
+        let governor = Arc::new(ResourceGovernor::default());
+        let provider = LocalWhisperProvider::with_runtime(
+            cache_dir.clone(),
+            Arc::clone(&stt_pool),
+            Arc::clone(&governor),
+        )
+        .with_progress(config.progress_logging)
+        .with_local_only(config.local_only);
         let metrics = Metrics::shared();
         // Default: up to 2 concurrent jobs (exclusive blocking path still serial).
         let jobs = Arc::new(JobController::new(Arc::clone(&metrics), 2));
         Ok(Self {
             cache_dir,
             local_only: config.local_only,
+            stt_pool,
+            #[cfg(feature = "tts")]
+            tts_pool,
+            governor,
             provider,
             active_cancel: Mutex::new(None),
             busy: AtomicBool::new(false),
@@ -150,6 +172,24 @@ impl Engine {
             closed: AtomicBool::new(false),
             export_depth: AtomicU32::new(0),
         })
+    }
+
+    /// Fresh provider handle sharing this engine's STT pool and governor (JOE-1810).
+    fn stt_provider_handle(&self, progress: bool) -> LocalWhisperProvider {
+        LocalWhisperProvider::with_runtime(
+            self.cache_dir.clone(),
+            Arc::clone(&self.stt_pool),
+            Arc::clone(&self.governor),
+        )
+        .with_progress(progress)
+        .with_local_only(self.local_only)
+    }
+
+    /// Clear engine-local model residency after jobs/exclusive work have drained.
+    fn clear_engine_pools(&self) {
+        self.stt_pool.clear();
+        #[cfg(feature = "tts")]
+        self.tts_pool.clear();
     }
 
     /// Enter an exported C call boundary (JOE-1647).
@@ -222,6 +262,9 @@ impl Engine {
                 ),
             ));
         }
+        // Drop engine-local residency only after exclusive work + jobs finished
+        // (JOE-1810). Does not touch process-global pools.
+        self.clear_engine_pools();
         Ok(())
     }
 
@@ -242,10 +285,8 @@ impl Engine {
         if model.is_empty() {
             return Err(FfiError::invalid_arg("model name is required"));
         }
-        // Clone provider settings via a fresh handle sharing cache_dir.
-        let provider = LocalWhisperProvider::new(self.cache_dir.clone())
-            .with_progress(false)
-            .with_local_only(self.local_only);
+        // Share engine-local STT pool (JOE-1810).
+        let provider = self.stt_provider_handle(false);
         self.jobs.start_preload(provider, model)
     }
 
@@ -256,9 +297,7 @@ impl Engine {
         opts: &TranscribeOpts,
     ) -> Result<Job, FfiError> {
         self.ensure_open()?;
-        let provider = LocalWhisperProvider::new(self.cache_dir.clone())
-            .with_progress(false)
-            .with_local_only(self.local_only);
+        let provider = self.stt_provider_handle(false);
         self.jobs
             .start_transcribe(provider, samples.to_vec(), opts.clone())
     }
@@ -288,6 +327,8 @@ impl Engine {
             language: language.to_string(),
             speaking_rate,
             local_only: self.local_only,
+            tts_pool: Arc::clone(&self.tts_pool),
+            governor: Arc::clone(&self.governor),
         })
     }
 
@@ -469,14 +510,14 @@ impl Engine {
             Ok(Ok(result)) => {
                 self.clear_error();
                 Ok(Transcript {
-                    text: result.text,
-                    language: result.language,
-                    model: result.model,
-                    duration_secs: result.duration_secs,
-                    timestamps_reliable: result.timestamps_reliable,
+                    text: result.text().to_string(),
+                    language: result.language().map(|s| s.to_string()),
+                    model: result.model().to_string(),
+                    duration_secs: result.duration_secs(),
+                    timestamps_reliable: result.timestamps_reliable(),
                     segments: result
-                        .segments
-                        .into_iter()
+                        .segments()
+                        .iter()
                         .map(|s| Segment {
                             start_s: s.start(),
                             end_s: s.end(),
@@ -732,6 +773,36 @@ mod tests {
         engine.cancel(); // must not poison a future op
         let err = engine.preload("tiny-q5_1").unwrap_err();
         assert_eq!(err.status, FfiStatus::ModelNotReady);
+    }
+
+    #[test]
+    fn engines_use_isolated_stt_pools() {
+        let dir = tempdir().unwrap();
+        let a = Engine::new(EngineConfig {
+            cache_dir: dir.path().display().to_string(),
+            local_only: true,
+            progress_logging: false,
+        })
+        .unwrap();
+        let b = Engine::new(EngineConfig {
+            cache_dir: dir.path().display().to_string(),
+            local_only: true,
+            progress_logging: false,
+        })
+        .unwrap();
+        assert_ne!(
+            Arc::as_ptr(a.provider.pool()),
+            Arc::as_ptr(b.provider.pool())
+        );
+        assert_ne!(
+            Arc::as_ptr(a.provider.pool()),
+            Arc::as_ptr(&aurum_core::providers::local::process_global_stt_pool())
+        );
+        // Process-global residual remains available for non-engine callers.
+        assert_eq!(
+            Arc::as_ptr(&aurum_core::providers::local::process_global_stt_pool()),
+            Arc::as_ptr(&aurum_core::providers::local::process_global_stt_pool())
+        );
     }
 
     #[test]

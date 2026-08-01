@@ -32,20 +32,58 @@ pub const DEFAULT_MAX_UPLOAD_BYTES: usize = 24 * 1024 * 1024;
 pub const WHISPER_SAMPLE_RATE: u32 = 16_000;
 
 /// In-memory audio ready for a transcription provider.
+///
+/// Fields are **private** (JOE-1809). Construct with [`AudioInput::from_pcm`] /
+/// [`load_audio`], or [`AudioInput::from_parts_unchecked`] for trusted internal
+/// decode paths. Prefer accessors over free mutation.
 #[derive(Debug, Clone)]
 pub struct AudioInput {
     /// Original file path when loaded from disk; synthetic label for PCM (`pcm://…`).
-    pub source_path: PathBuf,
+    source_path: PathBuf,
     /// Mono f32 samples in [-1.0, 1.0], shared to avoid extra copies.
     /// For the local provider this must be [`WHISPER_SAMPLE_RATE`].
-    pub samples: Arc<[f32]>,
+    samples: Arc<[f32]>,
     /// Sample rate of [`Self::samples`].
-    pub sample_rate: u32,
+    sample_rate: u32,
     /// Duration in seconds.
-    pub duration_secs: f64,
+    duration_secs: f64,
 }
 
 impl AudioInput {
+    /// Trusted construction after decode (no re-validation of every sample).
+    ///
+    /// Prefer [`from_pcm`](Self::from_pcm) for host-facing PCM. Callers must
+    /// ensure finite samples, positive sample rate, and duration consistency.
+    pub fn from_parts_unchecked(
+        source_path: PathBuf,
+        samples: Arc<[f32]>,
+        sample_rate: u32,
+        duration_secs: f64,
+    ) -> Self {
+        Self {
+            source_path,
+            samples,
+            sample_rate,
+            duration_secs,
+        }
+    }
+
+    pub fn source_path(&self) -> &Path {
+        &self.source_path
+    }
+
+    pub fn samples(&self) -> &Arc<[f32]> {
+        &self.samples
+    }
+
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
+    pub fn duration_secs(&self) -> f64 {
+        self.duration_secs
+    }
+
     pub fn len(&self) -> usize {
         self.samples.len()
     }
@@ -286,12 +324,12 @@ fn try_load_wav_direct(
         .into());
     }
 
-    Ok(AudioInput {
-        source_path: path.to_path_buf(),
+    Ok(AudioInput::from_parts_unchecked(
+        path.to_path_buf(),
         samples,
-        sample_rate: 16_000,
+        16_000,
         duration_secs,
-    })
+    ))
 }
 
 /// Default wall-clock deadline for a single FFmpeg decode (JOE-1585).
@@ -581,12 +619,12 @@ pub async fn load_via_ffmpeg_with_timeout(
         }
         .into());
     }
-    Ok(AudioInput {
-        source_path: path.to_path_buf(),
+    Ok(AudioInput::from_parts_unchecked(
+        path.to_path_buf(),
         samples,
-        sample_rate: 16_000,
+        16_000,
         duration_secs,
-    })
+    ))
 }
 
 /// Test helper: race cancel against stalled pipe reads on an arbitrary child
@@ -1052,9 +1090,9 @@ mod tests {
         let audio =
             try_load_wav_direct(&path, DEFAULT_MAX_DURATION_SECS, DEFAULT_MAX_DECODED_BYTES)
                 .unwrap();
-        assert_eq!(audio.sample_rate, 16_000);
-        assert!(audio.samples.len() > 1000);
-        assert!((audio.duration_secs - 0.25).abs() < 0.01);
+        assert_eq!(audio.sample_rate(), 16_000);
+        assert!(audio.samples().len() > 1000);
+        assert!((audio.duration_secs() - 0.25).abs() < 0.01);
     }
 
     #[test]
@@ -1086,14 +1124,14 @@ mod tests {
         let audio =
             try_load_wav_direct(&path, DEFAULT_MAX_DURATION_SECS, DEFAULT_MAX_DECODED_BYTES)
                 .unwrap();
-        assert_eq!(audio.samples.len(), samples.len());
+        assert_eq!(audio.samples().len(), samples.len());
     }
 
     #[test]
     fn from_pcm_basic() {
         let audio = AudioInput::from_pcm_slice(&[0.0; 3200], WHISPER_SAMPLE_RATE).unwrap();
         assert_eq!(audio.len(), 3200);
-        assert!((audio.duration_secs - 0.2).abs() < 1e-9);
+        assert!((audio.duration_secs() - 0.2).abs() < 1e-9);
     }
 
     #[test]

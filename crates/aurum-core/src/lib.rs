@@ -38,7 +38,7 @@
 //!     )
 //!     .await?;
 //! let _ = AudioInput::from_pcm_slice(buf.samples().as_slice(), WHISPER_SAMPLE_RATE)?;
-//! println!("{}", result.text);
+//! println!("{}", result.text());
 //! aurum_core::providers::local::clear_context_cache();
 //! # Ok(())
 //! # }

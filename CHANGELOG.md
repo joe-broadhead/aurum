@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1809:** Private `AudioInput` / `TranscriptionResult` fields with accessors;
+  `TranscriptionResult::try_from_dto` / `SttResultDto::into_domain` for validated
+  DTO → domain conversion (cannot skip segment/duration validation).
+- **JOE-1810:** FFI `Engine` owns local STT/TTS pools + governor; jobs and
+  exclusive STT share engine pools; `shutdown_engine` clears engine residency
+  without touching process-global residual.
+
 ## [0.0.10] - 2026-08-01
 
 v0.0.10 is **Group E — provider routing and remote operation maturity**:

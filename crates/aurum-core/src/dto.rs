@@ -51,20 +51,20 @@ impl SttResultDto {
     pub fn from_result_with_warnings(result: &TranscriptionResult, warnings: &[String]) -> Self {
         Self {
             schema_version: STT_RESULT_SCHEMA_VERSION,
-            text: result.text.clone(),
-            language: result.language.clone(),
-            model: result.model.clone(),
-            provider: result.provider.clone(),
-            duration_secs: finite_or_zero(result.duration_secs),
-            backend_kind: result.backend_kind,
-            timestamps_reliable: result.timestamps_reliable,
-            cleanup_style: result.cleanup_style,
-            cleanup_provider: result.cleanup_provider,
-            original_text: result.original_text.clone(),
-            original_segments: result.original_segments.clone(),
-            cleanup_segment_policy: result.cleanup_segment_policy,
+            text: result.text().to_string(),
+            language: result.language().map(|s| s.to_string()),
+            model: result.model().to_string(),
+            provider: result.provider().to_string(),
+            duration_secs: finite_or_zero(result.duration_secs()),
+            backend_kind: result.backend_kind(),
+            timestamps_reliable: result.timestamps_reliable(),
+            cleanup_style: result.cleanup_style(),
+            cleanup_provider: result.cleanup_provider(),
+            original_text: result.original_text().map(|s| s.to_string()),
+            original_segments: result.original_segments().map(|s| s.to_vec()),
+            cleanup_segment_policy: result.cleanup_segment_policy(),
             segments: result
-                .segments
+                .segments()
                 .iter()
                 .map(|s| {
                     Segment::from_parts_unchecked(
@@ -77,6 +77,11 @@ impl SttResultDto {
             normalization_warnings: warnings.to_vec(),
             request_id: None,
         }
+    }
+
+    /// Convert this DTO into a validated domain [`TranscriptionResult`] (JOE-1809).
+    pub fn into_domain(self) -> crate::error::Result<TranscriptionResult> {
+        TranscriptionResult::try_from_dto(&self)
     }
 
     /// Pretty JSON that never emits NaN/Inf.
@@ -197,7 +202,7 @@ mod tests {
     #[test]
     fn nan_duration_sanitized() {
         let mut r = TranscriptionResult::local("x".into(), vec![], None, "m".into(), f64::NAN);
-        r.duration_secs = f64::NAN;
+        r.set_duration_secs(f64::NAN);
         let dto = SttResultDto::from_result(&r);
         assert_eq!(dto.duration_secs, 0.0);
     }

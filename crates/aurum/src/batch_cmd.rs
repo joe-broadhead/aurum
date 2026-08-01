@@ -307,7 +307,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
             };
 
             if matches!(format, OutputFormat::Srt)
-                && !result.timestamps_reliable
+                && !result.timestamps_reliable()
                 && !cli.allow_unreliable_timestamps
             {
                 return Err(UserError::Other {
@@ -376,11 +376,11 @@ async fn apply_cleanup_local(
     verbose: bool,
 ) -> Result<()> {
     if matches!(style, CleanupStyle::Raw) {
-        result.cleanup_style = CleanupStyle::Raw;
-        result.cleanup_provider = None;
-        result.original_text = None;
-        result.original_segments = None;
-        result.cleanup_segment_policy = None;
+        result.set_cleanup_style(CleanupStyle::Raw);
+        result.set_cleanup_provider(None);
+        result.set_original_text(None);
+        result.set_original_segments(None);
+        result.set_cleanup_segment_policy(None);
         return Ok(());
     }
     let backend: Box<dyn TextCleanup> = match kind {

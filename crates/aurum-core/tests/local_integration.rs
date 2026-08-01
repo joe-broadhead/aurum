@@ -38,7 +38,7 @@ async fn local_tiny_q5_real_speech() {
     std::fs::create_dir_all(&cache).ok();
 
     let audio = audio::load_audio(&wav).await.expect("load audio");
-    assert!(audio.duration_secs > 1.0);
+    assert!(audio.duration_secs() > 1.0);
 
     let provider = LocalWhisperProvider::new(cache.clone()).with_progress(true);
     let opts = TranscriptionOptions {
@@ -54,23 +54,23 @@ async fn local_tiny_q5_real_speech() {
         .await
         .expect("transcribe");
 
-    assert_eq!(result.provider, "local");
-    assert_eq!(result.model, "tiny-q5_1");
-    assert!(result.timestamps_reliable);
+    assert_eq!(result.provider(), "local");
+    assert_eq!(result.model(), "tiny-q5_1");
+    assert!(result.timestamps_reliable());
     assert!(
-        !result.text.trim().is_empty(),
+        !result.text().trim().is_empty(),
         "expected non-empty transcript, got {:?}",
-        result.text
+        result.text()
     );
     // Real fixture says something about a test / aurum / numbers.
-    let lower = result.text.to_ascii_lowercase();
+    let lower = result.text().to_ascii_lowercase();
     assert!(
         lower.contains("test")
             || lower.contains("hello")
             || lower.contains("one")
             || lower.contains("1"),
         "unexpected transcript content: {}",
-        result.text
+        result.text()
     );
 
     let _ = format_result(&result, OutputFormat::Txt).unwrap();
@@ -84,7 +84,7 @@ async fn local_tiny_q5_real_speech() {
         .transcribe(&audio, &opts)
         .await
         .expect("second transcribe");
-    assert!(!result2.text.trim().is_empty());
+    assert!(!result2.text().trim().is_empty());
 
     let model_file = cache.join("models").join("ggml-tiny-q5_1.bin");
     assert!(

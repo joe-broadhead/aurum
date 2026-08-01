@@ -145,37 +145,39 @@ impl Segment {
 
 /// Normalized result returned by every provider.
 ///
-/// Prefer builders [`TranscriptionResult::local`] / [`TranscriptionResult::openrouter`].
-/// `Deserialize` is untrusted — validate segments before relying on timings.
+/// Fields are **private** (JOE-1809). Prefer builders
+/// [`TranscriptionResult::local`] / [`TranscriptionResult::openrouter`] and
+/// accessors. `Deserialize` is untrusted — use [`TranscriptionResult::try_from_dto`]
+/// or [`TranscriptionResult::validate_segments`] before relying on timings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TranscriptionResult {
-    pub text: String,
-    pub segments: Vec<Segment>,
-    pub language: Option<String>,
-    pub model: String,
-    pub provider: String,
-    pub duration_secs: f64,
+    text: String,
+    segments: Vec<Segment>,
+    language: Option<String>,
+    model: String,
+    provider: String,
+    duration_secs: f64,
     /// Backend class — consumers should treat LLM timestamps as best-effort.
     #[serde(default = "default_backend_kind")]
-    pub backend_kind: BackendKind,
+    backend_kind: BackendKind,
     /// Whether segment timestamps are considered reliable.
     #[serde(default = "default_true")]
-    pub timestamps_reliable: bool,
+    timestamps_reliable: bool,
     /// Post-ASR cleanup style applied to [`Self::text`] (default: raw).
     #[serde(default)]
-    pub cleanup_style: crate::cleanup::CleanupStyle,
+    cleanup_style: crate::cleanup::CleanupStyle,
     /// Cleanup backend used, if any cleanup beyond raw was applied.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cleanup_provider: Option<crate::cleanup::CleanupProviderKind>,
+    cleanup_provider: Option<crate::cleanup::CleanupProviderKind>,
     /// Pre-cleanup ASR text when cleanup rewrote [`Self::text`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub original_text: Option<String>,
+    original_text: Option<String>,
     /// Pre-cleanup ASR segments when cleanup rewrote or cleared timings.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub original_segments: Option<Vec<Segment>>,
+    original_segments: Option<Vec<Segment>>,
     /// Segment policy that was applied during cleanup (when not raw).
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cleanup_segment_policy: Option<crate::cleanup::SegmentCleanupPolicy>,
+    cleanup_segment_policy: Option<crate::cleanup::SegmentCleanupPolicy>,
 }
 
 fn default_backend_kind() -> BackendKind {
@@ -186,6 +188,117 @@ fn default_true() -> bool {
 }
 
 impl TranscriptionResult {
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    pub fn set_text(&mut self, text: impl Into<String>) {
+        self.text = text.into();
+    }
+
+    pub fn segments(&self) -> &[Segment] {
+        &self.segments
+    }
+
+    pub fn segments_mut(&mut self) -> &mut Vec<Segment> {
+        &mut self.segments
+    }
+
+    pub fn set_segments(&mut self, segments: Vec<Segment>) {
+        self.segments = segments;
+    }
+
+    pub fn language(&self) -> Option<&str> {
+        self.language.as_deref()
+    }
+
+    pub fn set_language(&mut self, language: Option<String>) {
+        self.language = language;
+    }
+
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+
+    pub fn set_model(&mut self, model: impl Into<String>) {
+        self.model = model.into();
+    }
+
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
+    pub fn set_provider(&mut self, provider: impl Into<String>) {
+        self.provider = provider.into();
+    }
+
+    pub fn duration_secs(&self) -> f64 {
+        self.duration_secs
+    }
+
+    pub fn set_duration_secs(&mut self, duration_secs: f64) {
+        self.duration_secs = duration_secs;
+    }
+
+    pub fn backend_kind(&self) -> BackendKind {
+        self.backend_kind
+    }
+
+    pub fn set_backend_kind(&mut self, kind: BackendKind) {
+        self.backend_kind = kind;
+    }
+
+    pub fn timestamps_reliable(&self) -> bool {
+        self.timestamps_reliable
+    }
+
+    pub fn set_timestamps_reliable(&mut self, reliable: bool) {
+        self.timestamps_reliable = reliable;
+    }
+
+    pub fn cleanup_style(&self) -> crate::cleanup::CleanupStyle {
+        self.cleanup_style
+    }
+
+    pub fn set_cleanup_style(&mut self, style: crate::cleanup::CleanupStyle) {
+        self.cleanup_style = style;
+    }
+
+    pub fn cleanup_provider(&self) -> Option<crate::cleanup::CleanupProviderKind> {
+        self.cleanup_provider
+    }
+
+    pub fn set_cleanup_provider(&mut self, provider: Option<crate::cleanup::CleanupProviderKind>) {
+        self.cleanup_provider = provider;
+    }
+
+    pub fn original_text(&self) -> Option<&str> {
+        self.original_text.as_deref()
+    }
+
+    pub fn set_original_text(&mut self, text: Option<String>) {
+        self.original_text = text;
+    }
+
+    pub fn original_segments(&self) -> Option<&[Segment]> {
+        self.original_segments.as_deref()
+    }
+
+    pub fn set_original_segments(&mut self, segments: Option<Vec<Segment>>) {
+        self.original_segments = segments;
+    }
+
+    pub fn cleanup_segment_policy(&self) -> Option<crate::cleanup::SegmentCleanupPolicy> {
+        self.cleanup_segment_policy
+    }
+
+    pub fn set_cleanup_segment_policy(
+        &mut self,
+        policy: Option<crate::cleanup::SegmentCleanupPolicy>,
+    ) {
+        self.cleanup_segment_policy = policy;
+    }
+
     /// Validate all segments (finite, ordered timestamps).
     pub fn validate_segments(&self) -> Result<()> {
         for (i, seg) in self.segments.iter().enumerate() {
@@ -206,6 +319,54 @@ impl TranscriptionResult {
             .into());
         }
         Ok(())
+    }
+
+    /// Build a domain result from a public DTO **with validation** (JOE-1809).
+    ///
+    /// Deserializing JSON into [`crate::dto::SttResultDto`] alone does not create
+    /// a trusted domain object — this path re-validates every segment and duration.
+    pub fn try_from_dto(dto: &crate::dto::SttResultDto) -> Result<Self> {
+        if dto.schema_version != crate::dto::STT_RESULT_SCHEMA_VERSION {
+            return Err(crate::error::UserError::Other {
+                message: format!(
+                    "unsupported STT DTO schema_version {} (expected {})",
+                    dto.schema_version,
+                    crate::dto::STT_RESULT_SCHEMA_VERSION
+                ),
+            }
+            .into());
+        }
+        let mut r = Self {
+            text: dto.text.clone(),
+            segments: dto.segments.clone(),
+            language: dto.language.clone(),
+            model: dto.model.clone(),
+            provider: dto.provider.clone(),
+            duration_secs: dto.duration_secs,
+            backend_kind: dto.backend_kind,
+            timestamps_reliable: dto.timestamps_reliable,
+            cleanup_style: dto.cleanup_style,
+            cleanup_provider: dto.cleanup_provider,
+            original_text: dto.original_text.clone(),
+            original_segments: dto.original_segments.clone(),
+            cleanup_segment_policy: dto.cleanup_segment_policy,
+        };
+        // LLM-assisted paths cannot claim reliable timestamps through DTO injection.
+        if matches!(r.backend_kind, BackendKind::LlmAssisted) {
+            r.timestamps_reliable = false;
+        }
+        r.validate_segments()?;
+        if let Some(ref segs) = r.original_segments {
+            for (i, seg) in segs.iter().enumerate() {
+                if let Err(e) = seg.validate() {
+                    return Err(crate::error::UserError::Other {
+                        message: format!("original_segments[{i}]: {e}"),
+                    }
+                    .into());
+                }
+            }
+        }
+        Ok(r)
     }
 
     pub fn local(
@@ -364,6 +525,39 @@ mod tests {
         let r =
             TranscriptionResult::try_local("hi".into(), segs, Some("en".into()), "m".into(), 1.0)
                 .unwrap();
-        assert_eq!(r.provider, "local");
+        assert_eq!(r.provider(), "local");
+    }
+
+    #[test]
+    fn try_from_dto_rejects_nan_segment() {
+        let mut dto = crate::dto::SttResultDto::from_result(&TranscriptionResult::local(
+            "x".into(),
+            vec![Segment::try_new(0.0, 1.0, "x").unwrap()],
+            None,
+            "m".into(),
+            1.0,
+        ));
+        dto.segments = vec![Segment::from_parts_unchecked(
+            f64::NAN,
+            1.0,
+            "x".to_string(),
+        )];
+        assert!(TranscriptionResult::try_from_dto(&dto).is_err());
+    }
+
+    #[test]
+    fn try_from_dto_forces_llm_timestamps_unreliable() {
+        let mut dto = crate::dto::SttResultDto::from_result(&TranscriptionResult::openrouter(
+            "hi".into(),
+            vec![Segment::try_new(0.0, 1.0, "hi").unwrap()],
+            None,
+            "m".into(),
+            1.0,
+            true,
+        ));
+        dto.timestamps_reliable = true; // injection attempt
+        let r = TranscriptionResult::try_from_dto(&dto).unwrap();
+        assert!(!r.timestamps_reliable());
+        assert_eq!(r.backend_kind(), BackendKind::LlmAssisted);
     }
 }

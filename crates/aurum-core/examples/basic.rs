@@ -26,7 +26,7 @@ async fn main() -> aurum_core::Result<()> {
             },
         )
         .await?;
-    println!("{}", result.text);
+    println!("{}", result.text());
     // Required on macOS/Metal: drop cached contexts before process exit.
     aurum_core::providers::local::clear_context_cache();
     Ok(())

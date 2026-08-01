@@ -348,9 +348,9 @@ impl TranscriptionProvider for LocalWhisperProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
-        if input.sample_rate != WHISPER_SAMPLE_RATE {
+        if input.sample_rate() != WHISPER_SAMPLE_RATE {
             return Err(crate::error::UserError::UnsupportedSampleRate {
-                got: input.sample_rate,
+                got: input.sample_rate(),
                 need: WHISPER_SAMPLE_RATE,
             }
             .into());
@@ -364,8 +364,8 @@ impl TranscriptionProvider for LocalWhisperProvider {
         let language = options.language.clone();
         let timestamps = options.timestamps;
         let cancel = op.cancel.clone();
-        let samples: Arc<[f32]> = Arc::clone(&input.samples);
-        let duration_secs = input.duration_secs;
+        let samples: Arc<[f32]> = Arc::clone(input.samples());
+        let duration_secs = input.duration_secs();
         let cache_dir = self.cache_dir.clone();
         let opts = self.ensure_opts();
 

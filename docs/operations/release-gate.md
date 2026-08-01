@@ -38,12 +38,18 @@ Enforced in CI:
 | Security rehearsal (revoke + disclosure) | `ci.yml` security-rehearsal (JOE-1890 / JOE-1892) |
 | Independent release verify (download + cosign) | `release-verify.yml` (JOE-1891) |
 | Threat-model control matrix | [threat-model.md](threat-model.md) (JOE-1893) |
+| RC freeze inventory check | `ci.yml` rc-freeze-check / `scripts/rc_freeze_check.sh` (JOE-1896) |
+| RC dogfood automated subset | `ci.yml` rc-dogfood-smoke / `scripts/rc_dogfood_checklist.sh` (JOE-1897) |
+| RC rollback rehearsal | `scripts/rehearse_rc_rollback.sh` (JOE-1895) |
+| Support / security-fix policy | [support-policy.md](support-policy.md) (JOE-1898) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
 
-See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md).
+See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md), [rc-freeze.md](rc-freeze.md), [rc-dogfood.md](rc-dogfood.md), [rc-rollback.md](rc-rollback.md).
 
 ## Compatibility freeze (toward 1.0)
+
+Full inventory: **[rc-freeze.md](rc-freeze.md)** (JOE-1896).
 
 Before declaring 1.0, freeze and test:
 
@@ -55,20 +61,27 @@ Before declaring 1.0, freeze and test:
 - Cache layout for STT/TTS
 
 Documented provisional surfaces remain experimental until listed in
-[compatibility.md](../development/compatibility.md).
+[compatibility.md](../development/compatibility.md). Breaking a frozen surface
+during RC **resets the freeze**.
 
 ## RC dogfood (1.0)
+
+Full checklist: **[rc-dogfood.md](rc-dogfood.md)** (JOE-1897).
 
 1. Cut `release/x.y.z` from green master.
 2. Run RC for ≥ N days with real workflows (local STT, cleanup, TTS, doctor).
 3. Record regressions in CHANGELOG; no silent contract breaks.
 4. Security issues go through [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md).
+5. Fill per-platform evidence templates under `dist/rc-dogfood/`.
 
 ## Rollback
+
+Full rehearsal: **[rc-rollback.md](rc-rollback.md)** (JOE-1895).
 
 1. Yank crates.io versions only if safety-critical (prefer yank + advisory).
 2. GitHub Release: publish a fixed tag `vX.Y.Z+1` — do not rewrite tags.
 3. Document migration in `docs/development/migration-*.md`.
+4. Human sign-off required for 1.0 cut (automation cannot self-declare).
 
 ## Support matrix (tiers)
 

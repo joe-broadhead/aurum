@@ -13,6 +13,10 @@ Quick map of production docs (read this first):
 | Threat model | [Threat model](threat-model.md) |
 | Hardening | [Hardening](hardening.md) |
 | Release gate | [Release gate](release-gate.md) |
+| RC freeze inventory | [RC freeze](rc-freeze.md) |
+| RC dogfood | [RC dogfood](rc-dogfood.md) |
+| RC rollback | [RC rollback](rc-rollback.md) |
+| Support / security-fix policy | [Support policy](support-policy.md) |
 | Supply chain | [Supply chain](../development/supply-chain.md) |
 | Compatibility | [Compatibility](../development/compatibility.md) |
 | Migration 0.0.3 | [Migration](../development/migration-0.0.3.md) |

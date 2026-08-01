@@ -314,6 +314,70 @@ jobs:
           chmod +x scripts/clean_install_smoke.sh scripts/install.sh
           ./scripts/clean_install_smoke.sh --from-source
 
+  # RC freeze inventory automated checks (JOE-1896).
+  rc-freeze-check:
+    name: rc freeze check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-rc-freeze
+      - name: RC freeze inventory check
+        run: |
+          set -euo pipefail
+          chmod +x scripts/rc_freeze_check.sh scripts/version_check.sh
+          ./scripts/rc_freeze_check.sh
+
+  # RC dogfood automated subset (JOE-1897).
+  rc-dogfood-smoke:
+    name: rc dogfood smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-rc-dogfood
+      - name: RC dogfood automated checklist
+        run: |
+          set -euo pipefail
+          chmod +x scripts/rc_dogfood_checklist.sh scripts/rc_freeze_check.sh \
+            scripts/clean_install_smoke.sh scripts/install.sh \
+            scripts/rehearse_rc_rollback.sh scripts/rehearse_model_revocation.sh \
+            scripts/rehearse_disclosure_tabletop.sh
+          ./scripts/rc_dogfood_checklist.sh --out dist/rc-dogfood
+          ./scripts/rehearse_rc_rollback.sh
+      - name: Upload RC evidence
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: rc-dogfood-evidence
+          path: |
+            dist/rc-dogfood/
+            dist/security-rehearsal/
+          if-no-files-found: ignore
+          retention-days: 30
+
   # Security evidence rehearsals (JOE-1890 / JOE-1892) — no pin mutations.
   security-rehearsal:
     name: security rehearsal

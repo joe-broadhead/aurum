@@ -71,5 +71,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.7** — SDK hardening residual on top of owned engine foundations + STT/TTS/`aurum-ffi`.  
+**v0.0.8** — Group C engine ownership (isolated model pools + engine STT/TTS APIs) + STT/TTS/`aurum-ffi`.  
 APIs may change before `0.1.0`; pin a release tag in dependents.

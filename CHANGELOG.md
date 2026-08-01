@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8] - 2026-08-01
+
+v0.0.8 is **Group C — engine ownership completion**: per-engine whisper/TTS model
+pools, high-level `AurumEngine` STT/TTS entry points, and progressive
+`AudioInput` domain hardening. Process-global pools remain for non-engine
+`Provider::new` paths (CLI default).
+
 ### Added
 
 - **JOE-1784:** engine-owned `SttContextPool` / `TtsSessionPool`;
@@ -375,7 +382,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.7...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.8...HEAD
+[0.0.8]: https://github.com/joe-broadhead/aurum/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/joe-broadhead/aurum/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/joe-broadhead/aurum/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/joe-broadhead/aurum/compare/v0.0.4...v0.0.5

@@ -112,7 +112,7 @@ impl OpenRouterProvider {
             policy.allow_loopback_http = true;
         }
 
-        let http = HardenedHttpClient::build(base_url.as_deref(), policy)?;
+        let http = HardenedHttpClient::openrouter(base_url.as_deref(), policy)?;
 
         Ok(Self {
             api_key,

@@ -762,4 +762,60 @@ mod tests {
             JobState::Completed
         );
     }
+
+    /// Concurrent cleanup jobs + cancel/close stress (JOE-1887).
+    ///
+    /// Resource-capped: fixed small fan-out, no native model load.
+    #[test]
+    fn stress_concurrent_cleanup_jobs_and_close() {
+        let metrics = Metrics::shared();
+        let ctrl = Arc::new(JobController::new(metrics, 4));
+        let mut handles = Vec::new();
+        for i in 0..24 {
+            let c = Arc::clone(&ctrl);
+            handles.push(std::thread::spawn(move || {
+                let text = format!("um, concurrent cleanup {i}");
+                let job = c
+                    .start_cleanup(text, CleanupStyle::Clean)
+                    .expect("start cleanup");
+                if i % 7 == 0 {
+                    job.cancel();
+                }
+                let st = job.wait(Some(Duration::from_secs(10))).expect("wait");
+                assert!(st.is_terminal(), "non-terminal state {st:?}");
+                // take_result may fail for cancelled/failed — both OK for stress.
+                let _ = job.take_result();
+            }));
+        }
+        for h in handles {
+            h.join().expect("worker panicked");
+        }
+        // Controller still usable after fan-out.
+        let job = ctrl
+            .start_cleanup("final".into(), CleanupStyle::Raw)
+            .unwrap();
+        assert_eq!(
+            job.wait(Some(Duration::from_secs(5))).unwrap(),
+            JobState::Completed
+        );
+        ctrl.close();
+        let err = ctrl
+            .start_cleanup("after-close".into(), CleanupStyle::Raw)
+            .unwrap_err();
+        assert_eq!(err.status, FfiStatus::Shutdown);
+    }
+
+    #[test]
+    fn stress_job_state_u8_mapping_exhaustive() {
+        // Pure mapping — also covered by Miri/fuzz; keeps sanitizer suite dense.
+        for v in 0u8..=16 {
+            let mapped = JobState::from_u8(v);
+            if let Some(st) = mapped {
+                assert_eq!(st as u8, v);
+                let _ = st.is_terminal();
+            } else {
+                assert!(v > 6, "unexpected hole in JobState map for {v}");
+            }
+        }
+    }
 }

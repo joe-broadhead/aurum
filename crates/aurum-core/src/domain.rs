@@ -104,6 +104,17 @@ mod tests {
     }
 
     #[test]
+    fn sample_rate_is_whisper_only_for_16000() {
+        // Kills mutants that flip is_whisper to always-true or invert equality.
+        assert!(SampleRateHz::whisper().is_whisper());
+        assert!(SampleRateHz::try_new(WHISPER_SAMPLE_RATE)
+            .unwrap()
+            .is_whisper());
+        assert!(!SampleRateHz::try_new(8_000).unwrap().is_whisper());
+        assert!(!SampleRateHz::try_new(44_100).unwrap().is_whisper());
+    }
+
+    #[test]
     fn duration_rejects_nan() {
         assert!(FiniteDurationSecs::try_new(f64::NAN).is_err());
         assert!(FiniteDurationSecs::try_new(-1.0).is_err());
@@ -116,5 +127,12 @@ mod tests {
         assert!(ModelId::try_new("  ").is_err());
         assert!(ModelId::try_new("a\nb").is_err());
         assert_eq!(ModelId::try_new("tiny-q5_1").unwrap().as_str(), "tiny-q5_1");
+    }
+
+    #[test]
+    fn model_id_into_inner_preserves_value() {
+        // Kills mutants that replace into_inner with a constant string.
+        let id = ModelId::try_new("tiny-q5_1").unwrap();
+        assert_eq!(id.into_inner(), "tiny-q5_1");
     }
 }

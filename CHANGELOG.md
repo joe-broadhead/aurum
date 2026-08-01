@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.14] - 2026-08-01
+
+v0.0.14 is **Group I — third 1.0 QE depth slice**: Miri pure suite, sanitizer
++ concurrency stress, trust-boundary coverage reports, and scoped mutation
+testing.
+
+### Added
+
+- **JOE-1889:** `scripts/run_miri.sh` curated pure-Rust Miri filters + CI job
+  `miri`; gaps (Tokio/whisper/ORT) documented in `docs/operations/qe-depth.md`.
+- **JOE-1887:** `scripts/run_sanitizers.sh` Linux ASan pure filters + FFI
+  concurrency stress tests; CI job `sanitizer-stress`; platform gaps documented.
+- **JOE-1888:** `scripts/coverage_trust.sh` module-scoped coverage report
+  (`TRUST_COVERAGE.md`) with soft floors; CI artifact upload.
+- **JOE-1886:** `scripts/run_mutants.sh` cargo-mutants smoke (sharded) over
+  domain/dto/error/cleanup/providers; survivor policy in qe-depth.md.
+
 ## [0.0.13] - 2026-08-01
 
 v0.0.13 is **Group H — second 1.0 assurance slice**: forced cosign keyless

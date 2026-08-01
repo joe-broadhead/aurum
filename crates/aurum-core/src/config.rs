@@ -1134,19 +1134,13 @@ provider = "rules"
     }
 
     #[test]
+    #[cfg(feature = "tts")]
     fn custom_tts_model_cannot_shadow_builtin_on_load() {
+        // Builtin catalogue shadow checks run only with the `tts` feature
+        // (`validate_tts_custom_models`). STT-only builds skip pack validation.
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
-        let default_id = {
-            #[cfg(feature = "tts")]
-            {
-                crate::tts::DEFAULT_TTS_MODEL
-            }
-            #[cfg(not(feature = "tts"))]
-            {
-                "kitten-nano-int8"
-            }
-        };
+        let default_id = crate::tts::DEFAULT_TTS_MODEL;
         fs::write(
             &path,
             format!(

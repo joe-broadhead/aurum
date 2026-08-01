@@ -94,9 +94,31 @@ jobs:
 
       - name: Install deps (Windows)
         if: runner.os == 'Windows'
+        shell: bash
         run: |
-          choco install cmake ffmpeg -y --no-progress
-          echo "C:\Program Files\CMake\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          set -euo pipefail
+          # Prefer preinstalled tools on GitHub-hosted images; Chocolatey is flaky (504s).
+          if ! command -v cmake >/dev/null 2>&1; then
+            for attempt in 1 2 3; do
+              if choco install cmake -y --no-progress; then
+                break
+              fi
+              echo "choco cmake attempt ${attempt} failed; retrying..."
+              sleep 20
+            done
+          fi
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            for attempt in 1 2 3; do
+              if choco install ffmpeg -y --no-progress; then
+                break
+              fi
+              echo "choco ffmpeg attempt ${attempt} failed; retrying..."
+              sleep 20
+            done
+          fi
+          echo "/c/Program Files/CMake/bin" >> "$GITHUB_PATH"
+          cmake --version
+          command -v ffmpeg || true
 
       - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:
@@ -306,7 +328,26 @@ jobs:
 
       - name: Install deps (Windows)
         if: runner.os == 'Windows'
-        run: choco install cmake -y --no-progress
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Prefer preinstalled cmake; Chocolatey community feed is flaky (504 Gateway Timeout).
+          if command -v cmake >/dev/null 2>&1; then
+            cmake --version
+            exit 0
+          fi
+          for attempt in 1 2 3; do
+            if choco install cmake -y --no-progress; then
+              echo "/c/Program Files/CMake/bin" >> "$GITHUB_PATH"
+              export PATH="/c/Program Files/CMake/bin:$PATH"
+              cmake --version
+              exit 0
+            fi
+            echo "choco cmake attempt ${attempt} failed; retrying..."
+            sleep 20
+          done
+          echo "cmake not available after retries" >&2
+          exit 1
 
       - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:

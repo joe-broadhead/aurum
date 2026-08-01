@@ -118,8 +118,8 @@ fn normalization_handles_nan_segment_without_panic() {
         1.0,
     );
     let (normalized, report) = normalize_result_with_report(result);
-    assert!(normalized.duration_secs.is_finite());
-    for s in &normalized.segments {
+    assert!(normalized.duration_secs().is_finite());
+    for s in normalized.segments() {
         assert!(s.start().is_finite());
         assert!(s.end().is_finite());
     }
@@ -139,8 +139,8 @@ fn normalization_handles_inverted_and_infinite_segments() {
         f64::NAN,
     );
     let (normalized, _) = normalize_result_with_report(result);
-    assert!(normalized.duration_secs.is_finite());
-    for s in &normalized.segments {
+    assert!(normalized.duration_secs().is_finite());
+    for s in normalized.segments() {
         assert!(s.start().is_finite() && s.end().is_finite());
         assert!(s.end() >= s.start() || s.text().is_empty());
     }

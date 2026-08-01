@@ -351,7 +351,7 @@ mod tests {
         let mut buf = PcmBuffer::dictation();
         buf.push(&vec![0.0; 1600]).unwrap();
         let audio = buf.to_audio_input().unwrap();
-        assert_eq!(audio.sample_rate, 16_000);
+        assert_eq!(audio.sample_rate(), 16_000);
         assert_eq!(audio.len(), 1600);
         assert!(!buf.is_empty());
         let taken = buf.take_audio_input().unwrap();

@@ -965,7 +965,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
     let stt_mode = OpenRouterSttMode::parse(stt_mode_raw)?;
 
     // Chat/LLM path timestamps are unreliable; dedicated ASR may be reliable.
-    // We still warn before the request; final SRT gate uses result.timestamps_reliable.
+    // We still warn before the request; final SRT gate uses result.timestamps_reliable().
 
     tracing::info!(
     provider = %provider_name,
@@ -995,16 +995,16 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
     if cli.verbose {
         eprintln!(
             "aurum: loaded {:.2}s of audio ({} samples @ {} Hz)",
-            audio.duration_secs,
-            audio.samples.len(),
-            audio.sample_rate
+            audio.duration_secs(),
+            audio.samples().len(),
+            audio.sample_rate()
         );
     }
 
     if atty_stderr() {
         eprintln!(
             "aurum: transcribing with {provider_name}/{model} ({:.1}s audio) …",
-            audio.duration_secs
+            audio.duration_secs()
         );
     }
 
@@ -1078,7 +1078,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
 
     // SRT requires reliable timings unless explicitly overridden.
     if matches!(format, OutputFormat::Srt)
-        && !result.timestamps_reliable
+        && !result.timestamps_reliable()
         && !cli.allow_unreliable_timestamps
     {
         return Err(UserError::Other {
@@ -1087,7 +1087,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
                  (backend={:?}, timestamps_reliable=false).\n  \
                  Hint: use `-o txt` or `-o json`, pass `--allow-unreliable-timestamps`, \
                  or use `--openrouter-stt-mode transcriptions` with a dedicated ASR model.",
-                result.backend_kind
+                result.backend_kind()
             ),
         }
         .into());
@@ -1124,7 +1124,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         stdout.flush().ok();
     }
 
-    if result.text.trim().is_empty() && atty_stderr() {
+    if result.text().trim().is_empty() && atty_stderr() {
         eprintln!("aurum: note: transcript is empty (silence or no speech detected)");
     }
 
@@ -1265,11 +1265,11 @@ async fn apply_configured_cleanup(
     verbose: bool,
 ) -> Result<()> {
     if matches!(style, CleanupStyle::Raw) {
-        result.cleanup_style = CleanupStyle::Raw;
-        result.cleanup_provider = None;
-        result.original_text = None;
-        result.original_segments = None;
-        result.cleanup_segment_policy = None;
+        result.set_cleanup_style(CleanupStyle::Raw);
+        result.set_cleanup_provider(None);
+        result.set_original_text(None);
+        result.set_original_segments(None);
+        result.set_cleanup_segment_policy(None);
         return Ok(());
     }
     if verbose || atty_stderr() {

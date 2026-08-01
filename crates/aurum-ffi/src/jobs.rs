@@ -508,14 +508,14 @@ impl JobController {
             match res {
                 Ok(result) => {
                     let t = Transcript {
-                        text: result.text,
-                        language: result.language,
-                        model: result.model,
-                        duration_secs: result.duration_secs,
-                        timestamps_reliable: result.timestamps_reliable,
+                        text: result.text().to_string(),
+                        language: result.language().map(|s| s.to_string()),
+                        model: result.model().to_string(),
+                        duration_secs: result.duration_secs(),
+                        timestamps_reliable: result.timestamps_reliable(),
                         segments: result
-                            .segments
-                            .into_iter()
+                            .segments()
+                            .iter()
                             .map(|s| Segment {
                                 start_s: s.start(),
                                 end_s: s.end(),
@@ -578,9 +578,13 @@ impl JobController {
                 }
             };
             let timer = SpanTimer::start();
-            let provider = aurum_core::tts::LocalTtsProvider::new(req.cache_dir)
-                .with_local_only(req.local_only)
-                .with_progress(false);
+            let provider = aurum_core::tts::LocalTtsProvider::with_runtime(
+                req.cache_dir,
+                req.tts_pool,
+                req.governor,
+            )
+            .with_local_only(req.local_only)
+            .with_progress(false);
             let opts = aurum_core::tts::SynthesisOptions {
                 model: req.model,
                 voice: req.voice,
@@ -623,6 +627,10 @@ pub struct TtsJobRequest {
     pub language: String,
     pub speaking_rate: f32,
     pub local_only: bool,
+    /// Engine-owned TTS session pool (JOE-1810).
+    pub tts_pool: std::sync::Arc<aurum_core::tts::TtsSessionPool>,
+    /// Engine-owned governor shared with STT jobs.
+    pub governor: std::sync::Arc<aurum_core::runtime::ResourceGovernor>,
 }
 
 /// Capability bits for `aurum_capabilities` (JOE-1624).

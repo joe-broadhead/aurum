@@ -51,7 +51,7 @@ fn format_json_never_emits_nan_for_adversarial_durations() {
     let cases = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1.0, 0.0];
     for d in cases {
         let mut r = TranscriptionResult::local("x".into(), vec![], None, "m".into(), d);
-        r.duration_secs = d;
+        r.set_duration_secs(d);
         let (norm, _) = aurum_core::postprocess::normalize_result_with_report(r);
         let json = aurum_core::output::format_result(&norm, OutputFormat::Json).unwrap();
         assert!(

@@ -202,14 +202,14 @@ impl OpenRouterProvider {
         op: &crate::runtime::OpContext,
     ) -> Result<TranscriptionResult> {
         let pcm_bytes = input
-            .samples
+            .samples()
             .len()
             .saturating_mul(std::mem::size_of::<f32>());
         op.emit("stt", "encode");
         op.check()?;
         // Propagate cancel + absolute encode deadline (JOE-1648 third-pass).
         let (upload_path, format) = audio::encode_for_upload_with_timeout(
-            &input.samples,
+            input.samples().as_ref(),
             self.max_upload_bytes,
             DEFAULT_FFMPEG_TIMEOUT,
             Some(op.cancel.clone()),
@@ -302,11 +302,11 @@ impl OpenRouterProvider {
 
         op.emit("stt", "parse");
         let (text, segments, timestamps_reliable) =
-            parse_transcriptions_body(&body_text, options.timestamps, input.duration_secs)?;
+            parse_transcriptions_body(&body_text, options.timestamps, input.duration_secs())?;
         validate_text_bounds(&text, None, TranscriptLimits::default(), PROVIDER_NAME)?;
         validate_segments(
             &segments,
-            input.duration_secs,
+            input.duration_secs(),
             TranscriptLimits::default(),
             PROVIDER_NAME,
         )?;
@@ -320,13 +320,13 @@ impl OpenRouterProvider {
                 None
             },
             options.model.clone(),
-            input.duration_secs,
+            input.duration_secs(),
             options.timestamps,
         );
         // Dedicated ASR path.
-        result.backend_kind = BackendKind::Asr;
-        result.timestamps_reliable = timestamps_reliable;
-        result.provider = PROVIDER_NAME.into();
+        result.set_backend_kind(BackendKind::Asr);
+        result.set_timestamps_reliable(timestamps_reliable);
+        result.set_provider(PROVIDER_NAME.to_string());
         op.emit("stt", "done");
         Ok(postprocess::normalize_result(result))
     }
@@ -340,7 +340,7 @@ impl OpenRouterProvider {
         op.emit("stt", "encode");
         op.check()?;
         let (upload_path, format) = audio::encode_for_upload_with_timeout(
-            &input.samples,
+            input.samples().as_ref(),
             self.max_upload_bytes,
             DEFAULT_FFMPEG_TIMEOUT,
             Some(op.cancel.clone()),
@@ -497,13 +497,13 @@ impl OpenRouterProvider {
         }
 
         let (text, segments) =
-            parse_chat_content(&content, options.timestamps, input.duration_secs);
+            parse_chat_content(&content, options.timestamps, input.duration_secs());
         validate_text_bounds(&text, None, TranscriptLimits::default(), PROVIDER_NAME)?;
         // LLM segments are not trusted for ordering hard-fail; soft-validate only when present.
         if options.timestamps {
             let _ = validate_segments(
                 &segments,
-                input.duration_secs,
+                input.duration_secs(),
                 TranscriptLimits::default(),
                 PROVIDER_NAME,
             );
@@ -518,7 +518,7 @@ impl OpenRouterProvider {
                 None
             },
             options.model.clone(),
-            input.duration_secs,
+            input.duration_secs(),
             options.timestamps,
         );
         op.emit("stt", "done");
@@ -715,12 +715,8 @@ mod tests {
         .unwrap();
 
         let samples: Arc<[f32]> = vec![0.0f32; 1600].into();
-        let input = AudioInput {
-            source_path: PathBuf::from("silent.wav"),
-            samples,
-            sample_rate: 16_000,
-            duration_secs: 0.1,
-        };
+        let input =
+            AudioInput::from_parts_unchecked(PathBuf::from("silent.wav"), samples, 16_000, 0.1);
         let opts = TranscriptionOptions {
             model: "google/gemini-2.5-flash".into(),
             language: "en".into(),
@@ -728,10 +724,10 @@ mod tests {
             cancel: None,
         };
         let result = provider.transcribe(&input, &opts).await.unwrap();
-        assert_eq!(result.text, "Hello from the cloud.");
-        assert_eq!(result.provider, "openrouter");
-        assert_eq!(result.backend_kind, BackendKind::LlmAssisted);
-        assert!(!result.timestamps_reliable);
+        assert_eq!(result.text(), "Hello from the cloud.");
+        assert_eq!(result.provider(), "openrouter");
+        assert_eq!(result.backend_kind(), BackendKind::LlmAssisted);
+        assert!(!result.timestamps_reliable());
     }
 
     #[tokio::test]
@@ -756,12 +752,12 @@ mod tests {
         )
         .unwrap();
 
-        let input = AudioInput {
-            source_path: PathBuf::from("x.wav"),
-            samples: vec![0.0; 1600].into(),
-            sample_rate: 16_000,
-            duration_secs: 0.1,
-        };
+        let input = AudioInput::from_parts_unchecked(
+            PathBuf::from("x.wav"),
+            vec![0.0; 1600].into(),
+            16_000,
+            0.1,
+        );
         let opts = TranscriptionOptions {
             model: "openai/whisper-1".into(),
             language: "en".into(),
@@ -769,8 +765,8 @@ mod tests {
             cancel: None,
         };
         let result = provider.transcribe(&input, &opts).await.unwrap();
-        assert_eq!(result.text, "Dedicated ASR path works.");
-        assert_eq!(result.backend_kind, BackendKind::Asr);
+        assert_eq!(result.text(), "Dedicated ASR path works.");
+        assert_eq!(result.backend_kind(), BackendKind::Asr);
     }
 
     #[tokio::test]
@@ -792,12 +788,12 @@ mod tests {
             OpenRouterSttMode::Chat,
         )
         .unwrap();
-        let input = AudioInput {
-            source_path: PathBuf::from("x.wav"),
-            samples: vec![0.0; 1600].into(),
-            sample_rate: 16_000,
-            duration_secs: 0.1,
-        };
+        let input = AudioInput::from_parts_unchecked(
+            PathBuf::from("x.wav"),
+            vec![0.0; 1600].into(),
+            16_000,
+            0.1,
+        );
         let opts = TranscriptionOptions {
             model: "google/gemini-2.5-flash".into(),
             language: "auto".into(),

@@ -260,16 +260,16 @@ pub async fn apply_cleanup_with_segments_op(
 
     if matches!(style, CleanupStyle::Raw) {
         // Raw remains the identity default — no metadata pollution.
-        result.cleanup_style = CleanupStyle::Raw;
-        result.cleanup_provider = None;
-        result.original_text = None;
-        result.original_segments = None;
-        result.cleanup_segment_policy = None;
+        result.set_cleanup_style(CleanupStyle::Raw);
+        result.set_cleanup_provider(None);
+        result.set_original_text(None);
+        result.set_original_segments(None);
+        result.set_cleanup_segment_policy(None);
         let out = CleanupResult {
-            text: result.text.clone(),
+            text: result.text().to_string(),
             style,
             provider: cleanup.kind(),
-            original_text: result.text.clone(),
+            original_text: result.text().to_string(),
         };
         let report = CleanupReport {
             style,
@@ -285,16 +285,16 @@ pub async fn apply_cleanup_with_segments_op(
 
     // Bound per-segment work before any mutation.
     if matches!(policy, SegmentCleanupPolicy::PerSegment) {
-        if result.segments.len() > MAX_PER_SEGMENT_COUNT {
+        if result.segments().len() > MAX_PER_SEGMENT_COUNT {
             return Err(UserError::Other {
                 message: format!(
                     "per-segment cleanup refused: {} segments exceeds limit of {MAX_PER_SEGMENT_COUNT}",
-                    result.segments.len()
+                    result.segments().len()
                 ),
             }
             .into());
         }
-        for (i, seg) in result.segments.iter().enumerate() {
+        for (i, seg) in result.segments().iter().enumerate() {
             let n = seg.text().chars().count();
             if n > MAX_PER_SEGMENT_CHARS {
                 return Err(UserError::Other {
@@ -309,8 +309,8 @@ pub async fn apply_cleanup_with_segments_op(
     }
 
     // Snapshot inputs; mutate only after full success.
-    let original_text = result.text.clone();
-    let original_segments = result.segments.clone();
+    let original_text = result.text().to_string();
+    let original_segments = result.segments().to_vec();
     let mut warnings = Vec::new();
     let mut dropped_segments = 0usize;
     let mut segments_cleared = false;
@@ -383,16 +383,16 @@ pub async fn apply_cleanup_with_segments_op(
         "cleanup_style".into(),
         "cleanup_provider".into(),
     ];
-    result.original_text = Some(original_text.clone());
-    result.original_segments = Some(original_segments);
-    result.text = out.text.clone();
-    result.cleanup_style = out.style;
-    result.cleanup_provider = Some(out.provider);
-    result.cleanup_segment_policy = Some(policy);
-    if result.segments != proposed_segments {
+    result.set_original_text(Some(original_text.clone()));
+    result.set_original_segments(Some(original_segments));
+    result.set_text(out.text.clone());
+    result.set_cleanup_style(out.style);
+    result.set_cleanup_provider(Some(out.provider));
+    result.set_cleanup_segment_policy(Some(policy));
+    if result.segments() != proposed_segments {
         changed_fields.push("segments".into());
     }
-    result.segments = proposed_segments;
+    result.set_segments(proposed_segments);
     changed_fields.push("original_text".into());
     changed_fields.push("original_segments".into());
 
@@ -491,13 +491,13 @@ mod tests {
         )
         .await
         .unwrap();
-        assert!(result.segments.is_empty());
-        assert!(result.text.contains('•'));
-        assert_eq!(result.cleanup_style, CleanupStyle::Bullets);
-        assert_eq!(result.cleanup_provider, Some(CleanupProviderKind::Rules));
+        assert!(result.segments().is_empty());
+        assert!(result.text().contains('•'));
+        assert_eq!(result.cleanup_style(), CleanupStyle::Bullets);
+        assert_eq!(result.cleanup_provider(), Some(CleanupProviderKind::Rules));
         assert!(report.segments_cleared);
-        assert!(result.original_segments.as_ref().unwrap().len() == 2);
-        assert_eq!(result.original_text.as_deref(), Some("One. Two. Three."));
+        assert!(result.original_segments().unwrap().len() == 2);
+        assert_eq!(result.original_text(), Some("One. Two. Three."));
     }
 
     #[tokio::test]
@@ -522,9 +522,9 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(result.segments.len(), 1);
-        assert_eq!(result.segments[0].text(), "um hello there");
-        assert!(result.original_text.is_some());
+        assert_eq!(result.segments().len(), 1);
+        assert_eq!(result.segments()[0].text(), "um hello there");
+        assert!(result.original_text().is_some());
     }
 
     /// Failing backend used only for transactional guarantees.

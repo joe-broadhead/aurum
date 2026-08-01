@@ -1,8 +1,6 @@
 //! Policy-enforcing HTTP client for remote STT and cleanup (JOE-1587).
 
-use super::status::redact_secret;
 use crate::error::{ProviderError, Result, UserError};
-use crate::postprocess::truncate_chars;
 use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use std::time::Duration;
 use url::Url;
@@ -218,14 +216,19 @@ impl HardenedHttpClient {
     }
 }
 
-/// Map HTTP status codes to typed provider errors (no payload echo of secrets).
+/// Map HTTP status codes to typed provider errors.
+///
+/// Public reasons are **allowlisted only** (HTTP status + optional provider code).
+/// Arbitrary remote response bodies are never echoed (JOE-1914).
 pub fn map_http_status(provider: &str, status: StatusCode, body: &str) -> Result<()> {
-    let safe = redact_secret(&truncate_chars(body, 300));
-    match status.as_u16() {
+    use super::status::public_http_reason;
+    let code = status.as_u16();
+    let reason = public_http_reason(code, body);
+    match code {
         200..=299 => Ok(()),
         401 | 403 => Err(ProviderError::Auth {
             provider: provider.into(),
-            reason: safe,
+            reason,
         }
         .into()),
         429 => Err(ProviderError::RateLimited {
@@ -234,12 +237,12 @@ pub fn map_http_status(provider: &str, status: StatusCode, body: &str) -> Result
         .into()),
         402 => Err(ProviderError::QuotaExceeded {
             provider: provider.into(),
-            reason: safe,
+            reason,
         }
         .into()),
         _ => Err(ProviderError::Remote {
             provider: provider.into(),
-            reason: format!("HTTP {status}: {safe}"),
+            reason,
         }
         .into()),
     }
@@ -266,6 +269,29 @@ mod tests {
             err.to_string().contains("allow_custom_endpoint")
                 || err.to_string().contains("official")
         );
+    }
+
+    #[test]
+    fn map_http_status_never_echoes_body_payload() {
+        let body = r#"{"error":{"message":"sk-or-v1-canary-should-not-appear","code":401}}"#;
+        let err =
+            map_http_status("openrouter", reqwest::StatusCode::UNAUTHORIZED, body).unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("canary"));
+        assert!(!msg.contains("sk-or-v1"));
+        assert!(msg.contains("401") || msg.to_ascii_lowercase().contains("auth"));
+    }
+
+    #[test]
+    fn map_http_status_remote_allowlists_code_only() {
+        let body =
+            r#"{"error":{"message":"transcript: hello world secret","code":"no_endpoints"}}"#;
+        let err = map_http_status("openrouter", reqwest::StatusCode::NOT_FOUND, body).unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("transcript"));
+        assert!(!msg.contains("hello world"));
+        assert!(msg.contains("404"));
+        assert!(msg.contains("no_endpoints"));
     }
 
     #[test]

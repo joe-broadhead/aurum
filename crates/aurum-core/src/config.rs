@@ -61,10 +61,13 @@ impl Default for DefaultSection {
     }
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 pub struct OpenRouterSection {
     /// Prefer `OPENROUTER_API_KEY` env var over this field.
-    pub api_key: Option<String>,
+    ///
+    /// Stored as [`crate::secret::SecretString`]: Debug/Display/Serialize never
+    /// emit plaintext (JOE-1914). Deserialize still loads the value from TOML.
+    pub api_key: Option<crate::secret::SecretString>,
     /// Default remote model when provider is openrouter.
     pub model: Option<String>,
     /// Optional custom base URL (for testing / proxies).
@@ -78,6 +81,19 @@ pub struct OpenRouterSection {
     /// Use system HTTP(S)_PROXY (privacy implications). Default false.
     #[serde(default)]
     pub use_system_proxy: bool,
+}
+
+impl std::fmt::Debug for OpenRouterSection {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenRouterSection")
+            .field("api_key", &self.api_key)
+            .field("model", &self.model)
+            .field("base_url", &self.base_url)
+            .field("allow_custom_endpoint", &self.allow_custom_endpoint)
+            .field("stt_mode", &self.stt_mode)
+            .field("use_system_proxy", &self.use_system_proxy)
+            .finish()
+    }
 }
 
 fn default_stt_mode() -> String {
@@ -641,8 +657,8 @@ impl Config {
         let openrouter_api_key = std::env::var("OPENROUTER_API_KEY")
             .ok()
             .filter(|s| !s.is_empty())
-            .or(file.openrouter.api_key.clone())
-            .map(crate::secret::SecretString::new);
+            .map(crate::secret::SecretString::new)
+            .or(file.openrouter.api_key.clone());
 
         let openrouter_base_url = std::env::var("OPENROUTER_BASE_URL")
             .ok()

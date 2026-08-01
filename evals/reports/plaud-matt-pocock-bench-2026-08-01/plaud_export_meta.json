@@ -1,0 +1,36 @@
+{
+  "file_id": "42e86284875bf900d98cb7e83ce3b7cb",
+  "name": "07-30 Lecture: AI-Driven Code Generation and Prototyping",
+  "duration_sec": 685000,
+  "created_at": "2026-07-30T11:21:57",
+  "start_at": "2026-07-30T11:10:26",
+  "speaker_attribution": "Matt Pocock (YouTube video; user-confirmed)",
+  "source_types_present": [
+    {
+      "type": "transaction",
+      "content_bytes": 14052
+    },
+    {
+      "type": "outline",
+      "content_bytes": 1130
+    },
+    {
+      "type": "transaction_polish",
+      "content_bytes": 0
+    }
+  ],
+  "files": {
+    "plain_full_raw": "plaud_transcript_full_raw.txt",
+    "timestamped_full_raw": "plaud_transcript_full_raw_timestamped.txt",
+    "segments_json": "plaud_source_transaction.json",
+    "segments_ndjson": "plaud_transcript_full_raw.ndjson",
+    "full_api_payload": "plaud_file_raw.json",
+    "outline": "plaud_source_outline.json",
+    "summary": "plaud_summary.txt"
+  },
+  "notes": [
+    "transaction = ASR/raw transcript segments from Plaud API",
+    "transaction_polish present but empty for this file",
+    "CLI `plaud transcript` formats the same transaction source"
+  ]
+}

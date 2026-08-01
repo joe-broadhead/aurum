@@ -1,0 +1,11 @@
+{
+  "id": "clip_09",
+  "kind": "easy",
+  "start_s": 630.0,
+  "end_s": 660.48,
+  "time": "10:30-11:00",
+  "hardness": 0.1766,
+  "ref_cross_wer": 0.2357,
+  "multi_hyp_disagreement": 0.1045,
+  "gold_status": "empty"
+}

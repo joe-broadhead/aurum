@@ -1,0 +1,640 @@
+[
+  {
+    "id": "fish-audio/transcribe-1",
+    "canonical_slug": "fish-audio/transcribe-1-20260729",
+    "hugging_face_id": null,
+    "name": "Fish Audio: Transcribe 1",
+    "created": 1785353735,
+    "description": "Transcribe 1 is a speech-to-text model from Fish Audio. It is suited for audio transcription with automatic language detection and can return timestamped word-level segments when alignment details are requested.",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Other",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.0001",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/fish-audio/transcribe-1-20260729/endpoints"
+    }
+  },
+  {
+    "id": "x-ai/grok-stt-1.0",
+    "canonical_slug": "x-ai/grok-stt-20260723",
+    "hugging_face_id": null,
+    "name": "xAI: Grok STT 1.0",
+    "created": 1784817014,
+    "description": "Grok STT is xAI's speech-to-text model, available via the REST /v1/stt endpoint. It supports transcription with word-level timestamps, optional speaker diarization, and multichannel audio.",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Grok",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.1",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "frequency_penalty",
+      "logprobs",
+      "max_tokens",
+      "presence_penalty",
+      "response_format",
+      "seed",
+      "stop",
+      "temperature",
+      "top_logprobs",
+      "top_p"
+    ],
+    "default_parameters": {
+      "temperature": null,
+      "top_p": null,
+      "top_k": null,
+      "frequency_penalty": null,
+      "presence_penalty": null,
+      "repetition_penalty": null
+    },
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/x-ai/grok-stt-20260723/endpoints"
+    }
+  },
+  {
+    "id": "deepgram/nova-3",
+    "canonical_slug": "deepgram/nova-3-20260714",
+    "hugging_face_id": null,
+    "name": "Deepgram: Nova-3",
+    "created": 1784075761,
+    "description": "Deepgram Nova-3 general-purpose speech-to-text model with monolingual and multilingual transcription support.",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Other",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.0043",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [],
+    "default_parameters": {
+      "temperature": null,
+      "top_p": null,
+      "top_k": null,
+      "frequency_penalty": null,
+      "presence_penalty": null,
+      "repetition_penalty": null
+    },
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/deepgram/nova-3-20260714/endpoints"
+    }
+  },
+  {
+    "id": "microsoft/mai-transcribe-1.5",
+    "canonical_slug": "microsoft/mai-transcribe-1.5",
+    "hugging_face_id": null,
+    "name": "Microsoft: MAI-Transcribe 1.5",
+    "created": 1780425095,
+    "description": "MAI-Transcribe 1.5 is a multilingual speech-to-text model from Microsoft AI. It is suited for captions, call transcription, subtitling, accessibility, and other voice-enabled applications, with reliable transcription across 43 languages, diverse...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Other",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.36",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "max_completion_tokens",
+      "max_tokens",
+      "temperature",
+      "top_p"
+    ],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/microsoft/mai-transcribe-1.5/endpoints"
+    }
+  },
+  {
+    "id": "nvidia/parakeet-tdt-0.6b-v3",
+    "canonical_slug": "nvidia/parakeet-tdt-0.6b-v3",
+    "hugging_face_id": null,
+    "name": "NVIDIA: Parakeet TDT 0.6B v3",
+    "created": 1779848335,
+    "description": "Parakeet TDT 0.6B v3 is NVIDIA's 600M-parameter multilingual speech-to-text model built on the FastConformer-TDT architecture. Trained on the Granary dataset (670,000+ hours of audio), it supports automatic language detection across...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Other",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.0015",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "frequency_penalty",
+      "logit_bias",
+      "max_tokens",
+      "min_p",
+      "presence_penalty",
+      "repetition_penalty",
+      "stop",
+      "temperature",
+      "top_k",
+      "top_p"
+    ],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/nvidia/parakeet-tdt-0.6b-v3/endpoints"
+    }
+  },
+  {
+    "id": "mistralai/voxtral-mini-transcribe",
+    "canonical_slug": "mistralai/voxtral-mini-transcribe-2602",
+    "hugging_face_id": null,
+    "name": "Mistral: Voxtral Mini Transcribe",
+    "created": 1778877024,
+    "description": "Voxtral Mini Transcribe is Mistral's speech-to-text model, derived from the Voxtral Mini family. It accepts audio input and returns transcribed text via the standard transcription API. Suited for transcribing meetings,...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Mistral",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.003",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "frequency_penalty",
+      "max_tokens",
+      "presence_penalty",
+      "response_format",
+      "seed",
+      "stop",
+      "structured_outputs",
+      "temperature",
+      "top_p"
+    ],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/mistralai/voxtral-mini-transcribe-2602/endpoints"
+    }
+  },
+  {
+    "id": "qwen/qwen3-asr-flash-2026-02-10",
+    "canonical_slug": "qwen/qwen3-asr-flash-2026-02-10",
+    "hugging_face_id": null,
+    "name": "Qwen: Qwen3 ASR Flash",
+    "created": 1778732776,
+    "description": "Qwen3-ASR-Flash is Alibaba's automatic speech recognition service, built on the Qwen3-Omni foundation and trained on tens of millions of hours of multimodal speech data. The model handles 11 languages \u2014...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Qwen3",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.000035",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "max_tokens",
+      "presence_penalty",
+      "response_format",
+      "seed",
+      "temperature",
+      "top_p"
+    ],
+    "default_parameters": {
+      "temperature": null,
+      "top_p": null,
+      "top_k": null,
+      "frequency_penalty": null,
+      "presence_penalty": null,
+      "repetition_penalty": null
+    },
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/qwen/qwen3-asr-flash-2026-02-10/endpoints"
+    }
+  },
+  {
+    "id": "google/chirp-3",
+    "canonical_slug": "google/chirp-3",
+    "hugging_face_id": null,
+    "name": "Google: Chirp 3",
+    "created": 1777997783,
+    "description": "Chirp 3 is Google's latest multilingual speech-to-text model. It offers enhanced transcription accuracy across 24 GA languages and 77+ preview languages, with support for automatic language detection, automatic punctuation, and...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "Other",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.016",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "max_tokens",
+      "response_format",
+      "seed",
+      "temperature",
+      "top_p"
+    ],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/google/chirp-3/endpoints"
+    }
+  },
+  {
+    "id": "openai/gpt-4o-mini-transcribe",
+    "canonical_slug": "openai/gpt-4o-mini-transcribe",
+    "hugging_face_id": null,
+    "name": "OpenAI: GPT-4o Mini Transcribe",
+    "created": 1777658151,
+    "description": "GPT-4o Mini Transcribe is OpenAI's smaller, cost-efficient speech-to-text model built on GPT-4o Mini audio capabilities. It's priced per token (input and output), making it suitable for high-volume transcription workflows that...",
+    "context_length": 128000,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "GPT",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.00000125",
+      "completion": "0.000005"
+    },
+    "top_provider": {
+      "context_length": 128000,
+      "max_completion_tokens": null,
+      "is_moderated": true
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "frequency_penalty",
+      "logit_bias",
+      "logprobs",
+      "max_tokens",
+      "presence_penalty",
+      "response_format",
+      "seed",
+      "stop",
+      "structured_outputs",
+      "temperature",
+      "top_logprobs",
+      "top_p"
+    ],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/openai/gpt-4o-mini-transcribe/endpoints"
+    }
+  },
+  {
+    "id": "openai/whisper-large-v3",
+    "canonical_slug": "openai/whisper-large-v3",
+    "hugging_face_id": "openai/whisper-large-v3",
+    "name": "OpenAI: Whisper Large V3",
+    "created": 1777642266,
+    "description": "Whisper Large V3 is OpenAI's open-source automatic speech recognition model offering both audio transcription and translation. It supports 99+ languages and accepts common audio formats including mp3, mp4, wav, webm,...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "GPT",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.0015",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "frequency_penalty",
+      "logit_bias",
+      "max_tokens",
+      "min_p",
+      "presence_penalty",
+      "repetition_penalty",
+      "response_format",
+      "seed",
+      "stop",
+      "temperature",
+      "top_k",
+      "top_p"
+    ],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/openai/whisper-large-v3/endpoints"
+    }
+  },
+  {
+    "id": "openai/whisper-large-v3-turbo",
+    "canonical_slug": "openai/whisper-large-v3-turbo",
+    "hugging_face_id": "openai/whisper-large-v3-turbo",
+    "name": "OpenAI: Whisper Large V3 Turbo",
+    "created": 1777642266,
+    "description": "Whisper Large V3 Turbo is an optimized version of OpenAI's Whisper Large V3 speech recognition model, designed for speed and cost efficiency. It supports transcription across 99+ languages with a...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "GPT",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.04",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": false
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "max_tokens",
+      "response_format",
+      "seed",
+      "stop",
+      "temperature",
+      "top_p"
+    ],
+    "default_parameters": {},
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/openai/whisper-large-v3-turbo/endpoints"
+    }
+  },
+  {
+    "id": "openai/whisper-1",
+    "canonical_slug": "openai/whisper-1",
+    "hugging_face_id": null,
+    "name": "OpenAI: Whisper 1",
+    "created": 1777332905,
+    "description": "Whisper is OpenAI's open-source automatic speech recognition model, available via API as `whisper-1`. It supports transcription and translation across 50+ languages from audio files up to 25 MB. Accepts formats...",
+    "context_length": 0,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "GPT",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.006",
+      "completion": "0"
+    },
+    "top_provider": {
+      "context_length": 0,
+      "max_completion_tokens": null,
+      "is_moderated": true
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "frequency_penalty",
+      "logit_bias",
+      "logprobs",
+      "max_tokens",
+      "presence_penalty",
+      "response_format",
+      "seed",
+      "stop",
+      "structured_outputs",
+      "temperature",
+      "top_logprobs",
+      "top_p"
+    ],
+    "default_parameters": {
+      "temperature": null,
+      "top_p": null,
+      "top_k": null,
+      "frequency_penalty": null,
+      "presence_penalty": null,
+      "repetition_penalty": null
+    },
+    "supported_voices": [],
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/openai/whisper-1/endpoints"
+    }
+  },
+  {
+    "id": "openai/gpt-4o-transcribe",
+    "canonical_slug": "openai/gpt-4o-transcribe",
+    "hugging_face_id": null,
+    "name": "OpenAI: GPT-4o Transcribe",
+    "created": 1777332895,
+    "description": "GPT-4o Transcribe is OpenAI's high-quality speech-to-text model built on GPT-4o audio capabilities. It's priced per token (input and output), making it suitable for workflows that benefit from token-level billing transparency.",
+    "context_length": 128000,
+    "architecture": {
+      "modality": "audio->transcription",
+      "input_modalities": [
+        "audio"
+      ],
+      "output_modalities": [
+        "transcription"
+      ],
+      "tokenizer": "GPT",
+      "instruct_type": null
+    },
+    "pricing": {
+      "prompt": "0.0000025",
+      "completion": "0.00001"
+    },
+    "top_provider": {
+      "context_length": 128000,
+      "max_completion_tokens": null,
+      "is_moderated": true
+    },
+    "per_request_limits": null,
+    "supported_parameters": [
+      "frequency_penalty",
+      "logit_bias",
+      "logprobs",
+      "max_tokens",
+      "presence_penalty",
+      "response_format",
+      "seed",
+      "stop",
+      "structured_outputs",
+      "temperature",
+      "top_logprobs",
+      "top_p"
+    ],
+    "default_parameters": {
+      "temperature": null,
+      "top_p": null,
+      "top_k": null,
+      "frequency_penalty": null,
+      "presence_penalty": null,
+      "repetition_penalty": null
+    },
+    "supported_voices": null,
+    "knowledge_cutoff": null,
+    "expiration_date": null,
+    "links": {
+      "details": "/api/v1/models/openai/gpt-4o-transcribe/endpoints"
+    }
+  }
+]

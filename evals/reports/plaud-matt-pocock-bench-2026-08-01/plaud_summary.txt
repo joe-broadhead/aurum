@@ -1,0 +1,76 @@
+Date Time: 2026-07-30 13:10:26
+Location: [Insert Location]
+Instructor: [Insert Name]
+## Summary
+This lecture critiques the common practice of writing overly detailed specifications for AI-driven code generation and advocates for prototyping instead. The speaker argues that although the cost of producing code has dropped, developers have overlooked the agile practice of building throwaway prototypes to answer design and logic questions. The lecture introduces the "prototype skill," a method for creating quick, tangible artifacts that enable higher-fidelity discussions. This skill is part of a broader "Wayfinder" skill used to plan substantial work. The speaker demonstrates creating and iterating on a UI prototype for a search feature in a diagramming app, showing how feedback on a working model leads to a superior final product. The concept extends to back-end development, where logic prototypes can validate complex state machines. The core message: bridging the gap between a spec and production code is most effective with an intermediate, high-fidelity prototype.
+## Knowledge Points
+### 1. Critique of Spec-Driven Development with AI
+*   **Common Pitfall in AI-Assisted Coding**
+    - The speaker sees a tendency among AI users to overemphasize creating a detailed upfront spec or plan.
+    - This spec-driven approach tries to define everything in advance so the AI’s output perfectly matches requirements.
+*   **The Forgotten Skill of Coding**
+    - In crafting detailed specs, people forget they can write code themselves to explore ideas.
+    - This neglects established agile practices like prototyping and spikes (throwaway code to answer a question).
+*   **The Misconception of "Cheap Code"**
+    - "Code is cheap" is partly true: the cost of producing code has dropped significantly.
+    - This makes building prototypes and spikes more affordable and effective than ever.
+### 2. Prototyping as a Development Skill
+*   **Definition and Purpose of a Prototype**
+    - A prototype is throwaway code created specifically to answer a question.
+    - It’s a cheap, rough, but concrete artifact that invites reaction and feedback.
+*   **The Concept of Fidelity**
+    - Fidelity is the level of detail needed to answer a design question.
+    - **Low-fidelity** discussions suffice for simple questions (e.g., a modal needs "cancel" and "confirm").
+    - **High-fidelity** artifacts, like prototypes, are required for complex questions that need to be seen or felt in action (e.g., data display or feature behavior).
+    - Prototyping is essential for questions only answerable by testing semi-working code.
+*   **When to Use a Prototype**
+    - Move to a higher-fidelity prototype as soon as a question is better answered by seeing it in action.
+    - Key triggers: "How should it look?" or "How should it behave?"
+    - Not just for UI: prototypes also help with complex back-end logic—for example, a small interactive terminal app to test a state machine through hard cases.
+### 3. The Wayfinder Skill and Prototype Integration
+*   **Overview of the Wayfinder Skill**
+    - Wayfinder is a new skill for planning and managing large bodies of work.
+    - It breaks a large task into smaller planning sessions, each with its own ticket.
+*   **Ticket Types in Wayfinder**
+    - Wayfinder uses different ticket types, including:
+        - **Grilling type:** The default, a chat with the agent to define basic scope.
+        - **Prototype type:** Used when the discussion needs higher fidelity.
+    - The prototype skill creates a tangible artifact linked to the ticket as an asset.
+*   **Live Prototype Demonstration**
+    - The speaker builds a prototype for a search feature in a TL Draw-based diagramming app.
+    - The AI generates three UI options (A, B, C), each encoding different design decisions.
+    - The speaker reviews them, combines preferred elements (search box from A, layout from C), and iterates with feedback.
+    - The AI produces version D, incorporating the feedback. This iterative process yields a "super rich asset."
+    - The prototype is integrated directly into the live page for a more honest representation of functionality.
+### 4. Workflow and Benefits of Prototyping
+*   **The Prototyping Process**
+    1. Identify a high-fidelity question ("How should it look/behave?").
+    2. Request a prototype from the AI.
+    3. Review and interact with the generated options.
+    4. Provide specific feedback, combining and refining elements.
+    5. Iterate until the prototype is satisfactory.
+    6. Save the final prototype on a throwaway branch.
+*   **Cost and Resource Considerations**
+    - High-fidelity prototypes have higher token costs (the example used ~100,000 tokens).
+    - For complex problems, this is more valuable than low-fidelity discussion.
+    - A "compact" command is used to continue the conversation while retaining prototype context for further iteration.
+*   **From Prototype to Production**
+    - After the prototype, hand off to an implementer (e.g., an "AFK agent") for proper integration.
+    - Delete the temporary prototype code and implement the functionality per the original spec, using the prototype as a high-fidelity reference.
+    - Implementers can often copy and paste directly from the prototype.
+*   **Key Benefit**
+    - Prototyping bridges the large gap between a spec and production-ready code. A working prototype makes the transition simpler and more accurate.
+    - It prevents the common issue of AI building something unexpected despite a detailed spec, due to low discussion fidelity.
+### 5. Influences and Further Resources
+*   **Influence of "Shape Up"**
+    - The speaker credits "Shape Up" by Ryan Singer as highly influential.
+    - He read it in 2019; it changed how he builds applications. The book is free online.
+*   **Skills Newsletter**
+    - The speaker offers a skills newsletter for updates on the skills he is developing and improving.
+## Questions
+- [Insert Question/Confusion]
+## Assignments
+- [ ] 1. Read "Shape Up" by Ryan Singer (available free online).
+- [ ] 2. When facing complex UI/UX or logic questions, build a prototype to explore solutions instead of relying solely on written specs.
+- [ ] 3. Consider subscribing to the speaker’s skills newsletter to stay up to date on AI development skills.
+- [ ] 4. Explore the "Wayfinder" skill for planning large work chunks, including the "grilling" and "prototype" ticket types.

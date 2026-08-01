@@ -1,0 +1,1278 @@
+WEBVTT
+
+1
+00:00:00,000 --> 00:00:02,680
+There's something that a lot of people
+
+2
+00:00:01,080 --> 00:00:05,360
+do when they're working with AI to
+
+3
+00:00:02,680 --> 00:00:08,600
+create code that totally drives me
+
+4
+00:00:05,360 --> 00:00:10,400
+crazy. And it's sort of something that
+
+5
+00:00:08,600 --> 00:00:12,720
+I've been railing against for a while
+
+6
+00:00:10,400 --> 00:00:14,760
+now. The thing that I've noticed is
+
+7
+00:00:12,720 --> 00:00:17,560
+people tend to think I need to create a
+
+8
+00:00:14,760 --> 00:00:19,120
+spec for AI. I need to create a plan,
+
+9
+00:00:17,560 --> 00:00:21,440
+right? Plan mode, spec-driven
+
+10
+00:00:19,120 --> 00:00:23,080
+development. I need to put all of my
+
+11
+00:00:21,440 --> 00:00:25,760
+efforts into making this extremely
+
+12
+00:00:23,080 --> 00:00:27,600
+detailed spec so that when I get some
+
+13
+00:00:25,760 --> 00:00:29,760
+outputs from the AI, those outputs are
+
+14
+00:00:27,600 --> 00:00:31,280
+going to look like the spec. I'm going
+
+15
+00:00:29,760 --> 00:00:33,120
+to have specified everything up front so
+
+16
+00:00:31,280 --> 00:00:35,880
+that I can just perfectly nail it. And
+
+17
+00:00:33,120 --> 00:00:37,720
+in this impulse, what they forget to do
+
+18
+00:00:35,880 --> 00:00:40,160
+is they forget they can actually write
+
+19
+00:00:37,720 --> 00:00:43,120
+code. You can write code while you're
+
+20
+00:00:40,160 --> 00:00:45,400
+working towards a spec. Prototyping and
+
+21
+00:00:43,120 --> 00:00:47,840
+spikes are things that we've had around
+
+22
+00:00:45,400 --> 00:00:49,360
+since the days of Agile, right? I mean,
+
+23
+00:00:47,840 --> 00:00:51,440
+I suppose these are still the days of
+
+24
+00:00:49,360 --> 00:00:53,720
+Agile. Agile is still extremely popular,
+
+25
+00:00:51,440 --> 00:00:55,600
+still extremely influential. But people
+
+26
+00:00:53,720 --> 00:00:57,280
+just aren't prototyping anymore. And so,
+
+27
+00:00:55,600 --> 00:00:59,560
+as part of my skills repo, I'm trying to
+
+28
+00:00:57,280 --> 00:01:02,280
+turn this around. I have a prototype
+
+29
+00:00:59,560 --> 00:01:04,040
+skill. A prototype is throwaway code
+
+30
+00:01:02,280 --> 00:01:05,720
+that answers a question. Everyone is
+
+31
+00:01:04,040 --> 00:01:07,840
+saying that code is cheap, and it's
+
+32
+00:01:05,720 --> 00:01:10,640
+partially true and partially I hate that
+
+33
+00:01:07,840 --> 00:01:12,400
+phrase. But the thing that is cheap is
+
+34
+00:01:10,640 --> 00:01:14,640
+the cost of producing code has gone way,
+
+35
+00:01:12,400 --> 00:01:17,400
+way down. So, producing prototypes,
+
+36
+00:01:14,640 --> 00:01:19,840
+producing quick kind of throwaway spikes
+
+37
+00:01:17,400 --> 00:01:21,440
+has never been cheaper and never been a
+
+38
+00:01:19,840 --> 00:01:23,080
+more effective tool. In this video, I'm
+
+39
+00:01:21,440 --> 00:01:24,640
+going to introduce this prototype skill.
+
+40
+00:01:23,080 --> 00:01:26,720
+I'm going to talk about when you should
+
+41
+00:01:24,640 --> 00:01:29,080
+use it, what it can be used for, and
+
+42
+00:01:26,720 --> 00:01:31,040
+also how it fits into my new wayfinder
+
+43
+00:01:29,080 --> 00:01:34,120
+skill. But first, to explain the concept
+
+44
+00:01:31,040 --> 00:01:35,960
+of fidelity, high fidelity and low
+
+45
+00:01:34,120 --> 00:01:37,480
+fidelity. Whenever you're talking about
+
+46
+00:01:35,960 --> 00:01:39,840
+designing something, you're going to
+
+47
+00:01:37,480 --> 00:01:41,680
+have questions in your mind that need to
+
+48
+00:01:39,840 --> 00:01:43,240
+be resolved somehow. Some of the
+
+49
+00:01:41,680 --> 00:01:45,840
+questions are going to be really basic,
+
+50
+00:01:43,240 --> 00:01:47,800
+like the basic frame of the thing you're
+
+51
+00:01:45,840 --> 00:01:49,640
+building. When the modal opens up, it
+
+52
+00:01:47,800 --> 00:01:51,240
+should have a cancel button and a
+
+53
+00:01:49,640 --> 00:01:52,840
+confirm button, simple stuff. With
+
+54
+00:01:51,240 --> 00:01:55,120
+simple stuff like that, you don't need a
+
+55
+00:01:52,840 --> 00:01:56,920
+lot of high fidelity stuff to answer the
+
+56
+00:01:55,120 --> 00:01:58,520
+question. That can just be resolved in
+
+57
+00:01:56,920 --> 00:02:00,640
+discussion, really. But let's say that
+
+58
+00:01:58,520 --> 00:02:02,120
+the modal, when it opens up, under some
+
+59
+00:02:00,640 --> 00:02:04,520
+circumstances it needs to show some
+
+60
+00:02:02,120 --> 00:02:06,200
+data, you might need to go a little bit
+
+61
+00:02:04,520 --> 00:02:08,200
+of higher fidelity on that. How would
+
+62
+00:02:06,200 --> 00:02:09,640
+you display the data? It's often hard
+
+63
+00:02:08,200 --> 00:02:11,840
+when you're planning out a spec to
+
+64
+00:02:09,640 --> 00:02:13,959
+figure out exactly how things should
+
+65
+00:02:11,840 --> 00:02:15,280
+look, and how things should look, how
+
+66
+00:02:13,959 --> 00:02:17,240
+they should behave under certain
+
+67
+00:02:15,280 --> 00:02:20,000
+circumstances, making sure that you've
+
+68
+00:02:17,240 --> 00:02:22,760
+road tested all of this idea in kind of
+
+69
+00:02:20,000 --> 00:02:25,160
+semi working code, that means you need a
+
+70
+00:02:22,760 --> 00:02:28,520
+higher fidelity. Some questions really
+
+71
+00:02:25,160 --> 00:02:30,840
+can only be answered by prototyping. And
+
+72
+00:02:28,520 --> 00:02:32,520
+because producing these prototypes is
+
+73
+00:02:30,840 --> 00:02:35,240
+now cheaper than it ever has been
+
+74
+00:02:32,520 --> 00:02:37,320
+before, I tend to want more of my
+
+75
+00:02:35,240 --> 00:02:38,880
+discussions at a higher fidelity.
+
+76
+00:02:37,320 --> 00:02:40,680
+Obviously, the basic stuff I'm going to
+
+77
+00:02:38,880 --> 00:02:42,080
+just resolve through discussion. So, the
+
+78
+00:02:40,680 --> 00:02:44,320
+agent is going to ask me some questions,
+
+79
+00:02:42,080 --> 00:02:45,760
+probably through a grilling session, and
+
+80
+00:02:44,320 --> 00:02:47,520
+then I'm going to say, "Okay, yeah, this
+
+81
+00:02:45,760 --> 00:02:49,160
+sounds good." But then, as soon as we
+
+82
+00:02:47,520 --> 00:02:51,520
+get anything that I think, "Oh, I really
+
+83
+00:02:49,160 --> 00:02:53,959
+need to see this in action. I need to
+
+84
+00:02:51,520 --> 00:02:55,240
+feel it in action, look at it working."
+
+85
+00:02:53,959 --> 00:02:57,120
+I'm going to ask for a prototype.
+
+86
+00:02:55,240 --> 00:02:59,200
+Prototyping is a part of my new
+
+87
+00:02:57,120 --> 00:03:01,400
+Wayfinder skill, which is a skill that
+
+88
+00:02:59,200 --> 00:03:02,880
+allows you to plan a huge chunk of work.
+
+89
+00:03:01,400 --> 00:03:05,440
+There's a future video coming on
+
+90
+00:03:02,880 --> 00:03:07,640
+Wayfinder. Now, Wayfinder, what it does
+
+91
+00:03:05,440 --> 00:03:10,000
+is it tackles a huge chunk of work, and
+
+92
+00:03:07,640 --> 00:03:11,400
+it splits it up into different planning
+
+93
+00:03:10,000 --> 00:03:13,640
+sessions. And all of these planning
+
+94
+00:03:11,400 --> 00:03:15,880
+sessions get their own ticket, and there
+
+95
+00:03:13,640 --> 00:03:19,120
+should be somewhere in here ticket
+
+96
+00:03:15,880 --> 00:03:20,880
+types, just here, that tells it exactly
+
+97
+00:03:19,120 --> 00:03:22,360
+what different ticket types there are.
+
+98
+00:03:20,880 --> 00:03:25,000
+The two that we're looking at here are
+
+99
+00:03:22,360 --> 00:03:28,320
+the grilling type, so it's using the
+
+100
+00:03:25,000 --> 00:03:30,480
+grilling skills, and the prototype
+
+101
+00:03:28,320 --> 00:03:31,680
+ticket type. The default case here is
+
+102
+00:03:30,480 --> 00:03:33,160
+the grilling type, so where you're
+
+103
+00:03:31,680 --> 00:03:34,680
+chatting with the agent, figuring out
+
+104
+00:03:33,160 --> 00:03:37,120
+the basic scope of the thing you're
+
+105
+00:03:34,680 --> 00:03:38,800
+building. But when you need to raise the
+
+106
+00:03:37,120 --> 00:03:40,920
+fidelity of the discussion, making a
+
+107
+00:03:38,800 --> 00:03:42,600
+cheap, rough, concrete artifact to react
+
+108
+00:03:40,920 --> 00:03:44,760
+to, an outline, a rough take a stab at
+
+109
+00:03:42,600 --> 00:03:46,600
+UI logic code via the prototype skill,
+
+110
+00:03:44,760 --> 00:03:48,840
+links the prototype as an asset, use
+
+111
+00:03:46,600 --> 00:03:51,640
+when how should it look or how should it
+
+112
+00:03:48,840 --> 00:03:53,160
+behave is is key question. Whether
+
+113
+00:03:51,640 --> 00:03:55,480
+you're using Wayfinder not, this gives
+
+114
+00:03:53,160 --> 00:03:57,360
+you a really clear criteria for when you
+
+115
+00:03:55,480 --> 00:03:59,600
+should reach for a prototype. So, I'm
+
+116
+00:03:57,360 --> 00:04:01,440
+sure you're dying to see it in action,
+
+117
+00:03:59,600 --> 00:04:03,280
+and here it is. This is what it's done.
+
+118
+00:04:01,440 --> 00:04:05,400
+I've been using Wayfinder to extend my
+
+119
+00:04:03,280 --> 00:04:07,760
+diagramming app here, which is built on
+
+120
+00:04:05,400 --> 00:04:10,600
+TLDraw. And I wanted a way to search
+
+121
+00:04:07,760 --> 00:04:12,480
+through old diagrams, and the data model
+
+122
+00:04:10,600 --> 00:04:14,240
+here is quite complicated. There's like
+
+123
+00:04:12,480 --> 00:04:16,680
+diagrams and then snapshots of the
+
+124
+00:04:14,240 --> 00:04:18,880
+diagram through time. And so, I wanted
+
+125
+00:04:16,680 --> 00:04:20,760
+to build a search bar, but I wasn't sure
+
+126
+00:04:18,880 --> 00:04:22,760
+how it should look or behave. So, I ran
+
+127
+00:04:20,760 --> 00:04:25,120
+prototype here, and what it did is it
+
+128
+00:04:22,760 --> 00:04:26,919
+created this little uh
+
+129
+00:04:25,120 --> 00:04:29,200
+picker at the bottom here. And this
+
+130
+00:04:26,919 --> 00:04:31,600
+picker, if I go between it, it has three
+
+131
+00:04:29,200 --> 00:04:34,680
+different options. So, that's option B,
+
+132
+00:04:31,600 --> 00:04:36,360
+and that's option C. And each one
+
+133
+00:04:34,680 --> 00:04:38,400
+encodes a few design decisions that I
+
+134
+00:04:36,360 --> 00:04:40,200
+can then react to and iterate on. So,
+
+135
+00:04:38,400 --> 00:04:41,480
+let's start by looking at A. I've just
+
+136
+00:04:40,200 --> 00:04:43,720
+generated this. I've not actually looked
+
+137
+00:04:41,480 --> 00:04:46,600
+at it yet. So, I get to search the
+
+138
+00:04:43,720 --> 00:04:49,120
+diagrams and see what comes up. And this
+
+139
+00:04:46,600 --> 00:04:51,600
+one, okay, it's reflow in place grouped
+
+140
+00:04:49,120 --> 00:04:54,240
+rows. So, it's grouping the snapshots by
+
+141
+00:04:51,600 --> 00:04:56,400
+the name of the diagram. I really like
+
+142
+00:04:54,240 --> 00:04:59,120
+the placing of the search box up here,
+
+143
+00:04:56,400 --> 00:05:01,560
+but this grouping doesn't feel right to
+
+144
+00:04:59,120 --> 00:05:04,520
+me. So, let's see what B is. Let's
+
+145
+00:05:01,560 --> 00:05:07,200
+search again inside model here, and
+
+146
+00:05:04,520 --> 00:05:09,880
+okay, now on the left, we have grouping
+
+147
+00:05:07,200 --> 00:05:12,360
+for where it can filter down. Okay,
+
+148
+00:05:09,880 --> 00:05:14,240
+that's quite nice. What happens if I
+
+149
+00:05:12,360 --> 00:05:16,200
+search for something else and it's
+
+150
+00:05:14,240 --> 00:05:18,200
+already Okay, so the filter resets at
+
+151
+00:05:16,200 --> 00:05:20,640
+that point. Now, that's okay, but I
+
+152
+00:05:18,200 --> 00:05:22,160
+wonder what C looks like. I really don't
+
+153
+00:05:20,640 --> 00:05:24,000
+like this search diagrams thing at the
+
+154
+00:05:22,160 --> 00:05:25,320
+top. That doesn't look nice, but let's
+
+155
+00:05:24,000 --> 00:05:27,960
+see what this looks like. So, let's
+
+156
+00:05:25,320 --> 00:05:30,240
+search for model, and ooh, okay, so now
+
+157
+00:05:27,960 --> 00:05:31,520
+it's everything in line, no filters. So,
+
+158
+00:05:30,240 --> 00:05:33,640
+I do actually really like this, but
+
+159
+00:05:31,520 --> 00:05:35,600
+there are a few things that I don't
+
+160
+00:05:33,640 --> 00:05:37,600
+like. I don't like these current things.
+
+161
+00:05:35,600 --> 00:05:41,080
+It looks like this is really technical
+
+162
+00:05:37,600 --> 00:05:42,919
+weird thing, but the the current one is
+
+163
+00:05:41,080 --> 00:05:45,160
+showing with the diagram snapshot. So,
+
+164
+00:05:42,919 --> 00:05:46,640
+I've got some kind of feedback that I I
+
+165
+00:05:45,160 --> 00:05:50,280
+to give to the prototype. This
+
+166
+00:05:46,640 --> 00:05:51,480
+prototyping session took about 100,000
+
+167
+00:05:50,280 --> 00:05:53,880
+tokens. So, I'm actually going to
+
+168
+00:05:51,480 --> 00:05:55,400
+compact and say, "We're going to do some
+
+169
+00:05:53,880 --> 00:05:57,920
+more QA on this." Compacting at this
+
+170
+00:05:55,400 --> 00:06:00,000
+point makes sense to me because we kind
+
+171
+00:05:57,920 --> 00:06:01,840
+of need to retain all of the information
+
+172
+00:06:00,000 --> 00:06:03,320
+about the prototype, need to retain all
+
+173
+00:06:01,840 --> 00:06:04,840
+of the design decisions that went into
+
+174
+00:06:03,320 --> 00:06:06,720
+it, but we just need to give it some
+
+175
+00:06:04,840 --> 00:06:08,600
+feedback. So, we just need to continue
+
+176
+00:06:06,720 --> 00:06:09,920
+the conversation in the same place in
+
+177
+00:06:08,600 --> 00:06:11,760
+the codebase. I should definitely do a
+
+178
+00:06:09,920 --> 00:06:13,640
+video about the design tree that I use
+
+179
+00:06:11,760 --> 00:06:15,200
+for when I've got compact versus clear
+
+180
+00:06:13,640 --> 00:06:16,280
+versus handoff, but, you know, that's
+
+181
+00:06:15,200 --> 00:06:18,080
+one for another time. Okay, now I'm
+
+182
+00:06:16,280 --> 00:06:21,200
+going to give some feedback. I really
+
+183
+00:06:18,080 --> 00:06:23,760
+like the search box of A and I like the
+
+184
+00:06:21,200 --> 00:06:25,200
+layout of C. Okay, so I've just dictated
+
+185
+00:06:23,760 --> 00:06:27,200
+in some more feedback and I'm going to
+
+186
+00:06:25,200 --> 00:06:29,120
+send it off. So, the idea of this
+
+187
+00:06:27,200 --> 00:06:31,040
+session is that I'm iterating on this
+
+188
+00:06:29,120 --> 00:06:32,640
+prototype. I'm not just saying, "Okay,
+
+189
+00:06:31,040 --> 00:06:34,360
+this is the best one." I'm going to
+
+190
+00:06:32,640 --> 00:06:36,640
+actually create some design decisions
+
+191
+00:06:34,360 --> 00:06:38,160
+here, create a super rich asset. All of
+
+192
+00:06:36,640 --> 00:06:40,680
+these design decisions are then going to
+
+193
+00:06:38,160 --> 00:06:42,400
+be encoded into the prototype and I'm
+
+194
+00:06:40,680 --> 00:06:45,080
+going to save the prototype probably on
+
+195
+00:06:42,400 --> 00:06:47,080
+a throwaway branch. That means that when
+
+196
+00:06:45,080 --> 00:06:48,600
+the thing actually goes to implement it,
+
+197
+00:06:47,080 --> 00:06:50,880
+it's not only got a spec, it's actually
+
+198
+00:06:48,600 --> 00:06:52,440
+got real front-end code that it can
+
+199
+00:06:50,880 --> 00:06:54,320
+usually copy and paste out of it. Now,
+
+200
+00:06:52,440 --> 00:06:57,080
+creating these prototypes does take some
+
+201
+00:06:54,320 --> 00:06:59,440
+time, right? The higher fidelity you go,
+
+202
+00:06:57,080 --> 00:07:01,640
+the more token cost there is. If we were
+
+203
+00:06:59,440 --> 00:07:03,200
+to try to resolve this in a discussion,
+
+204
+00:07:01,640 --> 00:07:05,120
+we'd be at a lower fidelity, so the
+
+205
+00:07:03,200 --> 00:07:07,000
+answers would be less useful, but we'd
+
+206
+00:07:05,120 --> 00:07:09,520
+also be spending fewer tokens. And we
+
+207
+00:07:07,000 --> 00:07:11,480
+can see it's now starting to give me a D
+
+208
+00:07:09,520 --> 00:07:13,320
+version here, which is kind of what I've
+
+209
+00:07:11,480 --> 00:07:15,000
+been iterating towards. One note here is
+
+210
+00:07:13,320 --> 00:07:18,600
+that this is actually
+
+211
+00:07:15,000 --> 00:07:21,080
+integrated with the live page. So, it's
+
+212
+00:07:18,600 --> 00:07:23,960
+not doing this on a throwaway route. You
+
+213
+00:07:21,080 --> 00:07:26,400
+can do that if you want to, but I really
+
+214
+00:07:23,960 --> 00:07:28,200
+like seeing it actually plugged into the
+
+215
+00:07:26,400 --> 00:07:30,400
+live route because then it just gives
+
+216
+00:07:28,200 --> 00:07:32,640
+you so much more flexibility. It it like
+
+217
+00:07:30,400 --> 00:07:33,960
+it's a more honest representation of how
+
+218
+00:07:32,640 --> 00:07:36,240
+the code is actually going to work. All
+
+219
+00:07:33,960 --> 00:07:38,480
+right, looks like it is now created D,
+
+220
+00:07:36,240 --> 00:07:41,480
+so let's see what that looks like. Yes,
+
+221
+00:07:38,480 --> 00:07:43,960
+we have the box from A and if we search
+
+222
+00:07:41,480 --> 00:07:46,080
+in here with model, then we can see that
+
+223
+00:07:43,960 --> 00:07:48,480
+everything I asked for actually got
+
+224
+00:07:46,080 --> 00:07:51,040
+done. Before we had a duplicate of this
+
+225
+00:07:48,480 --> 00:07:52,480
+one, but now there's only one. And in
+
+226
+00:07:51,040 --> 00:07:53,920
+theory, if I click this, I'm not sure if
+
+227
+00:07:52,480 --> 00:07:55,120
+this will actually work. I don't know
+
+228
+00:07:53,920 --> 00:07:57,520
+whether this is part of the prototype.
+
+229
+00:07:55,120 --> 00:07:59,280
+Yes, it works. Oh, beautiful. So, there
+
+230
+00:07:57,520 --> 00:08:01,360
+we go. Loads of this functionality looks
+
+231
+00:07:59,280 --> 00:08:03,680
+like it is now just done. And so, you
+
+232
+00:08:01,360 --> 00:08:06,000
+might ask, what is the next step after
+
+233
+00:08:03,680 --> 00:08:07,880
+this? Well, now I consider the prototype
+
+234
+00:08:06,000 --> 00:08:09,480
+to be complete. That was a pretty quick
+
+235
+00:08:07,880 --> 00:08:12,360
+one. Usually, I'm kind of in here doing
+
+236
+00:08:09,480 --> 00:08:14,960
+a lot more. Um I would pass this off to
+
+237
+00:08:12,360 --> 00:08:16,960
+an AFK agent to plug in everything,
+
+238
+00:08:14,960 --> 00:08:19,320
+delete the old prototype code, and just
+
+239
+00:08:16,960 --> 00:08:20,680
+make sure that it was uh compliant with
+
+240
+00:08:19,320 --> 00:08:23,080
+the original spec. And as you can
+
+241
+00:08:20,680 --> 00:08:25,800
+imagine, the results here are incredible
+
+242
+00:08:23,080 --> 00:08:28,120
+because we've had such high fidelity
+
+243
+00:08:25,800 --> 00:08:30,840
+discussion, because we've been able to
+
+244
+00:08:28,120 --> 00:08:33,039
+look at a live running version of it,
+
+245
+00:08:30,840 --> 00:08:35,159
+give our feedback based on that. That
+
+246
+00:08:33,039 --> 00:08:37,640
+feedback is so invaluable, and it's
+
+247
+00:08:35,159 --> 00:08:39,599
+already baked into a throwaway branch
+
+248
+00:08:37,640 --> 00:08:42,039
+that our implementer can actually just
+
+249
+00:08:39,599 --> 00:08:43,520
+go and reference. So many times I see
+
+250
+00:08:42,039 --> 00:08:45,640
+people saying, well, the thing didn't
+
+251
+00:08:43,520 --> 00:08:47,520
+build what I wanted. I created this big,
+
+252
+00:08:45,640 --> 00:08:49,920
+beautiful spec, and it just did
+
+253
+00:08:47,520 --> 00:08:51,400
+something totally weird. You probably
+
+254
+00:08:49,920 --> 00:08:53,000
+just weren't having discussions at a
+
+255
+00:08:51,400 --> 00:08:54,320
+high enough fidelity, and you probably
+
+256
+00:08:53,000 --> 00:08:55,880
+should have been prototyping. Finally, I
+
+257
+00:08:54,320 --> 00:08:58,720
+don't want you to walk away thinking
+
+258
+00:08:55,880 --> 00:09:00,720
+this is only for UI or front-end stuff.
+
+259
+00:08:58,720 --> 00:09:02,960
+Front-end definitely benefits a lot from
+
+260
+00:09:00,720 --> 00:09:05,160
+prototypes because how should it look,
+
+261
+00:09:02,960 --> 00:09:08,080
+what should it look like is a really key
+
+262
+00:09:05,160 --> 00:09:10,000
+question that's really hard to answer
+
+263
+00:09:08,080 --> 00:09:11,440
+during the discussion phase. However,
+
+264
+00:09:10,000 --> 00:09:13,600
+when you're doing more complicated
+
+265
+00:09:11,440 --> 00:09:15,400
+stuff, especially back-end work, then a
+
+266
+00:09:13,600 --> 00:09:17,760
+question like, does this logic, does
+
+267
+00:09:15,400 --> 00:09:19,720
+this state model feel right? If you're
+
+268
+00:09:17,760 --> 00:09:21,720
+building anything reasonably complex or
+
+269
+00:09:19,720 --> 00:09:23,000
+that needs to work in the real world,
+
+270
+00:09:21,720 --> 00:09:25,000
+then you're going to run into these
+
+271
+00:09:23,000 --> 00:09:26,600
+questions all the time. And often, the
+
+272
+00:09:25,000 --> 00:09:29,280
+best way to get around these kind of
+
+273
+00:09:26,600 --> 00:09:31,680
+questions to build something that kind
+
+274
+00:09:29,280 --> 00:09:33,960
+of serves the needs of your users,
+
+275
+00:09:31,680 --> 00:09:36,480
+especially on something complex, is to
+
+276
+00:09:33,960 --> 00:09:38,600
+build a prototype. Now, it doesn't need
+
+277
+00:09:36,480 --> 00:09:40,600
+to be a UI prototype. And what I've got
+
+278
+00:09:38,600 --> 00:09:42,440
+here is build a tiny interactive
+
+279
+00:09:40,600 --> 00:09:44,480
+terminal app that pushes the state
+
+280
+00:09:42,440 --> 00:09:46,680
+machine through cases that are hard to
+
+281
+00:09:44,480 --> 00:09:50,120
+reason about on paper. In other words, a
+
+282
+00:09:46,680 --> 00:09:51,560
+pure logic prototype. And I've had tons
+
+283
+00:09:50,120 --> 00:09:53,520
+of feedback from folks saying that this
+
+284
+00:09:51,560 --> 00:09:55,840
+is such a nice little feature. Both of
+
+285
+00:09:53,520 --> 00:09:58,440
+these branches have their own reference
+
+286
+00:09:55,840 --> 00:09:59,720
+docs here, which tell it exactly how to
+
+287
+00:09:58,440 --> 00:10:01,560
+do each one. So, if it's building a
+
+288
+00:09:59,720 --> 00:10:03,400
+logic prototype, it looks here. If it's
+
+289
+00:10:01,560 --> 00:10:05,080
+building a UI prototype, it looks like
+
+290
+00:10:03,400 --> 00:10:08,000
+this. So, I beg of you, have your
+
+291
+00:10:05,080 --> 00:10:09,320
+discussions at a higher fidelity. As
+
+292
+00:10:08,000 --> 00:10:11,160
+agents get better at working with
+
+293
+00:10:09,320 --> 00:10:12,760
+canvases, working with design tools, I'm
+
+294
+00:10:11,160 --> 00:10:14,360
+sure that wireframes will definitely
+
+295
+00:10:12,760 --> 00:10:16,880
+make a comeback as well. And the key
+
+296
+00:10:14,360 --> 00:10:19,000
+point is this, the leap from discussion
+
+297
+00:10:16,880 --> 00:10:21,200
+and spec to production-ready code is
+
+298
+00:10:19,000 --> 00:10:22,800
+really big. Whereas, if you have a
+
+299
+00:10:21,200 --> 00:10:25,040
+working prototype, turning that into
+
+300
+00:10:22,800 --> 00:10:27,040
+production is pretty simple. I want to
+
+301
+00:10:25,040 --> 00:10:29,880
+give a quick shout-out to Shape Up by
+
+302
+00:10:27,040 --> 00:10:32,840
+Ryan Singer, which is an extremely good
+
+303
+00:10:29,880 --> 00:10:35,040
+book and very, very influential on me. I
+
+304
+00:10:32,840 --> 00:10:36,520
+read this, I think, in 2019 or
+
+305
+00:10:35,040 --> 00:10:38,320
+something, and it totally changed the
+
+306
+00:10:36,520 --> 00:10:40,040
+way that I built applications for
+
+307
+00:10:38,320 --> 00:10:41,440
+people. It is totally free online, and I
+
+308
+00:10:40,040 --> 00:10:42,480
+will drop a link in the description. If
+
+309
+00:10:41,440 --> 00:10:45,240
+you want to keep up-to-date with my
+
+310
+00:10:42,480 --> 00:10:47,080
+skills, then my skills newsletter is the
+
+311
+00:10:45,240 --> 00:10:48,320
+place to be. I'm shipping, shipping,
+
+312
+00:10:47,080 --> 00:10:49,800
+shipping, constantly thinking about
+
+313
+00:10:48,320 --> 00:10:51,640
+these skills, how I can make them
+
+314
+00:10:49,800 --> 00:10:53,320
+better, and you can benefit from that
+
+315
+00:10:51,640 --> 00:10:54,839
+the day that I make the changes. But
+
+316
+00:10:53,320 --> 00:10:55,880
+folks, thank you so much for watching.
+
+317
+00:10:54,839 --> 00:10:57,320
+It's been a pleasure, as always,
+
+318
+00:10:55,880 --> 00:11:00,480
+bringing you one of my skills, and I
+
+319
+00:10:57,320 --> 00:11:00,480
+will see you very soon.
+

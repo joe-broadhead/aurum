@@ -1,0 +1,1597 @@
+[
+  {
+    "text": "There's something that a lot of people",
+    "start": 0.0,
+    "duration": 2.68
+  },
+  {
+    "text": "do when they're working with AI to",
+    "start": 1.08,
+    "duration": 4.28
+  },
+  {
+    "text": "create code that totally drives me",
+    "start": 2.68,
+    "duration": 5.92
+  },
+  {
+    "text": "crazy. And it's sort of something that",
+    "start": 5.36,
+    "duration": 5.04
+  },
+  {
+    "text": "I've been railing against for a while",
+    "start": 8.6,
+    "duration": 4.12
+  },
+  {
+    "text": "now. The thing that I've noticed is",
+    "start": 10.4,
+    "duration": 4.36
+  },
+  {
+    "text": "people tend to think I need to create a",
+    "start": 12.72,
+    "duration": 4.84
+  },
+  {
+    "text": "spec for AI. I need to create a plan,",
+    "start": 14.76,
+    "duration": 4.36
+  },
+  {
+    "text": "right? Plan mode, spec-driven",
+    "start": 17.56,
+    "duration": 3.88
+  },
+  {
+    "text": "development. I need to put all of my",
+    "start": 19.12,
+    "duration": 3.96
+  },
+  {
+    "text": "efforts into making this extremely",
+    "start": 21.44,
+    "duration": 4.32
+  },
+  {
+    "text": "detailed spec so that when I get some",
+    "start": 23.08,
+    "duration": 4.52
+  },
+  {
+    "text": "outputs from the AI, those outputs are",
+    "start": 25.76,
+    "duration": 4.0
+  },
+  {
+    "text": "going to look like the spec. I'm going",
+    "start": 27.6,
+    "duration": 3.68
+  },
+  {
+    "text": "to have specified everything up front so",
+    "start": 29.76,
+    "duration": 3.36
+  },
+  {
+    "text": "that I can just perfectly nail it. And",
+    "start": 31.28,
+    "duration": 4.6
+  },
+  {
+    "text": "in this impulse, what they forget to do",
+    "start": 33.12,
+    "duration": 4.6
+  },
+  {
+    "text": "is they forget they can actually write",
+    "start": 35.88,
+    "duration": 4.28
+  },
+  {
+    "text": "code. You can write code while you're",
+    "start": 37.72,
+    "duration": 5.4
+  },
+  {
+    "text": "working towards a spec. Prototyping and",
+    "start": 40.16,
+    "duration": 5.24
+  },
+  {
+    "text": "spikes are things that we've had around",
+    "start": 43.12,
+    "duration": 4.72
+  },
+  {
+    "text": "since the days of Agile, right? I mean,",
+    "start": 45.4,
+    "duration": 3.96
+  },
+  {
+    "text": "I suppose these are still the days of",
+    "start": 47.84,
+    "duration": 3.6
+  },
+  {
+    "text": "Agile. Agile is still extremely popular,",
+    "start": 49.36,
+    "duration": 4.36
+  },
+  {
+    "text": "still extremely influential. But people",
+    "start": 51.44,
+    "duration": 4.16
+  },
+  {
+    "text": "just aren't prototyping anymore. And so,",
+    "start": 53.72,
+    "duration": 3.56
+  },
+  {
+    "text": "as part of my skills repo, I'm trying to",
+    "start": 55.6,
+    "duration": 3.96
+  },
+  {
+    "text": "turn this around. I have a prototype",
+    "start": 57.28,
+    "duration": 5.0
+  },
+  {
+    "text": "skill. A prototype is throwaway code",
+    "start": 59.56,
+    "duration": 4.48
+  },
+  {
+    "text": "that answers a question. Everyone is",
+    "start": 62.28,
+    "duration": 3.44
+  },
+  {
+    "text": "saying that code is cheap, and it's",
+    "start": 64.04,
+    "duration": 3.8
+  },
+  {
+    "text": "partially true and partially I hate that",
+    "start": 65.72,
+    "duration": 4.92
+  },
+  {
+    "text": "phrase. But the thing that is cheap is",
+    "start": 67.84,
+    "duration": 4.56
+  },
+  {
+    "text": "the cost of producing code has gone way,",
+    "start": 70.64,
+    "duration": 4.0
+  },
+  {
+    "text": "way down. So, producing prototypes,",
+    "start": 72.4,
+    "duration": 5.0
+  },
+  {
+    "text": "producing quick kind of throwaway spikes",
+    "start": 74.64,
+    "duration": 5.2
+  },
+  {
+    "text": "has never been cheaper and never been a",
+    "start": 77.4,
+    "duration": 4.04
+  },
+  {
+    "text": "more effective tool. In this video, I'm",
+    "start": 79.84,
+    "duration": 3.24
+  },
+  {
+    "text": "going to introduce this prototype skill.",
+    "start": 81.44,
+    "duration": 3.2
+  },
+  {
+    "text": "I'm going to talk about when you should",
+    "start": 83.08,
+    "duration": 3.64
+  },
+  {
+    "text": "use it, what it can be used for, and",
+    "start": 84.64,
+    "duration": 4.44
+  },
+  {
+    "text": "also how it fits into my new wayfinder",
+    "start": 86.72,
+    "duration": 4.32
+  },
+  {
+    "text": "skill. But first, to explain the concept",
+    "start": 89.08,
+    "duration": 5.04
+  },
+  {
+    "text": "of fidelity, high fidelity and low",
+    "start": 91.04,
+    "duration": 4.92
+  },
+  {
+    "text": "fidelity. Whenever you're talking about",
+    "start": 94.12,
+    "duration": 3.36
+  },
+  {
+    "text": "designing something, you're going to",
+    "start": 95.96,
+    "duration": 3.88
+  },
+  {
+    "text": "have questions in your mind that need to",
+    "start": 97.48,
+    "duration": 4.2
+  },
+  {
+    "text": "be resolved somehow. Some of the",
+    "start": 99.84,
+    "duration": 3.4
+  },
+  {
+    "text": "questions are going to be really basic,",
+    "start": 101.68,
+    "duration": 4.16
+  },
+  {
+    "text": "like the basic frame of the thing you're",
+    "start": 103.24,
+    "duration": 4.56
+  },
+  {
+    "text": "building. When the modal opens up, it",
+    "start": 105.84,
+    "duration": 3.8
+  },
+  {
+    "text": "should have a cancel button and a",
+    "start": 107.8,
+    "duration": 3.44
+  },
+  {
+    "text": "confirm button, simple stuff. With",
+    "start": 109.64,
+    "duration": 3.2
+  },
+  {
+    "text": "simple stuff like that, you don't need a",
+    "start": 111.24,
+    "duration": 3.88
+  },
+  {
+    "text": "lot of high fidelity stuff to answer the",
+    "start": 112.84,
+    "duration": 4.08
+  },
+  {
+    "text": "question. That can just be resolved in",
+    "start": 115.12,
+    "duration": 3.4
+  },
+  {
+    "text": "discussion, really. But let's say that",
+    "start": 116.92,
+    "duration": 3.72
+  },
+  {
+    "text": "the modal, when it opens up, under some",
+    "start": 118.52,
+    "duration": 3.6
+  },
+  {
+    "text": "circumstances it needs to show some",
+    "start": 120.64,
+    "duration": 3.88
+  },
+  {
+    "text": "data, you might need to go a little bit",
+    "start": 122.12,
+    "duration": 4.08
+  },
+  {
+    "text": "of higher fidelity on that. How would",
+    "start": 124.52,
+    "duration": 3.68
+  },
+  {
+    "text": "you display the data? It's often hard",
+    "start": 126.2,
+    "duration": 3.44
+  },
+  {
+    "text": "when you're planning out a spec to",
+    "start": 128.2,
+    "duration": 3.64
+  },
+  {
+    "text": "figure out exactly how things should",
+    "start": 129.64,
+    "duration": 4.319
+  },
+  {
+    "text": "look, and how things should look, how",
+    "start": 131.84,
+    "duration": 3.44
+  },
+  {
+    "text": "they should behave under certain",
+    "start": 133.959,
+    "duration": 3.281
+  },
+  {
+    "text": "circumstances, making sure that you've",
+    "start": 135.28,
+    "duration": 4.72
+  },
+  {
+    "text": "road tested all of this idea in kind of",
+    "start": 137.24,
+    "duration": 5.52
+  },
+  {
+    "text": "semi working code, that means you need a",
+    "start": 140.0,
+    "duration": 5.16
+  },
+  {
+    "text": "higher fidelity. Some questions really",
+    "start": 142.76,
+    "duration": 5.76
+  },
+  {
+    "text": "can only be answered by prototyping. And",
+    "start": 145.16,
+    "duration": 5.68
+  },
+  {
+    "text": "because producing these prototypes is",
+    "start": 148.52,
+    "duration": 4.0
+  },
+  {
+    "text": "now cheaper than it ever has been",
+    "start": 150.84,
+    "duration": 4.4
+  },
+  {
+    "text": "before, I tend to want more of my",
+    "start": 152.52,
+    "duration": 4.8
+  },
+  {
+    "text": "discussions at a higher fidelity.",
+    "start": 155.24,
+    "duration": 3.64
+  },
+  {
+    "text": "Obviously, the basic stuff I'm going to",
+    "start": 157.32,
+    "duration": 3.36
+  },
+  {
+    "text": "just resolve through discussion. So, the",
+    "start": 158.88,
+    "duration": 3.2
+  },
+  {
+    "text": "agent is going to ask me some questions,",
+    "start": 160.68,
+    "duration": 3.64
+  },
+  {
+    "text": "probably through a grilling session, and",
+    "start": 162.08,
+    "duration": 3.68
+  },
+  {
+    "text": "then I'm going to say, \"Okay, yeah, this",
+    "start": 164.32,
+    "duration": 3.2
+  },
+  {
+    "text": "sounds good.\" But then, as soon as we",
+    "start": 165.76,
+    "duration": 3.4
+  },
+  {
+    "text": "get anything that I think, \"Oh, I really",
+    "start": 167.52,
+    "duration": 4.0
+  },
+  {
+    "text": "need to see this in action. I need to",
+    "start": 169.16,
+    "duration": 4.799
+  },
+  {
+    "text": "feel it in action, look at it working.\"",
+    "start": 171.52,
+    "duration": 3.72
+  },
+  {
+    "text": "I'm going to ask for a prototype.",
+    "start": 173.959,
+    "duration": 3.161
+  },
+  {
+    "text": "Prototyping is a part of my new",
+    "start": 175.24,
+    "duration": 3.96
+  },
+  {
+    "text": "Wayfinder skill, which is a skill that",
+    "start": 177.12,
+    "duration": 4.28
+  },
+  {
+    "text": "allows you to plan a huge chunk of work.",
+    "start": 179.2,
+    "duration": 3.68
+  },
+  {
+    "text": "There's a future video coming on",
+    "start": 181.4,
+    "duration": 4.04
+  },
+  {
+    "text": "Wayfinder. Now, Wayfinder, what it does",
+    "start": 182.88,
+    "duration": 4.76
+  },
+  {
+    "text": "is it tackles a huge chunk of work, and",
+    "start": 185.44,
+    "duration": 4.56
+  },
+  {
+    "text": "it splits it up into different planning",
+    "start": 187.64,
+    "duration": 3.76
+  },
+  {
+    "text": "sessions. And all of these planning",
+    "start": 190.0,
+    "duration": 3.64
+  },
+  {
+    "text": "sessions get their own ticket, and there",
+    "start": 191.4,
+    "duration": 4.48
+  },
+  {
+    "text": "should be somewhere in here ticket",
+    "start": 193.64,
+    "duration": 5.48
+  },
+  {
+    "text": "types, just here, that tells it exactly",
+    "start": 195.88,
+    "duration": 5.0
+  },
+  {
+    "text": "what different ticket types there are.",
+    "start": 199.12,
+    "duration": 3.24
+  },
+  {
+    "text": "The two that we're looking at here are",
+    "start": 200.88,
+    "duration": 4.12
+  },
+  {
+    "text": "the grilling type, so it's using the",
+    "start": 202.36,
+    "duration": 5.96
+  },
+  {
+    "text": "grilling skills, and the prototype",
+    "start": 205.0,
+    "duration": 5.48
+  },
+  {
+    "text": "ticket type. The default case here is",
+    "start": 208.32,
+    "duration": 3.36
+  },
+  {
+    "text": "the grilling type, so where you're",
+    "start": 210.48,
+    "duration": 2.68
+  },
+  {
+    "text": "chatting with the agent, figuring out",
+    "start": 211.68,
+    "duration": 3.0
+  },
+  {
+    "text": "the basic scope of the thing you're",
+    "start": 213.16,
+    "duration": 3.96
+  },
+  {
+    "text": "building. But when you need to raise the",
+    "start": 214.68,
+    "duration": 4.12
+  },
+  {
+    "text": "fidelity of the discussion, making a",
+    "start": 217.12,
+    "duration": 3.8
+  },
+  {
+    "text": "cheap, rough, concrete artifact to react",
+    "start": 218.8,
+    "duration": 3.8
+  },
+  {
+    "text": "to, an outline, a rough take a stab at",
+    "start": 220.92,
+    "duration": 3.84
+  },
+  {
+    "text": "UI logic code via the prototype skill,",
+    "start": 222.6,
+    "duration": 4.0
+  },
+  {
+    "text": "links the prototype as an asset, use",
+    "start": 224.76,
+    "duration": 4.08
+  },
+  {
+    "text": "when how should it look or how should it",
+    "start": 226.6,
+    "duration": 5.04
+  },
+  {
+    "text": "behave is is key question. Whether",
+    "start": 228.84,
+    "duration": 4.32
+  },
+  {
+    "text": "you're using Wayfinder not, this gives",
+    "start": 231.64,
+    "duration": 3.84
+  },
+  {
+    "text": "you a really clear criteria for when you",
+    "start": 233.16,
+    "duration": 4.2
+  },
+  {
+    "text": "should reach for a prototype. So, I'm",
+    "start": 235.48,
+    "duration": 4.12
+  },
+  {
+    "text": "sure you're dying to see it in action,",
+    "start": 237.36,
+    "duration": 4.08
+  },
+  {
+    "text": "and here it is. This is what it's done.",
+    "start": 239.6,
+    "duration": 3.68
+  },
+  {
+    "text": "I've been using Wayfinder to extend my",
+    "start": 241.44,
+    "duration": 3.96
+  },
+  {
+    "text": "diagramming app here, which is built on",
+    "start": 243.28,
+    "duration": 4.48
+  },
+  {
+    "text": "TLDraw. And I wanted a way to search",
+    "start": 245.4,
+    "duration": 5.2
+  },
+  {
+    "text": "through old diagrams, and the data model",
+    "start": 247.76,
+    "duration": 4.72
+  },
+  {
+    "text": "here is quite complicated. There's like",
+    "start": 250.6,
+    "duration": 3.64
+  },
+  {
+    "text": "diagrams and then snapshots of the",
+    "start": 252.48,
+    "duration": 4.2
+  },
+  {
+    "text": "diagram through time. And so, I wanted",
+    "start": 254.24,
+    "duration": 4.64
+  },
+  {
+    "text": "to build a search bar, but I wasn't sure",
+    "start": 256.68,
+    "duration": 4.08
+  },
+  {
+    "text": "how it should look or behave. So, I ran",
+    "start": 258.88,
+    "duration": 3.88
+  },
+  {
+    "text": "prototype here, and what it did is it",
+    "start": 260.76,
+    "duration": 4.36
+  },
+  {
+    "text": "created this little uh",
+    "start": 262.76,
+    "duration": 4.159
+  },
+  {
+    "text": "picker at the bottom here. And this",
+    "start": 265.12,
+    "duration": 4.08
+  },
+  {
+    "text": "picker, if I go between it, it has three",
+    "start": 266.919,
+    "duration": 4.681
+  },
+  {
+    "text": "different options. So, that's option B,",
+    "start": 269.2,
+    "duration": 5.48
+  },
+  {
+    "text": "and that's option C. And each one",
+    "start": 271.6,
+    "duration": 4.76
+  },
+  {
+    "text": "encodes a few design decisions that I",
+    "start": 274.68,
+    "duration": 3.72
+  },
+  {
+    "text": "can then react to and iterate on. So,",
+    "start": 276.36,
+    "duration": 3.84
+  },
+  {
+    "text": "let's start by looking at A. I've just",
+    "start": 278.4,
+    "duration": 3.08
+  },
+  {
+    "text": "generated this. I've not actually looked",
+    "start": 280.2,
+    "duration": 3.52
+  },
+  {
+    "text": "at it yet. So, I get to search the",
+    "start": 281.48,
+    "duration": 5.12
+  },
+  {
+    "text": "diagrams and see what comes up. And this",
+    "start": 283.72,
+    "duration": 5.4
+  },
+  {
+    "text": "one, okay, it's reflow in place grouped",
+    "start": 286.6,
+    "duration": 5.0
+  },
+  {
+    "text": "rows. So, it's grouping the snapshots by",
+    "start": 289.12,
+    "duration": 5.12
+  },
+  {
+    "text": "the name of the diagram. I really like",
+    "start": 291.6,
+    "duration": 4.8
+  },
+  {
+    "text": "the placing of the search box up here,",
+    "start": 294.24,
+    "duration": 4.88
+  },
+  {
+    "text": "but this grouping doesn't feel right to",
+    "start": 296.4,
+    "duration": 5.16
+  },
+  {
+    "text": "me. So, let's see what B is. Let's",
+    "start": 299.12,
+    "duration": 5.4
+  },
+  {
+    "text": "search again inside model here, and",
+    "start": 301.56,
+    "duration": 5.64
+  },
+  {
+    "text": "okay, now on the left, we have grouping",
+    "start": 304.52,
+    "duration": 5.36
+  },
+  {
+    "text": "for where it can filter down. Okay,",
+    "start": 307.2,
+    "duration": 5.16
+  },
+  {
+    "text": "that's quite nice. What happens if I",
+    "start": 309.88,
+    "duration": 4.36
+  },
+  {
+    "text": "search for something else and it's",
+    "start": 312.36,
+    "duration": 3.84
+  },
+  {
+    "text": "already Okay, so the filter resets at",
+    "start": 314.24,
+    "duration": 3.96
+  },
+  {
+    "text": "that point. Now, that's okay, but I",
+    "start": 316.2,
+    "duration": 4.44
+  },
+  {
+    "text": "wonder what C looks like. I really don't",
+    "start": 318.2,
+    "duration": 3.96
+  },
+  {
+    "text": "like this search diagrams thing at the",
+    "start": 320.64,
+    "duration": 3.36
+  },
+  {
+    "text": "top. That doesn't look nice, but let's",
+    "start": 322.16,
+    "duration": 3.16
+  },
+  {
+    "text": "see what this looks like. So, let's",
+    "start": 324.0,
+    "duration": 3.96
+  },
+  {
+    "text": "search for model, and ooh, okay, so now",
+    "start": 325.32,
+    "duration": 4.92
+  },
+  {
+    "text": "it's everything in line, no filters. So,",
+    "start": 327.96,
+    "duration": 3.56
+  },
+  {
+    "text": "I do actually really like this, but",
+    "start": 330.24,
+    "duration": 3.4
+  },
+  {
+    "text": "there are a few things that I don't",
+    "start": 331.52,
+    "duration": 4.08
+  },
+  {
+    "text": "like. I don't like these current things.",
+    "start": 333.64,
+    "duration": 3.96
+  },
+  {
+    "text": "It looks like this is really technical",
+    "start": 335.6,
+    "duration": 5.48
+  },
+  {
+    "text": "weird thing, but the the current one is",
+    "start": 337.6,
+    "duration": 5.319
+  },
+  {
+    "text": "showing with the diagram snapshot. So,",
+    "start": 341.08,
+    "duration": 4.08
+  },
+  {
+    "text": "I've got some kind of feedback that I I",
+    "start": 342.919,
+    "duration": 3.721
+  },
+  {
+    "text": "to give to the prototype. This",
+    "start": 345.16,
+    "duration": 5.12
+  },
+  {
+    "text": "prototyping session took about 100,000",
+    "start": 346.64,
+    "duration": 4.84
+  },
+  {
+    "text": "tokens. So, I'm actually going to",
+    "start": 350.28,
+    "duration": 3.6
+  },
+  {
+    "text": "compact and say, \"We're going to do some",
+    "start": 351.48,
+    "duration": 3.92
+  },
+  {
+    "text": "more QA on this.\" Compacting at this",
+    "start": 353.88,
+    "duration": 4.04
+  },
+  {
+    "text": "point makes sense to me because we kind",
+    "start": 355.4,
+    "duration": 4.6
+  },
+  {
+    "text": "of need to retain all of the information",
+    "start": 357.92,
+    "duration": 3.92
+  },
+  {
+    "text": "about the prototype, need to retain all",
+    "start": 360.0,
+    "duration": 3.32
+  },
+  {
+    "text": "of the design decisions that went into",
+    "start": 361.84,
+    "duration": 3.0
+  },
+  {
+    "text": "it, but we just need to give it some",
+    "start": 363.32,
+    "duration": 3.4
+  },
+  {
+    "text": "feedback. So, we just need to continue",
+    "start": 364.84,
+    "duration": 3.76
+  },
+  {
+    "text": "the conversation in the same place in",
+    "start": 366.72,
+    "duration": 3.2
+  },
+  {
+    "text": "the codebase. I should definitely do a",
+    "start": 368.6,
+    "duration": 3.16
+  },
+  {
+    "text": "video about the design tree that I use",
+    "start": 369.92,
+    "duration": 3.72
+  },
+  {
+    "text": "for when I've got compact versus clear",
+    "start": 371.76,
+    "duration": 3.44
+  },
+  {
+    "text": "versus handoff, but, you know, that's",
+    "start": 373.64,
+    "duration": 2.64
+  },
+  {
+    "text": "one for another time. Okay, now I'm",
+    "start": 375.2,
+    "duration": 2.88
+  },
+  {
+    "text": "going to give some feedback. I really",
+    "start": 376.28,
+    "duration": 4.92
+  },
+  {
+    "text": "like the search box of A and I like the",
+    "start": 378.08,
+    "duration": 5.68
+  },
+  {
+    "text": "layout of C. Okay, so I've just dictated",
+    "start": 381.2,
+    "duration": 4.0
+  },
+  {
+    "text": "in some more feedback and I'm going to",
+    "start": 383.76,
+    "duration": 3.44
+  },
+  {
+    "text": "send it off. So, the idea of this",
+    "start": 385.2,
+    "duration": 3.92
+  },
+  {
+    "text": "session is that I'm iterating on this",
+    "start": 387.2,
+    "duration": 3.84
+  },
+  {
+    "text": "prototype. I'm not just saying, \"Okay,",
+    "start": 389.12,
+    "duration": 3.52
+  },
+  {
+    "text": "this is the best one.\" I'm going to",
+    "start": 391.04,
+    "duration": 3.32
+  },
+  {
+    "text": "actually create some design decisions",
+    "start": 392.64,
+    "duration": 4.0
+  },
+  {
+    "text": "here, create a super rich asset. All of",
+    "start": 394.36,
+    "duration": 3.8
+  },
+  {
+    "text": "these design decisions are then going to",
+    "start": 396.64,
+    "duration": 4.04
+  },
+  {
+    "text": "be encoded into the prototype and I'm",
+    "start": 398.16,
+    "duration": 4.24
+  },
+  {
+    "text": "going to save the prototype probably on",
+    "start": 400.68,
+    "duration": 4.4
+  },
+  {
+    "text": "a throwaway branch. That means that when",
+    "start": 402.4,
+    "duration": 4.68
+  },
+  {
+    "text": "the thing actually goes to implement it,",
+    "start": 405.08,
+    "duration": 3.52
+  },
+  {
+    "text": "it's not only got a spec, it's actually",
+    "start": 407.08,
+    "duration": 3.8
+  },
+  {
+    "text": "got real front-end code that it can",
+    "start": 408.6,
+    "duration": 3.84
+  },
+  {
+    "text": "usually copy and paste out of it. Now,",
+    "start": 410.88,
+    "duration": 3.44
+  },
+  {
+    "text": "creating these prototypes does take some",
+    "start": 412.44,
+    "duration": 4.64
+  },
+  {
+    "text": "time, right? The higher fidelity you go,",
+    "start": 414.32,
+    "duration": 5.12
+  },
+  {
+    "text": "the more token cost there is. If we were",
+    "start": 417.08,
+    "duration": 4.56
+  },
+  {
+    "text": "to try to resolve this in a discussion,",
+    "start": 419.44,
+    "duration": 3.76
+  },
+  {
+    "text": "we'd be at a lower fidelity, so the",
+    "start": 421.64,
+    "duration": 3.48
+  },
+  {
+    "text": "answers would be less useful, but we'd",
+    "start": 423.2,
+    "duration": 3.8
+  },
+  {
+    "text": "also be spending fewer tokens. And we",
+    "start": 425.12,
+    "duration": 4.4
+  },
+  {
+    "text": "can see it's now starting to give me a D",
+    "start": 427.0,
+    "duration": 4.48
+  },
+  {
+    "text": "version here, which is kind of what I've",
+    "start": 429.52,
+    "duration": 3.8
+  },
+  {
+    "text": "been iterating towards. One note here is",
+    "start": 431.48,
+    "duration": 3.52
+  },
+  {
+    "text": "that this is actually",
+    "start": 433.32,
+    "duration": 5.28
+  },
+  {
+    "text": "integrated with the live page. So, it's",
+    "start": 435.0,
+    "duration": 6.08
+  },
+  {
+    "text": "not doing this on a throwaway route. You",
+    "start": 438.6,
+    "duration": 5.36
+  },
+  {
+    "text": "can do that if you want to, but I really",
+    "start": 441.08,
+    "duration": 5.32
+  },
+  {
+    "text": "like seeing it actually plugged into the",
+    "start": 443.96,
+    "duration": 4.24
+  },
+  {
+    "text": "live route because then it just gives",
+    "start": 446.4,
+    "duration": 4.0
+  },
+  {
+    "text": "you so much more flexibility. It it like",
+    "start": 448.2,
+    "duration": 4.44
+  },
+  {
+    "text": "it's a more honest representation of how",
+    "start": 450.4,
+    "duration": 3.56
+  },
+  {
+    "text": "the code is actually going to work. All",
+    "start": 452.64,
+    "duration": 3.6
+  },
+  {
+    "text": "right, looks like it is now created D,",
+    "start": 453.96,
+    "duration": 4.52
+  },
+  {
+    "text": "so let's see what that looks like. Yes,",
+    "start": 456.24,
+    "duration": 5.24
+  },
+  {
+    "text": "we have the box from A and if we search",
+    "start": 458.48,
+    "duration": 5.48
+  },
+  {
+    "text": "in here with model, then we can see that",
+    "start": 461.48,
+    "duration": 4.6
+  },
+  {
+    "text": "everything I asked for actually got",
+    "start": 463.96,
+    "duration": 4.52
+  },
+  {
+    "text": "done. Before we had a duplicate of this",
+    "start": 466.08,
+    "duration": 4.96
+  },
+  {
+    "text": "one, but now there's only one. And in",
+    "start": 468.48,
+    "duration": 4.0
+  },
+  {
+    "text": "theory, if I click this, I'm not sure if",
+    "start": 471.04,
+    "duration": 2.88
+  },
+  {
+    "text": "this will actually work. I don't know",
+    "start": 472.48,
+    "duration": 2.64
+  },
+  {
+    "text": "whether this is part of the prototype.",
+    "start": 473.92,
+    "duration": 3.6
+  },
+  {
+    "text": "Yes, it works. Oh, beautiful. So, there",
+    "start": 475.12,
+    "duration": 4.16
+  },
+  {
+    "text": "we go. Loads of this functionality looks",
+    "start": 477.52,
+    "duration": 3.84
+  },
+  {
+    "text": "like it is now just done. And so, you",
+    "start": 479.28,
+    "duration": 4.4
+  },
+  {
+    "text": "might ask, what is the next step after",
+    "start": 481.36,
+    "duration": 4.64
+  },
+  {
+    "text": "this? Well, now I consider the prototype",
+    "start": 483.68,
+    "duration": 4.2
+  },
+  {
+    "text": "to be complete. That was a pretty quick",
+    "start": 486.0,
+    "duration": 3.48
+  },
+  {
+    "text": "one. Usually, I'm kind of in here doing",
+    "start": 487.88,
+    "duration": 4.48
+  },
+  {
+    "text": "a lot more. Um I would pass this off to",
+    "start": 489.48,
+    "duration": 5.48
+  },
+  {
+    "text": "an AFK agent to plug in everything,",
+    "start": 492.36,
+    "duration": 4.6
+  },
+  {
+    "text": "delete the old prototype code, and just",
+    "start": 494.96,
+    "duration": 4.36
+  },
+  {
+    "text": "make sure that it was uh compliant with",
+    "start": 496.96,
+    "duration": 3.72
+  },
+  {
+    "text": "the original spec. And as you can",
+    "start": 499.32,
+    "duration": 3.76
+  },
+  {
+    "text": "imagine, the results here are incredible",
+    "start": 500.68,
+    "duration": 5.12
+  },
+  {
+    "text": "because we've had such high fidelity",
+    "start": 503.08,
+    "duration": 5.04
+  },
+  {
+    "text": "discussion, because we've been able to",
+    "start": 505.8,
+    "duration": 5.04
+  },
+  {
+    "text": "look at a live running version of it,",
+    "start": 508.12,
+    "duration": 4.919
+  },
+  {
+    "text": "give our feedback based on that. That",
+    "start": 510.84,
+    "duration": 4.319
+  },
+  {
+    "text": "feedback is so invaluable, and it's",
+    "start": 513.039,
+    "duration": 4.601
+  },
+  {
+    "text": "already baked into a throwaway branch",
+    "start": 515.159,
+    "duration": 4.44
+  },
+  {
+    "text": "that our implementer can actually just",
+    "start": 517.64,
+    "duration": 4.399
+  },
+  {
+    "text": "go and reference. So many times I see",
+    "start": 519.599,
+    "duration": 3.921
+  },
+  {
+    "text": "people saying, well, the thing didn't",
+    "start": 522.039,
+    "duration": 3.601
+  },
+  {
+    "text": "build what I wanted. I created this big,",
+    "start": 523.52,
+    "duration": 4.0
+  },
+  {
+    "text": "beautiful spec, and it just did",
+    "start": 525.64,
+    "duration": 4.28
+  },
+  {
+    "text": "something totally weird. You probably",
+    "start": 527.52,
+    "duration": 3.88
+  },
+  {
+    "text": "just weren't having discussions at a",
+    "start": 529.92,
+    "duration": 3.08
+  },
+  {
+    "text": "high enough fidelity, and you probably",
+    "start": 531.4,
+    "duration": 2.92
+  },
+  {
+    "text": "should have been prototyping. Finally, I",
+    "start": 533.0,
+    "duration": 2.88
+  },
+  {
+    "text": "don't want you to walk away thinking",
+    "start": 534.32,
+    "duration": 4.4
+  },
+  {
+    "text": "this is only for UI or front-end stuff.",
+    "start": 535.88,
+    "duration": 4.84
+  },
+  {
+    "text": "Front-end definitely benefits a lot from",
+    "start": 538.72,
+    "duration": 4.24
+  },
+  {
+    "text": "prototypes because how should it look,",
+    "start": 540.72,
+    "duration": 4.44
+  },
+  {
+    "text": "what should it look like is a really key",
+    "start": 542.96,
+    "duration": 5.12
+  },
+  {
+    "text": "question that's really hard to answer",
+    "start": 545.16,
+    "duration": 4.84
+  },
+  {
+    "text": "during the discussion phase. However,",
+    "start": 548.08,
+    "duration": 3.36
+  },
+  {
+    "text": "when you're doing more complicated",
+    "start": 550.0,
+    "duration": 3.6
+  },
+  {
+    "text": "stuff, especially back-end work, then a",
+    "start": 551.44,
+    "duration": 3.96
+  },
+  {
+    "text": "question like, does this logic, does",
+    "start": 553.6,
+    "duration": 4.16
+  },
+  {
+    "text": "this state model feel right? If you're",
+    "start": 555.4,
+    "duration": 4.32
+  },
+  {
+    "text": "building anything reasonably complex or",
+    "start": 557.76,
+    "duration": 3.96
+  },
+  {
+    "text": "that needs to work in the real world,",
+    "start": 559.72,
+    "duration": 3.28
+  },
+  {
+    "text": "then you're going to run into these",
+    "start": 561.72,
+    "duration": 3.28
+  },
+  {
+    "text": "questions all the time. And often, the",
+    "start": 563.0,
+    "duration": 3.6
+  },
+  {
+    "text": "best way to get around these kind of",
+    "start": 565.0,
+    "duration": 4.28
+  },
+  {
+    "text": "questions to build something that kind",
+    "start": 566.6,
+    "duration": 5.08
+  },
+  {
+    "text": "of serves the needs of your users,",
+    "start": 569.28,
+    "duration": 4.68
+  },
+  {
+    "text": "especially on something complex, is to",
+    "start": 571.68,
+    "duration": 4.8
+  },
+  {
+    "text": "build a prototype. Now, it doesn't need",
+    "start": 573.96,
+    "duration": 4.64
+  },
+  {
+    "text": "to be a UI prototype. And what I've got",
+    "start": 576.48,
+    "duration": 4.12
+  },
+  {
+    "text": "here is build a tiny interactive",
+    "start": 578.6,
+    "duration": 3.84
+  },
+  {
+    "text": "terminal app that pushes the state",
+    "start": 580.6,
+    "duration": 3.88
+  },
+  {
+    "text": "machine through cases that are hard to",
+    "start": 582.44,
+    "duration": 4.24
+  },
+  {
+    "text": "reason about on paper. In other words, a",
+    "start": 584.48,
+    "duration": 5.64
+  },
+  {
+    "text": "pure logic prototype. And I've had tons",
+    "start": 586.68,
+    "duration": 4.88
+  },
+  {
+    "text": "of feedback from folks saying that this",
+    "start": 590.12,
+    "duration": 3.4
+  },
+  {
+    "text": "is such a nice little feature. Both of",
+    "start": 591.56,
+    "duration": 4.28
+  },
+  {
+    "text": "these branches have their own reference",
+    "start": 593.52,
+    "duration": 4.92
+  },
+  {
+    "text": "docs here, which tell it exactly how to",
+    "start": 595.84,
+    "duration": 3.88
+  },
+  {
+    "text": "do each one. So, if it's building a",
+    "start": 598.44,
+    "duration": 3.12
+  },
+  {
+    "text": "logic prototype, it looks here. If it's",
+    "start": 599.72,
+    "duration": 3.68
+  },
+  {
+    "text": "building a UI prototype, it looks like",
+    "start": 601.56,
+    "duration": 3.52
+  },
+  {
+    "text": "this. So, I beg of you, have your",
+    "start": 603.4,
+    "duration": 4.6
+  },
+  {
+    "text": "discussions at a higher fidelity. As",
+    "start": 605.08,
+    "duration": 4.24
+  },
+  {
+    "text": "agents get better at working with",
+    "start": 608.0,
+    "duration": 3.16
+  },
+  {
+    "text": "canvases, working with design tools, I'm",
+    "start": 609.32,
+    "duration": 3.44
+  },
+  {
+    "text": "sure that wireframes will definitely",
+    "start": 611.16,
+    "duration": 3.2
+  },
+  {
+    "text": "make a comeback as well. And the key",
+    "start": 612.76,
+    "duration": 4.12
+  },
+  {
+    "text": "point is this, the leap from discussion",
+    "start": 614.36,
+    "duration": 4.64
+  },
+  {
+    "text": "and spec to production-ready code is",
+    "start": 616.88,
+    "duration": 4.32
+  },
+  {
+    "text": "really big. Whereas, if you have a",
+    "start": 619.0,
+    "duration": 3.8
+  },
+  {
+    "text": "working prototype, turning that into",
+    "start": 621.2,
+    "duration": 3.84
+  },
+  {
+    "text": "production is pretty simple. I want to",
+    "start": 622.8,
+    "duration": 4.24
+  },
+  {
+    "text": "give a quick shout-out to Shape Up by",
+    "start": 625.04,
+    "duration": 4.84
+  },
+  {
+    "text": "Ryan Singer, which is an extremely good",
+    "start": 627.04,
+    "duration": 5.8
+  },
+  {
+    "text": "book and very, very influential on me. I",
+    "start": 629.88,
+    "duration": 5.16
+  },
+  {
+    "text": "read this, I think, in 2019 or",
+    "start": 632.84,
+    "duration": 3.68
+  },
+  {
+    "text": "something, and it totally changed the",
+    "start": 635.04,
+    "duration": 3.28
+  },
+  {
+    "text": "way that I built applications for",
+    "start": 636.52,
+    "duration": 3.52
+  },
+  {
+    "text": "people. It is totally free online, and I",
+    "start": 638.32,
+    "duration": 3.12
+  },
+  {
+    "text": "will drop a link in the description. If",
+    "start": 640.04,
+    "duration": 2.44
+  },
+  {
+    "text": "you want to keep up-to-date with my",
+    "start": 641.44,
+    "duration": 3.8
+  },
+  {
+    "text": "skills, then my skills newsletter is the",
+    "start": 642.48,
+    "duration": 4.6
+  },
+  {
+    "text": "place to be. I'm shipping, shipping,",
+    "start": 645.24,
+    "duration": 3.08
+  },
+  {
+    "text": "shipping, constantly thinking about",
+    "start": 647.08,
+    "duration": 2.72
+  },
+  {
+    "text": "these skills, how I can make them",
+    "start": 648.32,
+    "duration": 3.32
+  },
+  {
+    "text": "better, and you can benefit from that",
+    "start": 649.8,
+    "duration": 3.52
+  },
+  {
+    "text": "the day that I make the changes. But",
+    "start": 651.64,
+    "duration": 3.199
+  },
+  {
+    "text": "folks, thank you so much for watching.",
+    "start": 653.32,
+    "duration": 2.56
+  },
+  {
+    "text": "It's been a pleasure, as always,",
+    "start": 654.839,
+    "duration": 2.481
+  },
+  {
+    "text": "bringing you one of my skills, and I",
+    "start": 655.88,
+    "duration": 4.6
+  },
+  {
+    "text": "will see you very soon.",
+    "start": 657.32,
+    "duration": 3.16
+  }
+]

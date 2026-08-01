@@ -1,0 +1,67 @@
+[
+  {
+    "start_time": 3250,
+    "end_time": 56570,
+    "topic": "Spec vs Prototyping"
+  },
+  {
+    "start_time": 56570,
+    "end_time": 107140,
+    "topic": "Prototype Skill Overview"
+  },
+  {
+    "start_time": 107140,
+    "end_time": 156770,
+    "topic": "Fidelity: Low vs High"
+  },
+  {
+    "start_time": 156770,
+    "end_time": 203420,
+    "topic": "Wayfinder Planning Flow"
+  },
+  {
+    "start_time": 203420,
+    "end_time": 258950,
+    "topic": "Ticket Types and When to Prototype"
+  },
+  {
+    "start_time": 258950,
+    "end_time": 301390,
+    "topic": "Search UI Prototype Options A–C"
+  },
+  {
+    "start_time": 301390,
+    "end_time": 356570,
+    "topic": "Iterating Feedback on Prototype"
+  },
+  {
+    "start_time": 356570,
+    "end_time": 410400,
+    "topic": "Compacting and Continuing Iteration"
+  },
+  {
+    "start_time": 410400,
+    "end_time": 463920,
+    "topic": "Version D Integrated Prototype"
+  },
+  {
+    "start_time": 463920,
+    "end_time": 521429,
+    "topic": "Completing Prototype and Handoff"
+  },
+  {
+    "start_time": 521429,
+    "end_time": 576650,
+    "topic": "Benefits Beyond UI; High-Fidelity Discussions"
+  },
+  {
+    "start_time": 576650,
+    "end_time": 626950,
+    "topic": "Logic Prototype and Reference Docs"
+  },
+  {
+    "start_time": 626950,
+    "end_time": 681410,
+    "topic": "Closing Remarks and Resources"
+  }
+]

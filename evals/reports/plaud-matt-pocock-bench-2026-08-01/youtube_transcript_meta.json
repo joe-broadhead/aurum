@@ -1,0 +1,25 @@
+{
+  "video_id": "n0VhIVtviC0",
+  "url": "https://www.youtube.com/watch?v=n0VhIVtviC0",
+  "available": [
+    {
+      "language": "English (auto-generated)",
+      "language_code": "en",
+      "is_generated": true,
+      "is_translatable": true
+    }
+  ],
+  "selected_language": "en",
+  "is_generated": true,
+  "snippet_count": 319,
+  "title_hint": "Matt Pocock \u2014 prototype skill / Wayfinder (YouTube)",
+  "caption_type": "English auto-generated only (no manual captions listed)",
+  "exports": [
+    "youtube_transcript_plain.txt",
+    "youtube_transcript_timestamped.txt",
+    "youtube_transcript_raw.json",
+    "youtube_transcript.vtt",
+    "youtube_transcript_meta.json"
+  ],
+  "plaud_file_id": "42e86284875bf900d98cb7e83ce3b7cb"
+}

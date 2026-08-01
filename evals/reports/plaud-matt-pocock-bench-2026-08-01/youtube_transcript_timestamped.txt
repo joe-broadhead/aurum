@@ -1,0 +1,319 @@
+[00:00 - 00:02] There's something that a lot of people
+[00:01 - 00:05] do when they're working with AI to
+[00:02 - 00:08] create code that totally drives me
+[00:05 - 00:10] crazy. And it's sort of something that
+[00:08 - 00:12] I've been railing against for a while
+[00:10 - 00:14] now. The thing that I've noticed is
+[00:12 - 00:17] people tend to think I need to create a
+[00:14 - 00:19] spec for AI. I need to create a plan,
+[00:17 - 00:21] right? Plan mode, spec-driven
+[00:19 - 00:23] development. I need to put all of my
+[00:21 - 00:25] efforts into making this extremely
+[00:23 - 00:27] detailed spec so that when I get some
+[00:25 - 00:29] outputs from the AI, those outputs are
+[00:27 - 00:31] going to look like the spec. I'm going
+[00:29 - 00:33] to have specified everything up front so
+[00:31 - 00:35] that I can just perfectly nail it. And
+[00:33 - 00:37] in this impulse, what they forget to do
+[00:35 - 00:40] is they forget they can actually write
+[00:37 - 00:43] code. You can write code while you're
+[00:40 - 00:45] working towards a spec. Prototyping and
+[00:43 - 00:47] spikes are things that we've had around
+[00:45 - 00:49] since the days of Agile, right? I mean,
+[00:47 - 00:51] I suppose these are still the days of
+[00:49 - 00:53] Agile. Agile is still extremely popular,
+[00:51 - 00:55] still extremely influential. But people
+[00:53 - 00:57] just aren't prototyping anymore. And so,
+[00:55 - 00:59] as part of my skills repo, I'm trying to
+[00:57 - 01:02] turn this around. I have a prototype
+[00:59 - 01:04] skill. A prototype is throwaway code
+[01:02 - 01:05] that answers a question. Everyone is
+[01:04 - 01:07] saying that code is cheap, and it's
+[01:05 - 01:10] partially true and partially I hate that
+[01:07 - 01:12] phrase. But the thing that is cheap is
+[01:10 - 01:14] the cost of producing code has gone way,
+[01:12 - 01:17] way down. So, producing prototypes,
+[01:14 - 01:19] producing quick kind of throwaway spikes
+[01:17 - 01:21] has never been cheaper and never been a
+[01:19 - 01:23] more effective tool. In this video, I'm
+[01:21 - 01:24] going to introduce this prototype skill.
+[01:23 - 01:26] I'm going to talk about when you should
+[01:24 - 01:29] use it, what it can be used for, and
+[01:26 - 01:31] also how it fits into my new wayfinder
+[01:29 - 01:34] skill. But first, to explain the concept
+[01:31 - 01:35] of fidelity, high fidelity and low
+[01:34 - 01:37] fidelity. Whenever you're talking about
+[01:35 - 01:39] designing something, you're going to
+[01:37 - 01:41] have questions in your mind that need to
+[01:39 - 01:43] be resolved somehow. Some of the
+[01:41 - 01:45] questions are going to be really basic,
+[01:43 - 01:47] like the basic frame of the thing you're
+[01:45 - 01:49] building. When the modal opens up, it
+[01:47 - 01:51] should have a cancel button and a
+[01:49 - 01:52] confirm button, simple stuff. With
+[01:51 - 01:55] simple stuff like that, you don't need a
+[01:52 - 01:56] lot of high fidelity stuff to answer the
+[01:55 - 01:58] question. That can just be resolved in
+[01:56 - 02:00] discussion, really. But let's say that
+[01:58 - 02:02] the modal, when it opens up, under some
+[02:00 - 02:04] circumstances it needs to show some
+[02:02 - 02:06] data, you might need to go a little bit
+[02:04 - 02:08] of higher fidelity on that. How would
+[02:06 - 02:09] you display the data? It's often hard
+[02:08 - 02:11] when you're planning out a spec to
+[02:09 - 02:13] figure out exactly how things should
+[02:11 - 02:15] look, and how things should look, how
+[02:13 - 02:17] they should behave under certain
+[02:15 - 02:20] circumstances, making sure that you've
+[02:17 - 02:22] road tested all of this idea in kind of
+[02:20 - 02:25] semi working code, that means you need a
+[02:22 - 02:28] higher fidelity. Some questions really
+[02:25 - 02:30] can only be answered by prototyping. And
+[02:28 - 02:32] because producing these prototypes is
+[02:30 - 02:35] now cheaper than it ever has been
+[02:32 - 02:37] before, I tend to want more of my
+[02:35 - 02:38] discussions at a higher fidelity.
+[02:37 - 02:40] Obviously, the basic stuff I'm going to
+[02:38 - 02:42] just resolve through discussion. So, the
+[02:40 - 02:44] agent is going to ask me some questions,
+[02:42 - 02:45] probably through a grilling session, and
+[02:44 - 02:47] then I'm going to say, "Okay, yeah, this
+[02:45 - 02:49] sounds good." But then, as soon as we
+[02:47 - 02:51] get anything that I think, "Oh, I really
+[02:49 - 02:53] need to see this in action. I need to
+[02:51 - 02:55] feel it in action, look at it working."
+[02:53 - 02:57] I'm going to ask for a prototype.
+[02:55 - 02:59] Prototyping is a part of my new
+[02:57 - 03:01] Wayfinder skill, which is a skill that
+[02:59 - 03:02] allows you to plan a huge chunk of work.
+[03:01 - 03:05] There's a future video coming on
+[03:02 - 03:07] Wayfinder. Now, Wayfinder, what it does
+[03:05 - 03:10] is it tackles a huge chunk of work, and
+[03:07 - 03:11] it splits it up into different planning
+[03:10 - 03:13] sessions. And all of these planning
+[03:11 - 03:15] sessions get their own ticket, and there
+[03:13 - 03:19] should be somewhere in here ticket
+[03:15 - 03:20] types, just here, that tells it exactly
+[03:19 - 03:22] what different ticket types there are.
+[03:20 - 03:25] The two that we're looking at here are
+[03:22 - 03:28] the grilling type, so it's using the
+[03:25 - 03:30] grilling skills, and the prototype
+[03:28 - 03:31] ticket type. The default case here is
+[03:30 - 03:33] the grilling type, so where you're
+[03:31 - 03:34] chatting with the agent, figuring out
+[03:33 - 03:37] the basic scope of the thing you're
+[03:34 - 03:38] building. But when you need to raise the
+[03:37 - 03:40] fidelity of the discussion, making a
+[03:38 - 03:42] cheap, rough, concrete artifact to react
+[03:40 - 03:44] to, an outline, a rough take a stab at
+[03:42 - 03:46] UI logic code via the prototype skill,
+[03:44 - 03:48] links the prototype as an asset, use
+[03:46 - 03:51] when how should it look or how should it
+[03:48 - 03:53] behave is is key question. Whether
+[03:51 - 03:55] you're using Wayfinder not, this gives
+[03:53 - 03:57] you a really clear criteria for when you
+[03:55 - 03:59] should reach for a prototype. So, I'm
+[03:57 - 04:01] sure you're dying to see it in action,
+[03:59 - 04:03] and here it is. This is what it's done.
+[04:01 - 04:05] I've been using Wayfinder to extend my
+[04:03 - 04:07] diagramming app here, which is built on
+[04:05 - 04:10] TLDraw. And I wanted a way to search
+[04:07 - 04:12] through old diagrams, and the data model
+[04:10 - 04:14] here is quite complicated. There's like
+[04:12 - 04:16] diagrams and then snapshots of the
+[04:14 - 04:18] diagram through time. And so, I wanted
+[04:16 - 04:20] to build a search bar, but I wasn't sure
+[04:18 - 04:22] how it should look or behave. So, I ran
+[04:20 - 04:25] prototype here, and what it did is it
+[04:22 - 04:26] created this little uh
+[04:25 - 04:29] picker at the bottom here. And this
+[04:26 - 04:31] picker, if I go between it, it has three
+[04:29 - 04:34] different options. So, that's option B,
+[04:31 - 04:36] and that's option C. And each one
+[04:34 - 04:38] encodes a few design decisions that I
+[04:36 - 04:40] can then react to and iterate on. So,
+[04:38 - 04:41] let's start by looking at A. I've just
+[04:40 - 04:43] generated this. I've not actually looked
+[04:41 - 04:46] at it yet. So, I get to search the
+[04:43 - 04:49] diagrams and see what comes up. And this
+[04:46 - 04:51] one, okay, it's reflow in place grouped
+[04:49 - 04:54] rows. So, it's grouping the snapshots by
+[04:51 - 04:56] the name of the diagram. I really like
+[04:54 - 04:59] the placing of the search box up here,
+[04:56 - 05:01] but this grouping doesn't feel right to
+[04:59 - 05:04] me. So, let's see what B is. Let's
+[05:01 - 05:07] search again inside model here, and
+[05:04 - 05:09] okay, now on the left, we have grouping
+[05:07 - 05:12] for where it can filter down. Okay,
+[05:09 - 05:14] that's quite nice. What happens if I
+[05:12 - 05:16] search for something else and it's
+[05:14 - 05:18] already Okay, so the filter resets at
+[05:16 - 05:20] that point. Now, that's okay, but I
+[05:18 - 05:22] wonder what C looks like. I really don't
+[05:20 - 05:24] like this search diagrams thing at the
+[05:22 - 05:25] top. That doesn't look nice, but let's
+[05:24 - 05:27] see what this looks like. So, let's
+[05:25 - 05:30] search for model, and ooh, okay, so now
+[05:27 - 05:31] it's everything in line, no filters. So,
+[05:30 - 05:33] I do actually really like this, but
+[05:31 - 05:35] there are a few things that I don't
+[05:33 - 05:37] like. I don't like these current things.
+[05:35 - 05:41] It looks like this is really technical
+[05:37 - 05:42] weird thing, but the the current one is
+[05:41 - 05:45] showing with the diagram snapshot. So,
+[05:42 - 05:46] I've got some kind of feedback that I I
+[05:45 - 05:50] to give to the prototype. This
+[05:46 - 05:51] prototyping session took about 100,000
+[05:50 - 05:53] tokens. So, I'm actually going to
+[05:51 - 05:55] compact and say, "We're going to do some
+[05:53 - 05:57] more QA on this." Compacting at this
+[05:55 - 06:00] point makes sense to me because we kind
+[05:57 - 06:01] of need to retain all of the information
+[06:00 - 06:03] about the prototype, need to retain all
+[06:01 - 06:04] of the design decisions that went into
+[06:03 - 06:06] it, but we just need to give it some
+[06:04 - 06:08] feedback. So, we just need to continue
+[06:06 - 06:09] the conversation in the same place in
+[06:08 - 06:11] the codebase. I should definitely do a
+[06:09 - 06:13] video about the design tree that I use
+[06:11 - 06:15] for when I've got compact versus clear
+[06:13 - 06:16] versus handoff, but, you know, that's
+[06:15 - 06:18] one for another time. Okay, now I'm
+[06:16 - 06:21] going to give some feedback. I really
+[06:18 - 06:23] like the search box of A and I like the
+[06:21 - 06:25] layout of C. Okay, so I've just dictated
+[06:23 - 06:27] in some more feedback and I'm going to
+[06:25 - 06:29] send it off. So, the idea of this
+[06:27 - 06:31] session is that I'm iterating on this
+[06:29 - 06:32] prototype. I'm not just saying, "Okay,
+[06:31 - 06:34] this is the best one." I'm going to
+[06:32 - 06:36] actually create some design decisions
+[06:34 - 06:38] here, create a super rich asset. All of
+[06:36 - 06:40] these design decisions are then going to
+[06:38 - 06:42] be encoded into the prototype and I'm
+[06:40 - 06:45] going to save the prototype probably on
+[06:42 - 06:47] a throwaway branch. That means that when
+[06:45 - 06:48] the thing actually goes to implement it,
+[06:47 - 06:50] it's not only got a spec, it's actually
+[06:48 - 06:52] got real front-end code that it can
+[06:50 - 06:54] usually copy and paste out of it. Now,
+[06:52 - 06:57] creating these prototypes does take some
+[06:54 - 06:59] time, right? The higher fidelity you go,
+[06:57 - 07:01] the more token cost there is. If we were
+[06:59 - 07:03] to try to resolve this in a discussion,
+[07:01 - 07:05] we'd be at a lower fidelity, so the
+[07:03 - 07:07] answers would be less useful, but we'd
+[07:05 - 07:09] also be spending fewer tokens. And we
+[07:07 - 07:11] can see it's now starting to give me a D
+[07:09 - 07:13] version here, which is kind of what I've
+[07:11 - 07:15] been iterating towards. One note here is
+[07:13 - 07:18] that this is actually
+[07:15 - 07:21] integrated with the live page. So, it's
+[07:18 - 07:23] not doing this on a throwaway route. You
+[07:21 - 07:26] can do that if you want to, but I really
+[07:23 - 07:28] like seeing it actually plugged into the
+[07:26 - 07:30] live route because then it just gives
+[07:28 - 07:32] you so much more flexibility. It it like
+[07:30 - 07:33] it's a more honest representation of how
+[07:32 - 07:36] the code is actually going to work. All
+[07:33 - 07:38] right, looks like it is now created D,
+[07:36 - 07:41] so let's see what that looks like. Yes,
+[07:38 - 07:43] we have the box from A and if we search
+[07:41 - 07:46] in here with model, then we can see that
+[07:43 - 07:48] everything I asked for actually got
+[07:46 - 07:51] done. Before we had a duplicate of this
+[07:48 - 07:52] one, but now there's only one. And in
+[07:51 - 07:53] theory, if I click this, I'm not sure if
+[07:52 - 07:55] this will actually work. I don't know
+[07:53 - 07:57] whether this is part of the prototype.
+[07:55 - 07:59] Yes, it works. Oh, beautiful. So, there
+[07:57 - 08:01] we go. Loads of this functionality looks
+[07:59 - 08:03] like it is now just done. And so, you
+[08:01 - 08:06] might ask, what is the next step after
+[08:03 - 08:07] this? Well, now I consider the prototype
+[08:06 - 08:09] to be complete. That was a pretty quick
+[08:07 - 08:12] one. Usually, I'm kind of in here doing
+[08:09 - 08:14] a lot more. Um I would pass this off to
+[08:12 - 08:16] an AFK agent to plug in everything,
+[08:14 - 08:19] delete the old prototype code, and just
+[08:16 - 08:20] make sure that it was uh compliant with
+[08:19 - 08:23] the original spec. And as you can
+[08:20 - 08:25] imagine, the results here are incredible
+[08:23 - 08:28] because we've had such high fidelity
+[08:25 - 08:30] discussion, because we've been able to
+[08:28 - 08:33] look at a live running version of it,
+[08:30 - 08:35] give our feedback based on that. That
+[08:33 - 08:37] feedback is so invaluable, and it's
+[08:35 - 08:39] already baked into a throwaway branch
+[08:37 - 08:42] that our implementer can actually just
+[08:39 - 08:43] go and reference. So many times I see
+[08:42 - 08:45] people saying, well, the thing didn't
+[08:43 - 08:47] build what I wanted. I created this big,
+[08:45 - 08:49] beautiful spec, and it just did
+[08:47 - 08:51] something totally weird. You probably
+[08:49 - 08:53] just weren't having discussions at a
+[08:51 - 08:54] high enough fidelity, and you probably
+[08:53 - 08:55] should have been prototyping. Finally, I
+[08:54 - 08:58] don't want you to walk away thinking
+[08:55 - 09:00] this is only for UI or front-end stuff.
+[08:58 - 09:02] Front-end definitely benefits a lot from
+[09:00 - 09:05] prototypes because how should it look,
+[09:02 - 09:08] what should it look like is a really key
+[09:05 - 09:10] question that's really hard to answer
+[09:08 - 09:11] during the discussion phase. However,
+[09:10 - 09:13] when you're doing more complicated
+[09:11 - 09:15] stuff, especially back-end work, then a
+[09:13 - 09:17] question like, does this logic, does
+[09:15 - 09:19] this state model feel right? If you're
+[09:17 - 09:21] building anything reasonably complex or
+[09:19 - 09:23] that needs to work in the real world,
+[09:21 - 09:25] then you're going to run into these
+[09:23 - 09:26] questions all the time. And often, the
+[09:25 - 09:29] best way to get around these kind of
+[09:26 - 09:31] questions to build something that kind
+[09:29 - 09:33] of serves the needs of your users,
+[09:31 - 09:36] especially on something complex, is to
+[09:33 - 09:38] build a prototype. Now, it doesn't need
+[09:36 - 09:40] to be a UI prototype. And what I've got
+[09:38 - 09:42] here is build a tiny interactive
+[09:40 - 09:44] terminal app that pushes the state
+[09:42 - 09:46] machine through cases that are hard to
+[09:44 - 09:50] reason about on paper. In other words, a
+[09:46 - 09:51] pure logic prototype. And I've had tons
+[09:50 - 09:53] of feedback from folks saying that this
+[09:51 - 09:55] is such a nice little feature. Both of
+[09:53 - 09:58] these branches have their own reference
+[09:55 - 09:59] docs here, which tell it exactly how to
+[09:58 - 10:01] do each one. So, if it's building a
+[09:59 - 10:03] logic prototype, it looks here. If it's
+[10:01 - 10:05] building a UI prototype, it looks like
+[10:03 - 10:08] this. So, I beg of you, have your
+[10:05 - 10:09] discussions at a higher fidelity. As
+[10:08 - 10:11] agents get better at working with
+[10:09 - 10:12] canvases, working with design tools, I'm
+[10:11 - 10:14] sure that wireframes will definitely
+[10:12 - 10:16] make a comeback as well. And the key
+[10:14 - 10:19] point is this, the leap from discussion
+[10:16 - 10:21] and spec to production-ready code is
+[10:19 - 10:22] really big. Whereas, if you have a
+[10:21 - 10:25] working prototype, turning that into
+[10:22 - 10:27] production is pretty simple. I want to
+[10:25 - 10:29] give a quick shout-out to Shape Up by
+[10:27 - 10:32] Ryan Singer, which is an extremely good
+[10:29 - 10:35] book and very, very influential on me. I
+[10:32 - 10:36] read this, I think, in 2019 or
+[10:35 - 10:38] something, and it totally changed the
+[10:36 - 10:40] way that I built applications for
+[10:38 - 10:41] people. It is totally free online, and I
+[10:40 - 10:42] will drop a link in the description. If
+[10:41 - 10:45] you want to keep up-to-date with my
+[10:42 - 10:47] skills, then my skills newsletter is the
+[10:45 - 10:48] place to be. I'm shipping, shipping,
+[10:47 - 10:49] shipping, constantly thinking about
+[10:48 - 10:51] these skills, how I can make them
+[10:49 - 10:53] better, and you can benefit from that
+[10:51 - 10:54] the day that I make the changes. But
+[10:53 - 10:55] folks, thank you so much for watching.
+[10:54 - 10:57] It's been a pleasure, as always,
+[10:55 - 11:00] bringing you one of my skills, and I
+[10:57 - 11:00] will see you very soon.

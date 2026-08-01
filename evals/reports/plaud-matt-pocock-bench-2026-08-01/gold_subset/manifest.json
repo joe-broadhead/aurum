@@ -1,0 +1,108 @@
+{
+  "generated_at_utc": "2026-08-01T18:55:20Z",
+  "video": "https://www.youtube.com/watch?v=n0VhIVtviC0",
+  "speaker": "Matt Pocock",
+  "plaud_file_id": "42e86284875bf900d98cb7e83ce3b7cb",
+  "instructions": "Listen to each clip. Write verbatim gold in gold.txt (what was actually said). Prefer orthography of clear speech; do not copy Plaud or YouTube blindly when they disagree.",
+  "clips": [
+    {
+      "id": "clip_01",
+      "kind": "hard",
+      "start_s": 35.0,
+      "end_s": 85.0,
+      "time": "00:35-01:25",
+      "hardness": 0.2668,
+      "ref_cross_wer": 0.4711,
+      "multi_hyp_disagreement": 0.0171,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_02",
+      "kind": "hard",
+      "start_s": 105.0,
+      "end_s": 155.0,
+      "time": "01:45-02:35",
+      "hardness": 0.311,
+      "ref_cross_wer": 0.506,
+      "multi_hyp_disagreement": 0.0726,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_03",
+      "kind": "hard",
+      "start_s": 175.0,
+      "end_s": 225.0,
+      "time": "02:55-03:45",
+      "hardness": 0.325,
+      "ref_cross_wer": 0.5,
+      "multi_hyp_disagreement": 0.1112,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_04",
+      "kind": "hard",
+      "start_s": 245.0,
+      "end_s": 295.0,
+      "time": "04:05-04:55",
+      "hardness": 0.2943,
+      "ref_cross_wer": 0.4729,
+      "multi_hyp_disagreement": 0.0759,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_05",
+      "kind": "hard",
+      "start_s": 315.0,
+      "end_s": 365.0,
+      "time": "05:15-06:05",
+      "hardness": 0.323,
+      "ref_cross_wer": 0.5091,
+      "multi_hyp_disagreement": 0.0955,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_06",
+      "kind": "hard",
+      "start_s": 420.0,
+      "end_s": 470.0,
+      "time": "07:00-07:50",
+      "hardness": 0.3306,
+      "ref_cross_wer": 0.5288,
+      "multi_hyp_disagreement": 0.0884,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_07",
+      "kind": "hard",
+      "start_s": 490.0,
+      "end_s": 540.0,
+      "time": "08:10-09:00",
+      "hardness": 0.3458,
+      "ref_cross_wer": 0.5544,
+      "multi_hyp_disagreement": 0.0909,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_08",
+      "kind": "hard",
+      "start_s": 560.0,
+      "end_s": 610.0,
+      "time": "09:20-10:10",
+      "hardness": 0.3026,
+      "ref_cross_wer": 0.4857,
+      "multi_hyp_disagreement": 0.0788,
+      "gold_status": "empty"
+    },
+    {
+      "id": "clip_09",
+      "kind": "easy",
+      "start_s": 630.0,
+      "end_s": 660.48,
+      "time": "10:30-11:00",
+      "hardness": 0.1766,
+      "ref_cross_wer": 0.2357,
+      "multi_hyp_disagreement": 0.1045,
+      "gold_status": "empty"
+    }
+  ]
+}

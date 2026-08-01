@@ -1,0 +1,11 @@
+{
+  "id": "clip_04",
+  "kind": "hard",
+  "start_s": 245.0,
+  "end_s": 295.0,
+  "time": "04:05-04:55",
+  "hardness": 0.2943,
+  "ref_cross_wer": 0.4729,
+  "multi_hyp_disagreement": 0.0759,
+  "gold_status": "empty"
+}

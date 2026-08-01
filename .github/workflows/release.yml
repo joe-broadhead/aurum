@@ -213,7 +213,9 @@ jobs:
           name: sbom-inventory
           path: sbom
 
-      - name: Checksums + SBOM layout
+      - name: Checksums + SBOM + provenance (JOE-1859 / JOE-1860)
+        env:
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           mkdir -p release-assets
@@ -222,35 +224,36 @@ jobs:
           if [ -d sbom ]; then
             cp -a sbom/. release-assets/
           fi
-          if [ ! -f release-assets/aurum-sbom-inventory.json ]; then
-            chmod +x scripts/generate_sbom.sh
+          chmod +x scripts/generate_sbom.sh scripts/generate_provenance.sh scripts/verify_release_assets.sh
+          # Fail closed: formal CycloneDX + SPDX must exist (re-generate if incomplete).
+          if [ ! -f release-assets/aurum.cdx.json ] || [ ! -f release-assets/aurum.spdx.json ]; then
             ./scripts/generate_sbom.sh dist/sbom
             cp -a dist/sbom/. release-assets/
           fi
+          test -f release-assets/aurum.cdx.json
+          test -f release-assets/aurum.spdx.json
+          test -f release-assets/aurum-sbom-inventory.json
+          # Structured provenance over binaries + SBOM (before final SHA256SUMS).
+          ./scripts/generate_provenance.sh release-assets "${{ needs.validate.outputs.release_tag }}"
           cd release-assets
-          # Exclude checksum/provenance files from the primary digest set.
+          # Exclude digest/provenance files from the hashed set, then re-add provenance digests.
           if command -v sha256sum >/dev/null 2>&1; then
-            find . -maxdepth 1 -type f ! -name 'SHA256SUMS' ! -name 'PROVENANCE.txt' -print0 \
-              | sort -z | xargs -0 sha256sum > SHA256SUMS
+            find . -maxdepth 1 -type f \
+              ! -name 'SHA256SUMS' ! -name 'SHA256SUMS.sig' ! -name 'SHA256SUMS.bundle' \
+              ! -name 'PROVENANCE.txt' ! -name 'PROVENANCE.json' \
+              -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+            sha256sum PROVENANCE.json PROVENANCE.txt >> SHA256SUMS
           else
-            find . -maxdepth 1 -type f ! -name 'SHA256SUMS' ! -name 'PROVENANCE.txt' -print0 \
-              | sort -z | xargs -0 shasum -a 256 > SHA256SUMS
-          fi
-          {
-            echo "release_tag=${{ needs.validate.outputs.release_tag }}"
-            echo "source_commit=$(git rev-parse HEAD)"
-            echo "generated_at_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-            echo "workflow=${{ github.workflow }}"
-            echo "run_id=${{ github.run_id }}"
-          } > PROVENANCE.txt
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum PROVENANCE.txt >> SHA256SUMS
-          else
-            shasum -a 256 PROVENANCE.txt >> SHA256SUMS
+            find . -maxdepth 1 -type f \
+              ! -name 'SHA256SUMS' ! -name 'SHA256SUMS.sig' ! -name 'SHA256SUMS.bundle' \
+              ! -name 'PROVENANCE.txt' ! -name 'PROVENANCE.json' \
+              -print0 | sort -z | xargs -0 shasum -a 256 > SHA256SUMS
+            shasum -a 256 PROVENANCE.json PROVENANCE.txt >> SHA256SUMS
           fi
           ls -la
           cat SHA256SUMS
-          chmod +x "${GITHUB_WORKSPACE}/scripts/verify_release_assets.sh"
+          export AURUM_EXPECT_TAG="${{ needs.validate.outputs.release_tag }}"
+          export AURUM_EXPECT_COMMIT="$(git -C "${GITHUB_WORKSPACE}" rev-parse HEAD)"
           "${GITHUB_WORKSPACE}/scripts/verify_release_assets.sh" .
 
       - name: Extract changelog section

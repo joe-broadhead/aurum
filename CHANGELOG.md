@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1859:** Formal CycloneDX 1.5 (`aurum.cdx.json`) + SPDX 2.3 lite
+  (`aurum.spdx.json`) SBOMs from `scripts/generate_sbom.sh`; release verify
+  requires them.
+- **JOE-1860:** Structured `PROVENANCE.json` generation and verification;
+  optional cosign keyless path documented in `docs/operations/provenance.md`.
+- **JOE-1861:** `fuzz/` cargo-fuzz targets (config, DTO, segment, cleanup,
+  output) + CI short smoke on nightly; ops guide `docs/operations/fuzzing.md`.
+- **JOE-1863:** Platform support matrix + `scripts/clean_install_smoke.sh`
+  clean-install qualification.
+
 ## [0.0.11] - 2026-08-01
 
 v0.0.11 is **Group F — SDK domain privacy residual and FFI engine pools**:

@@ -1,0 +1,57 @@
+[package]
+name = "aurum-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+serde_json = "1"
+toml = "0.8"
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "macros"] }
+
+# STT-only path: avoid ORT/native TTS in fuzz workers (JOE-1861).
+aurum-core = { path = "../crates/aurum-core", default-features = false }
+
+[[bin]]
+name = "config_toml"
+path = "fuzz_targets/config_toml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "stt_dto_json"
+path = "fuzz_targets/stt_dto_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "segment_validate"
+path = "fuzz_targets/segment_validate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rules_cleanup"
+path = "fuzz_targets/rules_cleanup.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "output_format"
+path = "fuzz_targets/output_format.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+# Isolated from the main workspace so nightly/cargo-fuzz does not disturb MSRV.
+members = ["."]

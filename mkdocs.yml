@@ -123,6 +123,9 @@ nav:
       - Threat model: operations/threat-model.md
       - Hardening: operations/hardening.md
       - Release gate: operations/release-gate.md
+      - Provenance: operations/provenance.md
+      - Platform support: operations/platform-support.md
+      - Fuzzing: operations/fuzzing.md
       - Benchmarks: operations/benchmarks.md
       - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md

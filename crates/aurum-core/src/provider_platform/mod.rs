@@ -1,20 +1,30 @@
-//! Shared provider platform: identity, registry, factories (JOE-1933 / JOE-1932).
+//! Shared provider platform: identity, registry, factories (JOE-1933 / JOE-1932 / JOE-1936).
 //!
 //! Direction-specific execution traits remain in [`crate::providers`] (STT) and
 //! [`crate::tts::provider`] (TTS). This module owns **how** those implementations
 //! are identified, registered, and constructed without flattening STT/TTS
 //! semantics. See `docs/development/adr-002-provider-registry.md`.
+//!
+//! Capability discovery and conformance (JOE-1936) route through the registry
+//! via [`capabilities_for`] and [`conformance`].
 
 mod builtin;
+mod conformance;
 mod context;
 mod descriptor;
 mod factory;
 mod id;
+mod listing;
+mod lookup;
 mod registry;
 
 #[cfg(feature = "tts")]
 pub use builtin::LocalTtsFactory;
 pub use builtin::{LocalSttFactory, OpenRouterSttFactory};
+pub use conformance::{
+    check_builtin_conformance, check_descriptor_capabilities, check_network_claim,
+    check_unique_descriptor_identities, ConformanceFailure,
+};
 pub use context::ProviderBuildContext;
 pub use descriptor::{
     NetworkRequirement, ProviderDescriptor, ProviderOperations, ProviderStability,
@@ -23,12 +33,17 @@ pub use descriptor::{
 pub use factory::SynthesisProviderFactory;
 pub use factory::TranscriptionProviderFactory;
 pub use id::{ProviderId, MAX_PROVIDER_ID_LEN};
+pub use listing::{
+    list_provider_summaries, merge_provider_summaries, provider_list, ProviderList,
+    ProviderSummary, PROVIDER_LIST_SCHEMA_VERSION,
+};
+pub use lookup::{capabilities_for, preflight_stt_with_registry, preflight_tts_with_registry};
 pub use registry::{ProviderRegistry, ProviderRegistryBuilder};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::capabilities::CapabilityOperation;
+    use crate::capabilities::{CapabilityOperation, ProviderCapabilities};
     use crate::secret::SecretString;
     use std::sync::Arc;
 
@@ -41,27 +56,21 @@ mod tests {
             &self.desc
         }
 
-        fn capabilities(
-            &self,
-            model: &str,
-        ) -> crate::error::Result<crate::capabilities::ProviderCapabilities> {
-            Ok(crate::capabilities::ProviderCapabilities {
-                schema_version: crate::capabilities::CAPABILITY_SCHEMA_VERSION,
-                provider: self.desc.id.as_str().into(),
-                model: model.into(),
-                operation: CapabilityOperation::Stt,
-                stt_backend: Some(crate::capabilities::SttBackendClass::Asr),
-                timestamps_reliable: true,
-                languages: vec!["en".into()],
-                max_duration_secs: Some(60.0),
-                max_upload_bytes: None,
-                max_text_chars: None,
-                supports_cancellation: true,
-                requires_network: false,
-                local_only_ok: true,
-                output_formats: vec!["txt".into()],
-                notes: vec![],
-            })
+        fn capabilities(&self, model: &str) -> crate::error::Result<ProviderCapabilities> {
+            let mut caps = ProviderCapabilities::with_core(
+                self.desc.id.as_str(),
+                model,
+                CapabilityOperation::Stt,
+            );
+            caps.stt_backend = Some(crate::capabilities::SttBackendClass::Asr);
+            caps.timestamps_reliable = true;
+            caps.languages = vec!["en".into()];
+            caps.max_duration_secs = Some(60.0);
+            caps.supports_cancellation = true;
+            caps.requires_network = false;
+            caps.local_only_ok = true;
+            caps.output_formats = vec!["txt".into()];
+            Ok(caps)
         }
 
         fn build(
@@ -178,5 +187,17 @@ mod tests {
         let ctx = ProviderBuildContext::new("/tmp/x")
             .with_api_key(Some(SecretString::new("sk-must-not-appear-in-debug")));
         assert!(!format!("{ctx:?}").contains("sk-must-not-appear"));
+    }
+
+    #[test]
+    fn capabilities_for_routes_through_registry() {
+        let reg = ProviderRegistry::builtin().unwrap();
+        let caps =
+            capabilities_for(&reg, &ProviderId::local(), CapabilityOperation::Stt, "base").unwrap();
+        assert_eq!(caps.provider, "local");
+        assert_eq!(
+            caps.schema_version,
+            crate::capabilities::CAPABILITY_SCHEMA_VERSION
+        );
     }
 }

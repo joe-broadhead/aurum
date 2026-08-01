@@ -71,5 +71,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.10** — Group E remote maturity: capability routing, OpContext, TTS soft-deadline, batch cleanup.  
+**v0.0.11** — Group F SDK residual: domain privacy + FFI engine-local pools.  
 APIs may change before `0.1.0`; pin a release tag in dependents.

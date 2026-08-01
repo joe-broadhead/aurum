@@ -363,7 +363,7 @@ pub async fn apply_cleanup_with_segments_op(
                 .into());
             }
             let mut cleaned = Vec::with_capacity(original_segments.len());
-            for (seg, text) in original_segments.iter().zip(cleaned_texts.into_iter()) {
+            for (seg, text) in original_segments.iter().zip(cleaned_texts) {
                 let mut seg = seg.clone();
                 seg.set_text(text);
                 if seg.text().trim().is_empty() {

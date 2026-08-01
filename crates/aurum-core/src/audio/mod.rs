@@ -223,6 +223,18 @@ pub async fn load_audio_with_limits(
 }
 
 /// Attempt to read a 16 kHz mono PCM WAV directly, rejecting oversized files first.
+///
+/// Public for fuzz targets and tests that exercise the hound path without ffmpeg
+/// (JOE-1884). Callers that accept arbitrary formats should prefer [`load_audio`].
+pub fn try_load_wav_file(
+    path: &Path,
+    max_duration_secs: f64,
+    max_decoded_bytes: usize,
+) -> Result<AudioInput> {
+    try_load_wav_direct(path, max_duration_secs, max_decoded_bytes)
+}
+
+/// Attempt to read a 16 kHz mono PCM WAV directly, rejecting oversized files first.
 fn try_load_wav_direct(
     path: &Path,
     max_duration_secs: f64,

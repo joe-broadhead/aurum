@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.13] - 2026-08-01
+
+v0.0.13 is **Group H — second 1.0 assurance slice**: forced cosign keyless
+release attestation, expanded fuzz + scheduled campaigns, Tier A clean-install
+CI matrix, and two-builder reproducibility reports.
+
+### Added
+
+- **JOE-1882:** `release.yml` always produces `SHA256SUMS.bundle` via cosign
+  keyless (OIDC); `verify_release_assets.sh` supports `AURUM_REQUIRE_COSIGN=1`
+  with documented identity / rotation / revocation in
+  `docs/operations/provenance.md`.
+- **JOE-1884:** Fuzz targets `wav_parse` + `ffi_validators`; public
+  `try_load_wav_file`; scheduled `fuzz-campaign.yml` with crash artifact
+  upload; fuzzing ops doc triage section.
+- **JOE-1883:** `ci.yml` `clean-install` matrix on ubuntu-24.04 / macos-14 /
+  windows-latest (`--from-source`); platform-support docs link the job.
+- **JOE-1885:** `scripts/compare_release_builds.sh` + `docs/operations/reproducibility.md`;
+  CI repro-smoke and release `repro-compare` variance report artifacts.
+
 ## [0.0.12] - 2026-08-01
 
 v0.0.12 is **Group G — first 1.0 assurance slice**: formal SBOM, structured

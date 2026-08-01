@@ -49,9 +49,16 @@ Install cosign: <https://docs.sigstore.dev/cosign/system_config/installation/>
 | Field | Value |
 |-------|--------|
 | OIDC issuer | `https://token.actions.githubusercontent.com` |
-| Certificate identity | `https://github.com/joe-broadhead/aurum/.github/workflows/release.yml@refs/tags/<tag>` |
+| Certificate identity (tag **push** trigger) | `…/release.yml@refs/tags/<tag>` |
+| Certificate identity (`workflow_dispatch` / Tag Release helper) | `…/release.yml@refs/heads/master` |
 | Signed artifact | `SHA256SUMS` (covers all other assets via digests) |
 | Bundle file | `SHA256SUMS.bundle` |
+
+OIDC subject is the **workflow trigger ref**, not the git commit checked out for
+build. Tag Release creates the tag with `GITHUB_TOKEN` (which does not re-trigger
+workflows) and then `workflow_dispatch`es `release.yml` from `master`, so those
+releases verify under the **master** identity. Pure `push` of `vX.Y.Z` signs under
+the **tag** identity. Release notes for each GitHub Release print the exact string.
 
 ### Rotation and revocation
 

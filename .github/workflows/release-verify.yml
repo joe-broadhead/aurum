@@ -1,0 +1,105 @@
+# Independent clean-environment verification of published releases (JOE-1891).
+# Separate from release.yml publish job — downloads assets like an operator.
+name: Release verify (independent)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (empty = latest)"
+        required: false
+        type: string
+        default: ""
+  schedule:
+    # Daily 07:15 UTC
+    - cron: "15 7 * * *"
+  # Also allow verifying after tags land (does not replace release.yml).
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-verify-${{ github.event.inputs.tag || github.event.release.tag_name || 'latest' }}
+  cancel-in-progress: true
+
+jobs:
+  independent-verify:
+    name: Download + cosign verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6  # v4.1.2
+        with:
+          cosign-release: v2.4.3
+
+      - name: Resolve tag
+        id: tag
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          tag="${INPUT_TAG:-}"
+          if [ -z "${tag}" ] && [ -n "${RELEASE_TAG:-}" ]; then
+            tag="${RELEASE_TAG}"
+          fi
+          if [ -z "${tag}" ]; then
+            tag="$(gh release list --repo "${{ github.repository }}" --limit 20 --json tagName,isDraft \
+              --jq '[.[] | select(.isDraft==false)][0].tagName')"
+          fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag: ${tag}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Independent verify
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AURUM_RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          AURUM_GITHUB_REPO: ${{ github.repository }}
+          AURUM_REQUIRE_COSIGN: "1"
+          AURUM_VERIFY_NEGATIVE: "1"
+        run: |
+          set -euo pipefail
+          chmod +x scripts/independent_release_verify.sh scripts/verify_release_assets.sh
+          ./scripts/independent_release_verify.sh --tag "${AURUM_RELEASE_TAG}"
+
+  # Security rehearsal smoke (docs + pin inventory + tabletop stubs).
+  security-rehearsal:
+    name: security rehearsal smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-sec-rehearsal
+      - name: Model revocation + disclosure tabletop
+        run: |
+          set -euo pipefail
+          chmod +x scripts/rehearse_model_revocation.sh scripts/rehearse_disclosure_tabletop.sh
+          ./scripts/rehearse_model_revocation.sh
+          ./scripts/rehearse_disclosure_tabletop.sh
+      - name: Upload rehearsal evidence
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: security-rehearsal
+          path: dist/security-rehearsal/
+          if-no-files-found: error
+          retention-days: 30

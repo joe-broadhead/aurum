@@ -128,6 +128,8 @@ nav:
       - Fuzzing: operations/fuzzing.md
       - Reproducibility: operations/reproducibility.md
       - QE depth: operations/qe-depth.md
+      - Model revocation: operations/model-revocation.md
+      - Disclosure tabletop: operations/disclosure-tabletop.md
       - Benchmarks: operations/benchmarks.md
       - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md

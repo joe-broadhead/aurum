@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.15] - 2026-08-01
+
+v0.0.15 is **Group J — security evidence slice**: threat-model control matrix,
+independent release verify, model pin revocation rehearsal, and disclosure
+tabletop evidence pack.
+
+### Added
+
+- **JOE-1893:** Versioned threat-model control matrix with High/Critical threat
+  → control → evidence → residual dispositions (`docs/operations/threat-model.md`).
+- **JOE-1891:** Independent download+cosign verify
+  (`scripts/independent_release_verify.sh`, `.github/workflows/release-verify.yml`)
+  including negative checksum path.
+- **JOE-1892:** Model-manifest revocation runbook + dry-run rehearsal script.
+- **JOE-1890:** Confidential disclosure tabletop + intake checklist evidence pack.
+
 ## [0.0.14] - 2026-08-01
 
 v0.0.14 is **Group I — third 1.0 QE depth slice**: Miri pure suite, sanitizer

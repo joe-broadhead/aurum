@@ -35,10 +35,13 @@ Enforced in CI:
 | ASan + concurrency stress | `ci.yml` sanitizer-stress / `scripts/run_sanitizers.sh` (JOE-1887) |
 | Trust-boundary coverage report | `ci.yml` coverage-trust / `scripts/coverage_trust.sh` (JOE-1888) |
 | Mutation smoke (scoped) | `ci.yml` mutants-smoke / `scripts/run_mutants.sh` (JOE-1886) |
+| Security rehearsal (revoke + disclosure) | `ci.yml` security-rehearsal (JOE-1890 / JOE-1892) |
+| Independent release verify (download + cosign) | `release-verify.yml` (JOE-1891) |
+| Threat-model control matrix | [threat-model.md](threat-model.md) (JOE-1893) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
 
-See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md).
+See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md).
 
 ## Compatibility freeze (toward 1.0)
 

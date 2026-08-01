@@ -1,0 +1,60 @@
+name: Publish crates.io backfill
+
+# Publish multiple historical tags in order (core → stt → ffi per version).
+# Manual only. Uses crates-io environment secret.
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "Comma-separated versions without v prefix"
+        required: true
+        type: string
+        default: "0.0.10,0.0.11,0.0.12,0.0.13,0.0.14,0.0.15,0.0.16,0.0.17"
+      dry_run:
+        description: "Dry run (no upload)"
+        required: true
+        type: boolean
+        default: true
+      crates:
+        description: "Comma-separated crates (default all three)"
+        required: false
+        type: string
+        default: "aurum-core,aurum-stt,aurum-ffi"
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+
+      - name: Backfill publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSIONS: ${{ inputs.versions }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          CRATES: ${{ inputs.crates }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CARGO_REGISTRY_TOKEN:-}" ] && [ "${DRY_RUN}" != "true" ]; then
+            echo "CARGO_REGISTRY_TOKEN required for real publish" >&2
+            exit 1
+          fi
+          chmod +x scripts/publish_crates_backfill.sh
+          ./scripts/publish_crates_backfill.sh

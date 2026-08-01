@@ -67,19 +67,23 @@ impl AurumEngine {
     /// Build from an already-validated config with default governor settings.
     pub fn new(config: ValidatedConfig) -> Self {
         Self::with_governor(config, GovernorConfig::default())
+            .expect("default GovernorConfig is always valid")
     }
 
     /// Build with an explicit governor profile (mobile/server/custom).
-    pub fn with_governor(config: ValidatedConfig, gov: GovernorConfig) -> Self {
-        Self {
+    ///
+    /// Validates `gov` before construction (JOE-1917 / F-004).
+    pub fn with_governor(config: ValidatedConfig, gov: GovernorConfig) -> Result<Self> {
+        let governor = Arc::new(ResourceGovernor::try_new(gov)?);
+        Ok(Self {
             config,
-            governor: Arc::new(ResourceGovernor::new(gov)),
+            governor,
             metrics: Arc::new(Metrics::new()),
             stt_pool: Arc::new(SttContextPool::new()),
             #[cfg(feature = "tts")]
             tts_pool: Arc::new(TtsSessionPool::new()),
             closed: AtomicBool::new(false),
-        }
+        })
     }
 
     /// Load config from the default file/env path and validate.

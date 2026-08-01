@@ -127,9 +127,11 @@ impl TranscriptionProviderFactory for OpenRouterSttFactory {
             .into());
         }
         let key = ctx.api_key_exposed();
-        let mut policy = RemotePolicy::default();
-        policy.allow_custom_credentialed_endpoint = ctx.allow_custom_endpoint();
-        policy.use_system_proxy = ctx.use_system_proxy();
+        let policy = RemotePolicy {
+            allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
+            use_system_proxy: ctx.use_system_proxy(),
+            ..RemotePolicy::default()
+        };
         let provider = OpenRouterProvider::with_policy(
             key,
             ctx.base_url().map(|s| s.to_string()),

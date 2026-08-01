@@ -46,6 +46,13 @@ flowchart LR
 
 STT and TTS share error taxonomy, cache root, cancel flags, and config loading — but **modules stay separate** (`providers/` vs `tts/`). The C ABI (**v2**) exposes local STT, rules cleanup, and **local TTS jobs** ([FFI guide](../library/ffi.md)); remote OpenRouter and microphone ownership remain out of the FFI surface.
 
+## Provider platform (JOE-1932 / ADR-002)
+
+Direction-specific STT/TTS traits remain separate. Shared **identity, registry,
+factories, and scoped construction** live in `aurum_core::provider_platform`
+([ADR-002](adr-002-provider-registry.md)). New named remote providers register
+factories rather than adding CLI/engine `match` arms for every surface.
+
 ## Design rules
 
 1. **CLI owns UX** — progress, first-run tips, OpenRouter SRT policy, TTS overwrite policy, batch manifests, support bundles  

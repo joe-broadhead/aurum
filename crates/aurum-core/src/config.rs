@@ -715,16 +715,15 @@ impl Config {
         if !self.openrouter_base_url.starts_with("https://")
             && !self.openrouter_base_url.starts_with("http://localhost")
             && !self.openrouter_base_url.contains("127.0.0.1")
+            && self.openrouter_base_url.starts_with("http://")
         {
-            if self.openrouter_base_url.starts_with("http://") {
-                return Err(UserError::InvalidConfig {
-                    reason: format!(
-                        "openrouter base_url must use https (got {})",
-                        self.openrouter_base_url
-                    ),
-                }
-                .into());
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "openrouter base_url must use https (got {})",
+                    self.openrouter_base_url
+                ),
             }
+            .into());
         }
 
         if self.local_only {

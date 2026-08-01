@@ -3,8 +3,9 @@
 //! These run on every PR (no nightly fuzz harness required). Corpus seeds are
 //! retained as inline fixtures so regressions stay in git.
 //!
-//! Full libFuzzer/cargo-fuzz campaigns remain follow-up; this suite is the
-//! continuous fail-closed smoke that blocks panics and non-finite JSON leaks.
+//! Full libFuzzer/cargo-fuzz campaigns live under `fuzz/` (JOE-1861). This suite
+//! is the stable PR smoke that blocks panics and non-finite JSON leaks without
+//! nightly.
 
 use aurum_core::config::Config;
 use aurum_core::output::OutputFormat;

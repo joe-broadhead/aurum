@@ -23,9 +23,14 @@ Enforced in CI:
 | RustSec + cargo-deny | `ci.yml` security |
 | Version sync | `scripts/version_check.sh` |
 | Tag ≡ VERSION + CHANGELOG | `release.yml` validate |
-| Platform binaries + SHA256SUMS + SBOM | `release.yml` build/publish |
+| Platform binaries + SHA256SUMS + formal SBOM | `release.yml` build/publish |
+| CycloneDX + SPDX SBOM required | `scripts/generate_sbom.sh` + `verify_release_assets.sh` (JOE-1859) |
+| PROVENANCE.json + verify | `scripts/generate_provenance.sh` (JOE-1860) |
+| Short cargo-fuzz smoke | `ci.yml` fuzz-smoke (JOE-1861) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
+
+See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md).
 
 ## Compatibility freeze (toward 1.0)
 
@@ -56,10 +61,14 @@ Documented provisional surfaces remain experimental until listed in
 
 ## Support matrix (tiers)
 
+Full detail: [platform-support.md](platform-support.md).
+
 | Tier | Platforms | Artifacts |
 |------|-----------|-----------|
 | **A — binary** | macOS arm64, Linux x86_64 gnu, Windows x86_64 MSVC | GitHub Release CLI |
 | **B — source** | macOS x86_64, other Linux | `cargo install aurum-stt --locked` |
 | **C — experimental** | other targets | best-effort `cargo build` |
+
+Clean-install smoke: `./scripts/clean_install_smoke.sh --from-source` (or `--from-release`).
 
 See [release.md](../development/release.md) for the operator flow.

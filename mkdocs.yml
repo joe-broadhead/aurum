@@ -126,6 +126,7 @@ nav:
       - Provenance: operations/provenance.md
       - Platform support: operations/platform-support.md
       - Fuzzing: operations/fuzzing.md
+      - Reproducibility: operations/reproducibility.md
       - Benchmarks: operations/benchmarks.md
       - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md

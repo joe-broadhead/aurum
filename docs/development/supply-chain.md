@@ -48,6 +48,16 @@ Exceptions require owner + rationale in `deny.toml` (never silent).
 
 ## Signing / attestations
 
-GitHub Release artifacts ship with SHA-256 checksums. Optional future work:
-Sigstore/cosign attestations and SLSA provenance. Until then, operators must
-verify checksums against the release page over HTTPS.
+GitHub Release artifacts ship with SHA-256 checksums **and** a required cosign
+keyless signature bundle (`SHA256SUMS.bundle`, JOE-1882). Verify with:
+
+```bash
+export AURUM_REQUIRE_COSIGN=1
+export AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER=https://token.actions.githubusercontent.com
+export AURUM_COSIGN_CERTIFICATE_IDENTITY="https://github.com/joe-broadhead/aurum/.github/workflows/release.yml@refs/tags/vX.Y.Z"
+./scripts/verify_release_assets.sh ./release-assets
+```
+
+Identity, rotation, and revocation: [provenance.md](../operations/provenance.md).
+Two-builder variance (not a substitute for signatures):
+[reproducibility.md](../operations/reproducibility.md).

@@ -60,8 +60,8 @@ doc = {
     "assets": assets,
     "notes": [
         "Checksums in SHA256SUMS are authoritative for byte equality.",
-        "Optional cosign keyless attestation may attach as SHA256SUMS.bundle.",
-        "See docs/operations/provenance.md for verification.",
+        "Release workflow attaches required cosign keyless bundle as SHA256SUMS.bundle (JOE-1882).",
+        "See docs/operations/provenance.md for verification (AURUM_REQUIRE_COSIGN=1).",
     ],
 }
 Path("PROVENANCE.json").write_text(json.dumps(doc, indent=2) + "\n")

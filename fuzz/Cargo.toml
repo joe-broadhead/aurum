@@ -14,8 +14,10 @@ toml = "0.8"
 tempfile = "3"
 tokio = { version = "1", features = ["rt", "macros"] }
 
-# STT-only path: avoid ORT/native TTS in fuzz workers (JOE-1861).
+# STT-only path: avoid ORT/native TTS in fuzz workers (JOE-1861 / JOE-1884).
 aurum-core = { path = "../crates/aurum-core", default-features = false }
+# Pure FFI validators only — no TTS/ORT (JOE-1884).
+aurum-ffi = { path = "../crates/aurum-ffi", default-features = false }
 
 [[bin]]
 name = "config_toml"
@@ -48,6 +50,20 @@ bench = false
 [[bin]]
 name = "output_format"
 path = "fuzz_targets/output_format.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "wav_parse"
+path = "fuzz_targets/wav_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ffi_validators"
+path = "fuzz_targets/ffi_validators.rs"
 test = false
 doc = false
 bench = false

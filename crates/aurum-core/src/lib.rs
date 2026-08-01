@@ -90,7 +90,7 @@ pub mod support;
 pub mod tts;
 pub mod window;
 
-pub use audio::{load_audio, AudioInput, WHISPER_SAMPLE_RATE};
+pub use audio::{load_audio, try_load_wav_file, AudioInput, WHISPER_SAMPLE_RATE};
 pub use batch::{
     build_items, discover_inputs, fingerprint_file, manifest_path, merge_for_resume, work_indices,
     BatchItem, BatchItemStatus, BatchManifest, BatchSummary, AUDIO_EXTENSIONS, BATCH_MANIFEST_NAME,

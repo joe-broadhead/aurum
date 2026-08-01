@@ -140,23 +140,48 @@ else
   echo "WARNING: no PROVENANCE.json or PROVENANCE.txt (allowed for local dry-runs only)" >&2
 fi
 
-# Optional: cosign bundle if present
-if [ -f SHA256SUMS.sig ] || [ -f SHA256SUMS.bundle ]; then
-  if command -v cosign >/dev/null 2>&1; then
-    echo "cosign present; verifying signature bundle when configured..."
-    # Identity-bound verify is environment-specific; document in docs/operations/provenance.md
-    if [ -n "${AURUM_COSIGN_CERTIFICATE_IDENTITY:-}" ] && [ -n "${AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER:-}" ]; then
-      cosign verify-blob \
-        --bundle SHA256SUMS.bundle \
-        --certificate-identity "${AURUM_COSIGN_CERTIFICATE_IDENTITY}" \
-        --certificate-oidc-issuer "${AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER}" \
-        SHA256SUMS
-      echo "cosign verify-blob OK"
-    else
-      echo "SHA256SUMS signature present but AURUM_COSIGN_* identity env not set; skip cryptographic verify."
+# --- Cosign keyless (JOE-1882) ---
+# Official releases set AURUM_REQUIRE_COSIGN=1 and publish SHA256SUMS.bundle.
+# Local dry-runs may omit the bundle unless AURUM_REQUIRE_COSIGN=1.
+require_cosign="${AURUM_REQUIRE_COSIGN:-0}"
+has_bundle=0
+if [ -f SHA256SUMS.bundle ] || [ -f SHA256SUMS.sig ]; then
+  has_bundle=1
+fi
+
+if [ "${require_cosign}" = "1" ] && [ "${has_bundle}" != "1" ]; then
+  echo "AURUM_REQUIRE_COSIGN=1 but SHA256SUMS.bundle is missing" >&2
+  exit 1
+fi
+
+if [ "${has_bundle}" = "1" ] || [ "${require_cosign}" = "1" ]; then
+  if ! command -v cosign >/dev/null 2>&1; then
+    if [ "${require_cosign}" = "1" ]; then
+      echo "cosign required (AURUM_REQUIRE_COSIGN=1) but not installed" >&2
+      exit 1
     fi
-  else
     echo "Signature bundle present but cosign not installed; skip cryptographic verify."
+  else
+    issuer="${AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER:-https://token.actions.githubusercontent.com}"
+    identity="${AURUM_COSIGN_CERTIFICATE_IDENTITY:-}"
+    identity_re="${AURUM_COSIGN_CERTIFICATE_IDENTITY_REGEXP:-}"
+    if [ -z "${identity}" ] && [ -z "${identity_re}" ]; then
+      if [ "${require_cosign}" = "1" ]; then
+        echo "AURUM_REQUIRE_COSIGN=1 requires AURUM_COSIGN_CERTIFICATE_IDENTITY or _REGEXP" >&2
+        exit 1
+      fi
+      echo "SHA256SUMS signature present but AURUM_COSIGN_* identity env not set; skip cryptographic verify."
+    else
+      echo "Verifying cosign keyless bundle..."
+      args=(verify-blob --bundle SHA256SUMS.bundle --certificate-oidc-issuer "${issuer}")
+      if [ -n "${identity_re}" ]; then
+        args+=(--certificate-identity-regexp "${identity_re}")
+      else
+        args+=(--certificate-identity "${identity}")
+      fi
+      cosign "${args[@]}" SHA256SUMS
+      echo "cosign verify-blob OK"
+    fi
   fi
 fi
 

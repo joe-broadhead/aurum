@@ -36,7 +36,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "aurum-core"
-version = "0.0.11"
+version = "0.0.13"
 dependencies = [
  "async-trait",
  "base64",
@@ -62,10 +62,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurum-ffi"
+version = "0.0.13"
+dependencies = [
+ "aurum-core",
+ "once_cell",
+ "tokio",
+]
+
+[[package]]
 name = "aurum-fuzz"
 version = "0.0.0"
 dependencies = [
  "aurum-core",
+ "aurum-ffi",
  "libfuzzer-sys",
  "serde_json",
  "tempfile",

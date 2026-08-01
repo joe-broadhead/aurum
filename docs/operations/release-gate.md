@@ -26,11 +26,15 @@ Enforced in CI:
 | Platform binaries + SHA256SUMS + formal SBOM | `release.yml` build/publish |
 | CycloneDX + SPDX SBOM required | `scripts/generate_sbom.sh` + `verify_release_assets.sh` (JOE-1859) |
 | PROVENANCE.json + verify | `scripts/generate_provenance.sh` (JOE-1860) |
-| Short cargo-fuzz smoke | `ci.yml` fuzz-smoke (JOE-1861) |
+| Cosign keyless `SHA256SUMS.bundle` (required) | `release.yml` publish + `verify_release_assets.sh` (JOE-1882) |
+| Short cargo-fuzz smoke | `ci.yml` fuzz-smoke (JOE-1861 / JOE-1884) |
+| Scheduled long fuzz campaigns | `fuzz-campaign.yml` (JOE-1884) |
+| Tier A clean-install matrix | `ci.yml` clean-install (JOE-1883) |
+| Two-builder variance report | `ci.yml` repro-smoke / `release.yml` repro-compare (JOE-1885) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
 
-See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md).
+See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md).
 
 ## Compatibility freeze (toward 1.0)
 

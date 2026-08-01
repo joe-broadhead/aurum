@@ -31,9 +31,9 @@ Use the smoke script on a fresh machine or empty cache:
 
 ```bash
 # From a release checkout or cloned tag:
-./scripts/clean_install_smoke.sh --from-release --version v0.0.11
+./scripts/clean_install_smoke.sh --from-release --version v0.0.13
 
-# Or source build (Tier B):
+# Or source build (Tier B / CI):
 ./scripts/clean_install_smoke.sh --from-source
 ```
 
@@ -44,7 +44,18 @@ The script checks:
 3. Release mode verifies `SHA256SUMS` when downloading
 4. Uninstall removes the binary only (cache/config preserved)
 
-Record results in the release checklist ([release-gate.md](release-gate.md)).
+### CI matrix (JOE-1883)
+
+`ci.yml` job **`clean-install`** runs `--from-source` on Tier A runners:
+
+| Runner | Maps to |
+|--------|---------|
+| `ubuntu-24.04` | linux-x86_64 |
+| `macos-14` | macos-arm64 |
+| `windows-latest` | windows-x86_64 |
+
+Failures are red CI and block release readiness ([release-gate.md](release-gate.md)).
+Scheduled release-download checks can use `--from-release` against a published tag.
 
 ## Unsupported environments
 

@@ -497,7 +497,8 @@ pub struct ConfigSourceMap {
 
 impl ConfigSourceMap {
     fn default_attribution(cfg: &Config) -> Self {
-        let key_src = env_or_file_or_default("OPENROUTER_API_KEY", cfg.openrouter_api_key.is_some());
+        let key_src =
+            env_or_file_or_default("OPENROUTER_API_KEY", cfg.openrouter_api_key.is_some());
         let base_src = if env_nonempty("OPENROUTER_BASE_URL") {
             ConfigValueSource::Environment
         } else {
@@ -853,12 +854,7 @@ impl Config {
                     api_key_source: sources.openrouter_api_key,
                 },
                 openai: ProviderSecretDiagnostic {
-                    api_key: self
-                        .providers
-                        .openai
-                        .api_key
-                        .as_ref()
-                        .map(|_| "***".into()),
+                    api_key: self.providers.openai.api_key.as_ref().map(|_| "***".into()),
                     base_url: self.providers.openai.base_url.clone(),
                     api_key_source: sources.openai_api_key,
                 },
@@ -1496,10 +1492,7 @@ mod tests {
                 // Safety: held under ENV_LOCK; single-threaded mutation of these keys.
                 std::env::remove_var(k);
             }
-            Self {
-                saved,
-                _lock: lock,
-            }
+            Self { saved, _lock: lock }
         }
 
         fn set(&self, key: &str, val: &str) {

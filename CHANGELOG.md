@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.18] - 2026-08-01
+
+v0.0.18 is the **external-review security remediation freeze**: High F-001/F-002
+fixed and retested, Medium F-003–F-006 code remediations, crates.io credential
+operator rotation complete, and a frozen post-fix candidate for JOE-1920 human
+sign-off.
+
+### Security
+
+- **F-001 (JOE-1914):** type-safe credential non-disclosure; closed provider-code
+  allowlist; canary matrix across doctor/support/errors (PRs #52, #58).
+- **F-002 (JOE-1915):** immutable tag-only crates.io publish; fail-closed
+  `--no-verify` policy checker in CI/release_gate/publish (PRs #53, #58).
+- **F-003 (JOE-1916):** doctor exclusive probe + support-bundle OutputTransaction
+  (PR #54).
+- **F-004 (JOE-1917):** ResourceGovernor construction validation + checked CPU
+  accounting (PR #55).
+- **F-005 (JOE-1918):** artifact/BYOM TOCTOU and durable download path (PR #56).
+- **F-006 (JOE-1919):** full-SHA provenance identity in generate/verify (PR #57).
+- **JOE-1715:** crates.io credential rotated; env-only `CARGO_REGISTRY_TOKEN`;
+  `crates-token-check` workflow for safe positive auth (PRs #60, #61).
+
+### Documentation
+
+- Formal Medium residual disposition table for F-003–F-006
+  (`docs/operations/external-review-disposition-2026-08-01.md`).
+
 ## [0.0.17] - 2026-08-01
 
 v0.0.17 is **Group L — RC exit + external review pack**: exit report generator,

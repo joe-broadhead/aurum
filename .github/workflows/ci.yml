@@ -314,6 +314,45 @@ jobs:
           chmod +x scripts/clean_install_smoke.sh scripts/install.sh
           ./scripts/clean_install_smoke.sh --from-source
 
+  # RC exit pack: downstream consumers + full exit report (JOE-1903 / JOE-1904).
+  rc-exit-pack:
+    name: rc exit pack
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-rc-exit
+      - name: Downstream + RC exit report
+        run: |
+          set -euo pipefail
+          chmod +x scripts/rc_downstream_check.sh scripts/generate_rc_exit_report.sh \
+            scripts/rc_freeze_check.sh scripts/generate_sbom.sh \
+            scripts/rehearse_rc_rollback.sh scripts/rehearse_model_revocation.sh \
+            scripts/rehearse_disclosure_tabletop.sh scripts/version_check.sh
+          ./scripts/rc_downstream_check.sh
+          ./scripts/generate_rc_exit_report.sh dist/rc-exit
+      - name: Upload RC exit pack
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: rc-exit-pack
+          path: |
+            dist/rc-exit/
+            dist/sbom/native-components.md
+            dist/security-rehearsal/
+          if-no-files-found: error
+          retention-days: 30
+
   # RC freeze inventory automated checks (JOE-1896).
   rc-freeze-check:
     name: rc freeze check

@@ -134,6 +134,8 @@ nav:
       - RC dogfood: operations/rc-dogfood.md
       - RC rollback: operations/rc-rollback.md
       - Support policy: operations/support-policy.md
+      - RC exit: operations/rc-exit.md
+      - External review brief: operations/external-review-brief.md
       - Benchmarks: operations/benchmarks.md
       - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md

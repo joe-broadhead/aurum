@@ -71,5 +71,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.16** — Group H 1.0 assurance slice: cosign, long fuzz, clean-install CI, repro.  
+**v0.0.17** — Group H 1.0 assurance slice: cosign, long fuzz, clean-install CI, repro.  
 APIs may change before `0.1.0`; pin a release tag in dependents.

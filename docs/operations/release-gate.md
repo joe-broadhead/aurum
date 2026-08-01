@@ -42,10 +42,14 @@ Enforced in CI:
 | RC dogfood automated subset | `ci.yml` rc-dogfood-smoke / `scripts/rc_dogfood_checklist.sh` (JOE-1897) |
 | RC rollback rehearsal | `scripts/rehearse_rc_rollback.sh` (JOE-1895) |
 | Support / security-fix policy | [support-policy.md](support-policy.md) (JOE-1898) |
+| Downstream consumer gate | `ci.yml` rc-exit-pack / `scripts/rc_downstream_check.sh` (JOE-1903) |
+| Native inventory freeze | `native-components.md` via `generate_sbom.sh` (JOE-1902) |
+| RC exit report | `scripts/generate_rc_exit_report.sh` (JOE-1904) |
+| External review brief | [external-review-brief.md](external-review-brief.md) (JOE-1901) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
 
-See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md), [rc-freeze.md](rc-freeze.md), [rc-dogfood.md](rc-dogfood.md), [rc-rollback.md](rc-rollback.md).
+See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md), [rc-freeze.md](rc-freeze.md), [rc-dogfood.md](rc-dogfood.md), [rc-rollback.md](rc-rollback.md), [rc-exit.md](rc-exit.md).
 
 ## Compatibility freeze (toward 1.0)
 

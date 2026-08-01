@@ -26,7 +26,11 @@ Outputs:
 | `cargo-metadata.json` | Full Cargo graph |
 | `aurum-sbom-inventory.json` | Versioned package inventory |
 | `aurum-sbom-inventory.md` | Human table |
-| `native-components.md` | whisper/ort/ffmpeg notes |
+| `native-components.md` | whisper-rs/sys, ort, ffmpeg, toolchain freeze (JOE-1902) |
+| `aurum.cdx.json` / `aurum.spdx.json` | Formal SBOM |
+
+Native inventory versions are taken from the locked Cargo graph at generate time
+and ship on every release for RC/review evidence.
 
 Release assets also include:
 

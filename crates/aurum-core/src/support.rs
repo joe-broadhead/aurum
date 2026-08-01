@@ -9,7 +9,6 @@ use crate::error::{Result, UserError};
 use crate::observability::{process_metrics, MetricsSnapshot};
 use serde::{Deserialize, Serialize};
 use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -46,20 +45,12 @@ impl SupportBundle {
     }
 
     pub fn write_to_path(&self, path: &Path) -> Result<()> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| UserError::Other {
-                message: format!("create support bundle dir: {e}"),
-            })?;
-        }
+        // JOE-1916 / F-003: use the shared secure output transaction (exclusive
+        // temp, no-follow symlink policy, durable commit) instead of predictable
+        // `*.json.tmp` + fs::write/rename.
         let json = self.to_json_pretty()?;
-        let tmp = path.with_extension("json.tmp");
-        fs::write(&tmp, json.as_bytes()).map_err(|e| UserError::Other {
-            message: format!("write support bundle temp: {e}"),
-        })?;
-        fs::rename(&tmp, path).map_err(|e| UserError::Other {
-            message: format!("publish support bundle: {e}"),
-        })?;
-        Ok(())
+        crate::output::OutputTransaction::new(path, crate::output::CommitMode::NoClobber)
+            .commit_bytes(json.as_bytes())
     }
 }
 
@@ -90,9 +81,24 @@ pub fn build_support_bundle(cfg: &Config, user_notes: Option<String>) -> Support
         diag.openrouter_api_key = Some("***".into());
     }
 
+    // User notes are untrusted/user-supplied: path-tokenise and scrub token-shaped
+    // material. They are NOT covered by the same privacy guarantee as machine fields.
     let mut user_notes = user_notes;
     if let Some(n) = user_notes.as_mut() {
-        *n = redact_path_str(n);
+        *n = crate::remote::redact_secret(&redact_path_str(n));
+    }
+
+    let mut redaction_notes = vec![
+        "API keys redacted".into(),
+        "source audio and transcripts never included".into(),
+        "absolute home/config/cache/pack paths tokenised where known".into(),
+        "no network requests performed while building this bundle".into(),
+    ];
+    if user_notes.is_some() {
+        redaction_notes.push(
+            "user_notes are untrusted free-form input: path/token redaction applied, but content is not privacy-guaranteed"
+                .into(),
+        );
     }
 
     SupportBundle {
@@ -108,12 +114,7 @@ pub fn build_support_bundle(cfg: &Config, user_notes: Option<String>) -> Support
         doctor,
         metrics: process_metrics().snapshot(),
         config: diag,
-        redaction_notes: vec![
-            "API keys redacted".into(),
-            "source audio and transcripts never included".into(),
-            "absolute home/cache paths tokenised".into(),
-            "no network requests performed while building this bundle".into(),
-        ],
+        redaction_notes,
         user_notes,
     }
 }
@@ -129,14 +130,32 @@ pub fn default_bundle_path() -> PathBuf {
 
 fn redact_path_str(s: &str) -> String {
     let mut out = s.to_string();
+    // Longer roots first when both apply.
+    let mut roots: Vec<(String, &str)> = Vec::new();
     if let Ok(home) = env::var("HOME") {
         if !home.is_empty() {
-            out = out.replace(&home, "$HOME");
+            roots.push((home, "$HOME"));
         }
     }
     if let Ok(userprofile) = env::var("USERPROFILE") {
         if !userprofile.is_empty() {
-            out = out.replace(&userprofile, "$HOME");
+            roots.push((userprofile, "$HOME"));
+        }
+    }
+    if let Ok(xdg_config) = env::var("XDG_CONFIG_HOME") {
+        if !xdg_config.is_empty() {
+            roots.push((xdg_config, "$XDG_CONFIG_HOME"));
+        }
+    }
+    if let Ok(xdg_cache) = env::var("XDG_CACHE_HOME") {
+        if !xdg_cache.is_empty() {
+            roots.push((xdg_cache, "$XDG_CACHE_HOME"));
+        }
+    }
+    roots.sort_by_key(|(p, _)| std::cmp::Reverse(p.len()));
+    for (root, token) in roots {
+        if out.contains(&root) {
+            out = out.replace(&root, token);
         }
     }
     out
@@ -146,6 +165,7 @@ fn redact_path_str(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::secret::SecretString;
+    use std::fs;
     use tempfile::tempdir;
 
     #[test]
@@ -163,6 +183,39 @@ mod tests {
             .iter()
             .any(|n| n.contains("no network")));
         assert!(bundle.doctor.checks.iter().any(|c| c.id == "offline"));
+    }
+
+    #[test]
+    fn write_to_path_uses_secure_commit_and_noclobber() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("bundle.json");
+        let cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        let bundle = build_support_bundle(&cfg, None);
+        bundle.write_to_path(&path).unwrap();
+        assert!(path.is_file());
+        // NoClobber: second write to same path must fail.
+        let err = bundle.write_to_path(&path).unwrap_err();
+        let msg = err.to_string().to_ascii_lowercase();
+        assert!(
+            msg.contains("exists") || msg.contains("clobber") || msg.contains("already"),
+            "unexpected err: {msg}"
+        );
+        // No predictable leftover .json.tmp
+        assert!(!dir.path().join("bundle.json.tmp").exists());
+    }
+
+    #[test]
+    fn user_notes_token_shaped_material_redacted() {
+        let dir = tempdir().unwrap();
+        let cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        let notes = "repro with Bearer sk-or-v1-canarynotesecretvalue99";
+        let bundle = build_support_bundle(&cfg, Some(notes.into()));
+        let json = bundle.to_json_pretty().unwrap();
+        assert!(!json.contains("canarynotesecretvalue99"));
+        assert!(bundle
+            .redaction_notes
+            .iter()
+            .any(|n| n.contains("user_notes")));
     }
 
     #[test]

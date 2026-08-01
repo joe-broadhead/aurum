@@ -1,8 +1,10 @@
-//! Provider/model capability contracts and preflight routing (JOE-1613).
+//! Provider/model capability contracts and preflight routing (JOE-1613 / JOE-1829).
 //!
 //! Capabilities are declared for built-ins and consulted before expensive work
-//! (decode, download, network). Routing uses this data plus explicit overrides
-//! rather than silent name guessing alone.
+//! (decode, download, network). OpenRouter `auto` routing is **capability-
+//! authoritative**: only models in the reviewed static registry are auto-routed;
+//! unknown models fail closed and require an explicit `chat` or `transcriptions`
+//! mode — never silent model-name heuristics.
 
 use crate::error::{Result, UserError};
 use crate::providers::OpenRouterSttMode;
@@ -154,25 +156,146 @@ pub enum OpenRouterSttPath {
     Chat,
 }
 
-/// Route OpenRouter STT from explicit mode + capability-oriented model metadata.
+/// Reviewed static capability record for an OpenRouter STT model id (JOE-1829).
 ///
-/// `Auto` uses documented model-id heuristics; unknown models fail closed to
-/// **Chat** with an explicit note rather than claiming dedicated ASR.
-pub fn resolve_openrouter_stt_path(mode: OpenRouterSttMode, model: &str) -> OpenRouterSttPath {
+/// `auto` routing consults this table only — never model-name substring guessing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OpenRouterSttRecord {
+    /// Canonical OpenRouter model slug (lowercase).
+    pub model_id: &'static str,
+    pub path: OpenRouterSttPath,
+    pub backend: SttBackendClass,
+    pub timestamps_reliable: bool,
+}
+
+/// Authoritative registry of OpenRouter models Aurum will auto-route.
+///
+/// Explicit `chat` / `transcriptions` modes still accept any model id; `auto`
+/// requires a match here so unfamiliar names fail closed.
+pub static OPENROUTER_STT_REGISTRY: &[OpenRouterSttRecord] = &[
+    // Dedicated /audio/transcriptions ASR
+    OpenRouterSttRecord {
+        model_id: "openai/whisper-1",
+        path: OpenRouterSttPath::Transcriptions,
+        backend: SttBackendClass::Asr,
+        timestamps_reliable: true,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/whisper-large-v3",
+        path: OpenRouterSttPath::Transcriptions,
+        backend: SttBackendClass::Asr,
+        timestamps_reliable: true,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/whisper-large-v3-turbo",
+        path: OpenRouterSttPath::Transcriptions,
+        backend: SttBackendClass::Asr,
+        timestamps_reliable: true,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/gpt-4o-transcribe",
+        path: OpenRouterSttPath::Transcriptions,
+        backend: SttBackendClass::Asr,
+        timestamps_reliable: true,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/gpt-4o-mini-transcribe",
+        path: OpenRouterSttPath::Transcriptions,
+        backend: SttBackendClass::Asr,
+        timestamps_reliable: true,
+    },
+    // Multimodal chat (LLM-assisted; timestamps unreliable)
+    OpenRouterSttRecord {
+        model_id: "google/gemini-2.5-flash",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "google/gemini-2.5-flash-lite",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "google/gemini-2.5-pro",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "google/gemini-2.0-flash",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/gpt-4o",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/gpt-4o-mini",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/gpt-4o-audio-preview",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "openai/gpt-audio-mini",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+    OpenRouterSttRecord {
+        model_id: "mistralai/voxtral-small-24b-2507",
+        path: OpenRouterSttPath::Chat,
+        backend: SttBackendClass::LlmAssisted,
+        timestamps_reliable: false,
+    },
+];
+
+/// Look up a reviewed OpenRouter STT capability record (exact id, case-insensitive).
+pub fn lookup_openrouter_stt(model: &str) -> Option<&'static OpenRouterSttRecord> {
+    let m = model.trim().to_ascii_lowercase();
+    if m.is_empty() {
+        return None;
+    }
+    OPENROUTER_STT_REGISTRY
+        .iter()
+        .find(|r| r.model_id == m.as_str())
+}
+
+/// Route OpenRouter STT from explicit mode + **reviewed** capability registry.
+///
+/// * `Chat` / `Transcriptions` — honour the override for any model id.
+/// * `Auto` — only models present in [`OPENROUTER_STT_REGISTRY`]; unknown models
+///   fail closed with [`UnsupportedCapability`] (no silent name guessing).
+pub fn resolve_openrouter_stt_path(
+    mode: OpenRouterSttMode,
+    model: &str,
+) -> Result<OpenRouterSttPath> {
     match mode {
-        OpenRouterSttMode::Chat => OpenRouterSttPath::Chat,
-        OpenRouterSttMode::Transcriptions => OpenRouterSttPath::Transcriptions,
-        OpenRouterSttMode::Auto => {
-            let m = model.to_ascii_lowercase();
-            if m.contains("whisper")
-                || m.contains("gpt-4o-transcribe")
-                || m.contains("gpt-4o-mini-transcribe")
-            {
-                OpenRouterSttPath::Transcriptions
-            } else {
-                OpenRouterSttPath::Chat
+        OpenRouterSttMode::Chat => Ok(OpenRouterSttPath::Chat),
+        OpenRouterSttMode::Transcriptions => Ok(OpenRouterSttPath::Transcriptions),
+        OpenRouterSttMode::Auto => match lookup_openrouter_stt(model) {
+            Some(rec) => Ok(rec.path),
+            None => Err(UnsupportedCapability {
+                provider: "openrouter".into(),
+                model: model.trim().into(),
+                reason: "auto routing has no reviewed capability record for this model".into(),
+                hint: "set openrouter_stt_mode=chat or transcriptions explicitly, or use a \
+                       registered model id (see aurum capabilities / OPENROUTER_STT_REGISTRY)"
+                    .into(),
             }
-        }
+            .into()),
+        },
     }
 }
 
@@ -258,8 +381,22 @@ pub fn preflight_stt(
                 }
                 .into());
             }
-            let path = resolve_openrouter_stt_path(stt_mode, model);
-            let caps = openrouter_stt_capabilities(model, path);
+            let path = resolve_openrouter_stt_path(stt_mode, model)?;
+            let mut caps = openrouter_stt_capabilities(model, path);
+            // Prefer registry truth for backend/timestamps when the model is known.
+            if let Some(rec) = lookup_openrouter_stt(model) {
+                caps.stt_backend = Some(rec.backend);
+                caps.timestamps_reliable = rec.timestamps_reliable;
+                if !caps.notes.iter().any(|n| n.contains("registry")) {
+                    caps.notes.push(format!(
+                        "Routed via reviewed capability registry → {}.",
+                        match rec.path {
+                            OpenRouterSttPath::Transcriptions => "transcriptions",
+                            OpenRouterSttPath::Chat => "chat",
+                        }
+                    ));
+                }
+            }
             if want_srt && !caps.timestamps_reliable {
                 return Err(UnsupportedCapability {
                     provider: provider.into(),
@@ -362,9 +499,81 @@ mod tests {
     #[test]
     fn whisper_auto_routes_transcriptions() {
         assert_eq!(
-            resolve_openrouter_stt_path(OpenRouterSttMode::Auto, "openai/whisper-large-v3"),
+            resolve_openrouter_stt_path(OpenRouterSttMode::Auto, "openai/whisper-large-v3")
+                .unwrap(),
             OpenRouterSttPath::Transcriptions
         );
+    }
+
+    #[test]
+    fn gemini_auto_routes_chat() {
+        assert_eq!(
+            resolve_openrouter_stt_path(OpenRouterSttMode::Auto, "google/gemini-2.5-flash")
+                .unwrap(),
+            OpenRouterSttPath::Chat
+        );
+    }
+
+    #[test]
+    fn auto_unknown_model_fails_closed() {
+        let err =
+            resolve_openrouter_stt_path(OpenRouterSttMode::Auto, "acme/totally-unknown-asr-v99")
+                .unwrap_err();
+        let s = err.to_string();
+        assert!(
+            s.contains("reviewed capability") || s.contains("unsupported"),
+            "unexpected error: {s}"
+        );
+        // Must not silently claim transcriptions or chat via name guessing.
+        assert!(lookup_openrouter_stt("acme/totally-unknown-asr-v99").is_none());
+    }
+
+    #[test]
+    fn auto_does_not_guess_whisper_substring() {
+        // A model that merely contains "whisper" but is not registered must fail.
+        let err = resolve_openrouter_stt_path(
+            OpenRouterSttMode::Auto,
+            "vendor/whisper-clone-experimental",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("reviewed") || err.to_string().contains("unsupported"));
+    }
+
+    #[test]
+    fn explicit_mode_accepts_unregistered() {
+        assert_eq!(
+            resolve_openrouter_stt_path(OpenRouterSttMode::Transcriptions, "vendor/custom-asr")
+                .unwrap(),
+            OpenRouterSttPath::Transcriptions
+        );
+        assert_eq!(
+            resolve_openrouter_stt_path(OpenRouterSttMode::Chat, "vendor/custom-llm").unwrap(),
+            OpenRouterSttPath::Chat
+        );
+    }
+
+    #[test]
+    fn registry_records_are_unique_lowercase() {
+        let mut seen = std::collections::HashSet::new();
+        for rec in OPENROUTER_STT_REGISTRY {
+            assert_eq!(rec.model_id, rec.model_id.to_ascii_lowercase());
+            assert!(
+                seen.insert(rec.model_id),
+                "duplicate registry model_id: {}",
+                rec.model_id
+            );
+            assert_eq!(
+                rec.timestamps_reliable,
+                matches!(rec.path, OpenRouterSttPath::Transcriptions)
+            );
+            assert_eq!(
+                rec.backend,
+                match rec.path {
+                    OpenRouterSttPath::Transcriptions => SttBackendClass::Asr,
+                    OpenRouterSttPath::Chat => SttBackendClass::LlmAssisted,
+                }
+            );
+        }
     }
 
     #[test]

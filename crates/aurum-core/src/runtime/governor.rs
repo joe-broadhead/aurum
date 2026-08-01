@@ -1,10 +1,18 @@
-//! Process/engine resource governor and overload policy (JOE-1596).
+//! Process/engine resource governor and overload policy (JOE-1596 / JOE-1831).
+//!
+//! Permit waiters use a [`Condvar`] so release wakes waiters promptly instead of
+//! busy-spinning on a short sleep. Cancel/deadline are re-checked on each wake
+//! (and at a short max wait slice so cancel without a release still progresses).
 
 use crate::error::{ProviderError, Result};
 use crate::runtime::op_context::OpContext;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
+
+/// Max time a waiter sleeps before re-checking cancel/deadline when no release
+/// has notified (cancel flags do not currently signal the condvar).
+const WAIT_SLICE: Duration = Duration::from_millis(50);
 
 /// Kind of concurrent work limited by the governor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -162,6 +170,10 @@ pub struct ResourceGovernor {
     memory_reserved: AtomicU64,
     /// Serialize multi-permit acquisition to avoid deadlock across kinds.
     acquire_lock: Mutex<()>,
+    /// Mutex paired with [`Self::waiters`] for permit queue parking (JOE-1831).
+    wait_mutex: Mutex<()>,
+    /// Signalled on every permit/memory/CPU release so waiters stop spinning.
+    waiters: Condvar,
 }
 
 impl Default for ResourceGovernor {
@@ -181,8 +193,44 @@ impl ResourceGovernor {
             cpu_threads_in_use: AtomicUsize::new(0),
             memory_reserved: AtomicU64::new(0),
             acquire_lock: Mutex::new(()),
+            wait_mutex: Mutex::new(()),
+            waiters: Condvar::new(),
             config,
         }
+    }
+
+    /// Wake all permit waiters (called after any resource release).
+    fn notify_waiters(&self) {
+        self.waiters.notify_all();
+    }
+
+    /// Park until a release, cancel, or the wait budget expires (JOE-1831).
+    fn park_wait(&self, ctx: Option<&OpContext>, deadline: Instant) -> Result<()> {
+        if self.config.fail_fast {
+            return Ok(());
+        }
+        let now = Instant::now();
+        if now >= deadline {
+            return Ok(());
+        }
+        let rem = deadline.saturating_duration_since(now).min(WAIT_SLICE);
+        // Prefer OpContext remaining so an absolute deadline is honoured promptly.
+        let slice = ctx
+            .and_then(|c| c.remaining())
+            .map(|r| r.min(rem))
+            .unwrap_or(rem);
+        if slice.is_zero() {
+            return Ok(());
+        }
+        let guard = self.wait_mutex.lock().unwrap_or_else(|e| e.into_inner());
+        let (_g, _timeout) = self
+            .waiters
+            .wait_timeout(guard, slice)
+            .unwrap_or_else(|e| e.into_inner());
+        if let Some(c) = ctx {
+            c.check()?;
+        }
+        Ok(())
     }
 
     pub fn config(&self) -> &GovernorConfig {
@@ -240,7 +288,7 @@ impl ResourceGovernor {
                 }
                 .into());
             }
-            std::thread::sleep(Duration::from_millis(2));
+            self.park_wait(ctx, deadline)?;
         }
     }
 
@@ -307,7 +355,7 @@ impl ResourceGovernor {
                 }
                 .into());
             }
-            std::thread::sleep(Duration::from_millis(2));
+            self.park_wait(ctx, deadline)?;
         }
     }
 
@@ -356,7 +404,7 @@ impl ResourceGovernor {
                 }
                 .into());
             }
-            std::thread::sleep(Duration::from_millis(2));
+            self.park_wait(ctx, deadline)?;
         }
     }
 
@@ -389,6 +437,7 @@ impl ResourceGovernor {
     fn release_memory(&self, bytes: u64) {
         if bytes > 0 {
             self.memory_reserved.fetch_sub(bytes, Ordering::SeqCst);
+            self.notify_waiters();
         }
     }
 
@@ -411,6 +460,7 @@ impl ResourceGovernor {
     fn release_cpu(&self, n: usize) {
         if n > 0 {
             self.cpu_threads_in_use.fetch_sub(n, Ordering::SeqCst);
+            self.notify_waiters();
         }
     }
 
@@ -502,6 +552,10 @@ impl ResourcePermit {
             self.memory = 0;
         }
         self.governor.pool(self.kind).release();
+        // Always wake waiters once per full permit release (CPU/memory already
+        // notified when non-zero; a second notify_all is cheap and covers the
+        // pure-permit case where only the kind counter changed).
+        self.governor.notify_waiters();
     }
 }
 

@@ -98,13 +98,13 @@ pub use batch::{
 };
 pub use cancel::CancelFlag;
 pub use capabilities::{
-    preflight_cleanup, preflight_stt, preflight_tts, ProviderCapabilities,
-    CAPABILITY_SCHEMA_VERSION,
+    lookup_openrouter_stt, preflight_cleanup, preflight_stt, preflight_tts, OpenRouterSttPath,
+    OpenRouterSttRecord, ProviderCapabilities, CAPABILITY_SCHEMA_VERSION, OPENROUTER_STT_REGISTRY,
 };
 pub use cleanup::{
-    apply_cleanup, apply_cleanup_with_segments, cleanup_text, CleanupProviderKind, CleanupReport,
-    CleanupResult, CleanupStyle, OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy,
-    TextCleanup,
+    apply_cleanup, apply_cleanup_with_segments, apply_cleanup_with_segments_op, cleanup_text,
+    CleanupProviderKind, CleanupReport, CleanupResult, CleanupStyle, OpenRouterCleanup,
+    RulesCleanup, SegmentCleanupPolicy, TextCleanup,
 };
 pub use config::{Config, EffectiveConfigDiagnostic, RawConfig, ValidatedConfig};
 pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_SCHEMA_VERSION};

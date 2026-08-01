@@ -757,9 +757,13 @@ impl SynthesisProvider for LocalTtsProvider {
             } else {
                 opts.timeout_ms
             });
+            // Same soft-deadline contract as built-in path (JOE-1830): outer
+            // timeout returns DeadlineExceeded while the blocking job retains
+            // the permit/pin until native work returns.
             let op = OpContext::from_optional_cancel(opts.cancel.clone())
                 .with_deadline_from_now(timeout);
             op.check()?;
+            op.emit("tts", "pack_synth");
             let text_owned = prepared.text.clone();
             let text_chars = prepared.text_chars;
             let opts_owned = opts.clone();
@@ -784,12 +788,25 @@ impl SynthesisProvider for LocalTtsProvider {
                     trust,
                     "local_pack",
                 )
-            })
-            .await
-            .map_err(|e| {
-                crate::error::TranscriptionError::internal(format!("TTS pack synth join: {e}"))
-            })??;
-            return Ok(join);
+            });
+
+            return tokio::select! {
+                join_res = join => {
+                    match join_res {
+                        Ok(result) => result,
+                        Err(e) => Err(crate::error::TranscriptionError::internal(format!(
+                            "TTS pack synth join: {e}"
+                        ))),
+                    }
+                }
+                _ = tokio::time::sleep(timeout) => {
+                    // Soft deadline: cooperative cancel so chunk loops exit when
+                    // possible. JoinHandle drop does not abort spawn_blocking;
+                    // the worker keeps the permit until the closure returns.
+                    op.cancel.cancel();
+                    Err(ProviderError::DeadlineExceeded.into())
+                }
+            };
         }
 
         let (model_info, voice_info) = resolve_voice_for_model(&opts.model, &opts.voice)?;
@@ -810,6 +827,7 @@ impl SynthesisProvider for LocalTtsProvider {
         let op =
             OpContext::from_optional_cancel(opts.cancel.clone()).with_deadline_from_now(timeout);
         op.check()?;
+        op.emit("tts", "builtin_synth");
 
         let text_owned = prepared.text.clone();
         let text_chars = prepared.text_chars;
@@ -822,7 +840,8 @@ impl SynthesisProvider for LocalTtsProvider {
         let gov = Arc::clone(&self.governor);
 
         // Hold the TTS + blocking permit and registry pin for the entire native
-        // job lifetime — even if the caller soft-times out (JOE-1600 / JOE-1646).
+        // job lifetime — even if the caller soft-times out (JOE-1600 / JOE-1646 /
+        // JOE-1830 uniform soft-deadline contract).
         let join = tokio::task::spawn_blocking(move || {
             let _lease = lease;
             let _permit = gov.acquire_tts(0, Some(&op_for_worker))?;
@@ -842,9 +861,9 @@ impl SynthesisProvider for LocalTtsProvider {
             )
         });
 
-        // Pin the join handle so a soft deadline can detach a reaper without
-        // abandoning the permit while native work still runs (JOE-1600).
-        let join = join;
+        // Soft deadline: caller timeout is distinguished from still-running
+        // native work. JoinHandle drop does not abort spawn_blocking; the
+        // worker retains the permit until return (JOE-1600 / JOE-1830).
         tokio::select! {
             join_res = join => {
                 match join_res {
@@ -855,15 +874,7 @@ impl SynthesisProvider for LocalTtsProvider {
                 }
             }
             _ = tokio::time::sleep(timeout) => {
-                // Soft deadline: cooperative cancel so chunk loops exit when
-                // possible. The blocking task retains the ResourceGovernor permit
-                // until it returns; we cannot safely abort in-process ONNX.
                 op.cancel.cancel();
-                // Note: `join` was moved into select; when this arm wins, the
-                // JoinHandle is dropped. Tokio does not cancel spawn_blocking
-                // work on JoinHandle drop — the worker continues and drops the
-                // permit when the closure returns. That keeps concurrency honest
-                // (permits stay occupied) without a reaper task.
                 Err(ProviderError::DeadlineExceeded.into())
             }
         }

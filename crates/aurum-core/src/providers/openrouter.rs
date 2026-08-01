@@ -1,12 +1,13 @@
 //! OpenRouter remote transcription provider.
 //!
-//! Supports two request paths (JOE-1586):
+//! Supports two request paths (JOE-1586 / JOE-1829):
 //! - **Dedicated ASR** — multipart `POST /audio/transcriptions` for models that
 //!   expose a real transcription endpoint (e.g. OpenAI Whisper-class models).
 //! - **LLM-assisted** — multimodal `POST /chat/completions` with `input_audio`
 //!   (Gemini etc.). Timestamps are unreliable.
 //!
-//! Path selection: config/CLI mode, then model-name heuristics in `auto`.
+//! Path selection: explicit config/CLI mode, or `auto` against the reviewed
+//! capability registry (unknown models fail closed — no name guessing).
 
 use super::{
     BackendKind, Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
@@ -26,10 +27,10 @@ use std::path::PathBuf;
 
 const PROVIDER_NAME: &str = "openrouter";
 
-/// How to route OpenRouter STT requests (JOE-1586).
+/// How to route OpenRouter STT requests (JOE-1586 / JOE-1829).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OpenRouterSttMode {
-    /// Heuristic + capability: dedicated models → transcriptions, else chat.
+    /// Capability-registry routing only; unknown models fail closed.
     #[default]
     Auto,
     /// Always multimodal chat completions (`LlmAssisted`).
@@ -126,12 +127,14 @@ impl OpenRouterProvider {
         self
     }
 
-    /// Resolve which path to use for `model` (capability-oriented routing, JOE-1613).
-    pub fn resolve_path(&self, model: &str) -> SttPath {
+    /// Resolve which path to use for `model` (capability-authoritative, JOE-1829).
+    ///
+    /// Returns [`UserError::UnsupportedCapability`] when `auto` has no registry entry.
+    pub fn resolve_path(&self, model: &str) -> Result<SttPath> {
         use crate::capabilities::{resolve_openrouter_stt_path, OpenRouterSttPath};
-        match resolve_openrouter_stt_path(self.stt_mode, model) {
-            OpenRouterSttPath::Chat => SttPath::Chat,
-            OpenRouterSttPath::Transcriptions => SttPath::Transcriptions,
+        match resolve_openrouter_stt_path(self.stt_mode, model)? {
+            OpenRouterSttPath::Chat => Ok(SttPath::Chat),
+            OpenRouterSttPath::Transcriptions => Ok(SttPath::Transcriptions),
         }
     }
 }
@@ -143,17 +146,14 @@ pub enum SttPath {
     Transcriptions,
 }
 
-/// Heuristic for dedicated ASR model ids (not sole source of truth; config can override).
+/// Whether the model is a **reviewed** dedicated-ASR registry entry (JOE-1829).
+///
+/// Prefer [`crate::capabilities::lookup_openrouter_stt`] for full records.
+/// Explicit `transcriptions` mode may still target unregistered models.
 pub fn looks_like_dedicated_asr(model: &str) -> bool {
-    let m = model.to_ascii_lowercase();
-    // OpenAI Whisper / GPT-4o-transcribe style ids and common OpenRouter slugs.
-    m.contains("whisper")
-        || m.contains("transcribe")
-        || m.contains("/audio-")
-        || m.ends_with("-asr")
-        || m.contains("speech-to-text")
-        || m.contains("nova-2")
-        || m.contains("nova-3")
+    use crate::capabilities::{lookup_openrouter_stt, OpenRouterSttPath};
+    lookup_openrouter_stt(model)
+        .is_some_and(|r| matches!(r.path, OpenRouterSttPath::Transcriptions))
 }
 
 #[async_trait]
@@ -174,12 +174,22 @@ impl TranscriptionProvider for OpenRouterProvider {
     ) -> Result<TranscriptionResult> {
         let op = crate::runtime::OpContext::from_optional_cancel(options.cancel.clone());
         op.check()?;
+        op.emit("stt", "admit");
         let gov = crate::runtime::ResourceGovernor::process_global();
         let _permit = gov.acquire(crate::runtime::PermitKind::Remote, Some(&op))?;
-        let path = self.resolve_path(&options.model);
+        op.check()?;
+        op.emit("stt", "route");
+        let path = self.resolve_path(&options.model)?;
+        op.emit(
+            "stt",
+            match path {
+                SttPath::Transcriptions => "path=transcriptions",
+                SttPath::Chat => "path=chat",
+            },
+        );
         match path {
-            SttPath::Transcriptions => self.transcribe_dedicated(input, options).await,
-            SttPath::Chat => self.transcribe_chat(input, options).await,
+            SttPath::Transcriptions => self.transcribe_dedicated(input, options, &op).await,
+            SttPath::Chat => self.transcribe_chat(input, options, &op).await,
         }
     }
 }
@@ -189,23 +199,23 @@ impl OpenRouterProvider {
         &self,
         input: &AudioInput,
         options: &TranscriptionOptions,
+        op: &crate::runtime::OpContext,
     ) -> Result<TranscriptionResult> {
         let pcm_bytes = input
             .samples
             .len()
             .saturating_mul(std::mem::size_of::<f32>());
+        op.emit("stt", "encode");
+        op.check()?;
         // Propagate cancel + absolute encode deadline (JOE-1648 third-pass).
         let (upload_path, format) = audio::encode_for_upload_with_timeout(
             &input.samples,
             self.max_upload_bytes,
             DEFAULT_FFMPEG_TIMEOUT,
-            options.cancel.clone(),
+            Some(op.cancel.clone()),
         )
         .await?;
-        if options.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
-            let _ = std::fs::remove_file(&upload_path);
-            return Err(crate::error::ProviderError::Cancelled.into());
-        }
+        op.check()?;
         let cleanup = scopeguard_path(upload_path.clone());
 
         let meta = tokio::fs::metadata(&upload_path)
@@ -237,6 +247,8 @@ impl OpenRouterProvider {
             "wav" => "audio/wav",
             _ => "application/octet-stream",
         };
+        op.emit("stt", "upload");
+        op.check()?;
         let part = Part::file(&upload_path)
             .await
             .map_err(|e| ProviderError::Other {
@@ -280,12 +292,15 @@ impl OpenRouterProvider {
 
         // Body no longer needs the on-disk artifact.
         drop(cleanup);
+        op.check()?;
+        op.emit("stt", "read_body");
 
         let status = response.status();
         let body = read_body_limited(response, PROVIDER_NAME, RemoteBodyLimits::stt()).await?;
         let body_text = String::from_utf8_lossy(&body).into_owned();
         map_http_status(PROVIDER_NAME, status, &body_text)?;
 
+        op.emit("stt", "parse");
         let (text, segments, timestamps_reliable) =
             parse_transcriptions_body(&body_text, options.timestamps, input.duration_secs)?;
         validate_text_bounds(&text, None, TranscriptLimits::default(), PROVIDER_NAME)?;
@@ -312,6 +327,7 @@ impl OpenRouterProvider {
         result.backend_kind = BackendKind::Asr;
         result.timestamps_reliable = timestamps_reliable;
         result.provider = PROVIDER_NAME.into();
+        op.emit("stt", "done");
         Ok(postprocess::normalize_result(result))
     }
 
@@ -319,18 +335,18 @@ impl OpenRouterProvider {
         &self,
         input: &AudioInput,
         options: &TranscriptionOptions,
+        op: &crate::runtime::OpContext,
     ) -> Result<TranscriptionResult> {
+        op.emit("stt", "encode");
+        op.check()?;
         let (upload_path, format) = audio::encode_for_upload_with_timeout(
             &input.samples,
             self.max_upload_bytes,
             DEFAULT_FFMPEG_TIMEOUT,
-            options.cancel.clone(),
+            Some(op.cancel.clone()),
         )
         .await?;
-        if options.cancel.as_ref().is_some_and(|c| c.is_cancelled()) {
-            let _ = std::fs::remove_file(&upload_path);
-            return Err(crate::error::ProviderError::Cancelled.into());
-        }
+        op.check()?;
         let cleanup = scopeguard_path(upload_path.clone());
 
         let meta = tokio::fs::metadata(&upload_path)
@@ -347,31 +363,46 @@ impl OpenRouterProvider {
             .into());
         }
 
-        // Incremental base64 from a file reader — avoids holding raw file bytes
-        // and base64 simultaneously longer than necessary (JOE-1603).
+        // Cap wire bytes after base64 expansion (~4/3) before encoding.
+        let b64_est = encoded_len.saturating_mul(4).div_ceil(3);
+        if b64_est > self.max_upload_bytes.saturating_mul(2) {
+            return Err(UserError::AudioTooLarge {
+                decoded_bytes: b64_est,
+                max_bytes: self.max_upload_bytes.saturating_mul(2),
+            }
+            .into());
+        }
+
+        // Stream file → base64 without holding the full raw buffer and the
+        // encoded string simultaneously (JOE-1603 / JOE-1832).
+        op.emit("stt", "base64");
+        op.check()?;
         let b64 = {
-            use base64::Engine;
-            use std::io::Read;
+            use base64::engine::general_purpose::STANDARD;
+            use base64::write::EncoderStringWriter;
+            use std::io::{Read, Write};
             let mut file = std::fs::File::open(&upload_path).map_err(|e| ProviderError::Other {
                 message: format!("open upload for base64: {e}"),
             })?;
-            let mut raw = Vec::with_capacity(encoded_len);
-            file.read_to_end(&mut raw)
-                .map_err(|e| ProviderError::Other {
+            let mut encoder = EncoderStringWriter::new(&STANDARD);
+            let mut buf = [0u8; 64 * 1024];
+            loop {
+                if op.cancel.is_cancelled() {
+                    return Err(ProviderError::Cancelled.into());
+                }
+                let n = file.read(&mut buf).map_err(|e| ProviderError::Other {
                     message: format!("read upload for base64: {e}"),
                 })?;
-            // Cap on wire bytes after base64 expansion (~4/3).
-            let b64_est = raw.len().saturating_mul(4).div_ceil(3);
-            if b64_est > self.max_upload_bytes.saturating_mul(2) {
-                return Err(UserError::AudioTooLarge {
-                    decoded_bytes: b64_est,
-                    max_bytes: self.max_upload_bytes.saturating_mul(2),
+                if n == 0 {
+                    break;
                 }
-                .into());
+                encoder
+                    .write_all(&buf[..n])
+                    .map_err(|e| ProviderError::Other {
+                        message: format!("base64 encode: {e}"),
+                    })?;
             }
-            let encoded = base64::engine::general_purpose::STANDARD.encode(&raw);
-            drop(raw);
-            encoded
+            encoder.into_inner()
         };
         drop(cleanup);
 
@@ -393,6 +424,8 @@ impl OpenRouterProvider {
             prompt.push_str(&format!(" The audio language is \"{lang}\"."));
         }
 
+        op.emit("stt", "upload");
+        op.check()?;
         let body = json!({
             "model": options.model,
             "messages": [{
@@ -411,6 +444,7 @@ impl OpenRouterProvider {
             "temperature": 0,
             "top_p": 1,
         });
+        // `b64` is moved into `body`; body is the sole large intermediate.
 
         tracing::debug!(
             model = %options.model,
@@ -429,6 +463,9 @@ impl OpenRouterProvider {
                 provider: PROVIDER_NAME.into(),
                 reason: e.to_string(),
             })?;
+        drop(body);
+        op.check()?;
+        op.emit("stt", "read_body");
 
         let status = response.status();
         let body_bytes =
@@ -436,6 +473,7 @@ impl OpenRouterProvider {
         let body_text = String::from_utf8_lossy(&body_bytes).into_owned();
         map_http_status(PROVIDER_NAME, status, &body_text)?;
 
+        op.emit("stt", "parse");
         let parsed: ChatCompletionResponse = serde_json::from_str(&body_text).map_err(|e| {
             ProviderError::InvalidProviderPayload {
                 provider: PROVIDER_NAME.into(),
@@ -483,6 +521,7 @@ impl OpenRouterProvider {
             input.duration_secs,
             options.timestamps,
         );
+        op.emit("stt", "done");
         Ok(postprocess::normalize_result(result))
     }
 }
@@ -632,10 +671,14 @@ mod tests {
     }
 
     #[test]
-    fn dedicated_heuristics() {
+    fn dedicated_registry_lookup() {
+        // Registry-authoritative: only reviewed ASR ids, not name substrings.
         assert!(looks_like_dedicated_asr("openai/whisper-1"));
         assert!(looks_like_dedicated_asr("openai/gpt-4o-transcribe"));
         assert!(!looks_like_dedicated_asr("google/gemini-2.5-flash"));
+        assert!(!looks_like_dedicated_asr(
+            "vendor/whisper-clone-experimental"
+        ));
     }
 
     #[tokio::test]
@@ -787,9 +830,43 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            p.resolve_path("openai/whisper-large-v3"),
+            p.resolve_path("openai/whisper-large-v3").unwrap(),
             SttPath::Transcriptions
         );
-        assert_eq!(p.resolve_path("google/gemini-2.5-flash"), SttPath::Chat);
+        assert_eq!(
+            p.resolve_path("google/gemini-2.5-flash").unwrap(),
+            SttPath::Chat
+        );
+    }
+
+    #[test]
+    fn auto_unknown_model_fails_closed() {
+        let p = OpenRouterProvider::with_policy(
+            Some("k".into()),
+            Some("https://openrouter.ai/api/v1".into()),
+            RemotePolicy::default(),
+            OpenRouterSttMode::Auto,
+        )
+        .unwrap();
+        let err = p.resolve_path("acme/unknown-model-v1").unwrap_err();
+        assert!(
+            err.to_string().contains("reviewed") || err.to_string().contains("unsupported"),
+            "unexpected: {err}"
+        );
+    }
+
+    #[test]
+    fn explicit_transcriptions_accepts_unregistered() {
+        let p = OpenRouterProvider::with_policy(
+            Some("k".into()),
+            Some("https://openrouter.ai/api/v1".into()),
+            RemotePolicy::default(),
+            OpenRouterSttMode::Transcriptions,
+        )
+        .unwrap();
+        assert_eq!(
+            p.resolve_path("vendor/custom-asr").unwrap(),
+            SttPath::Transcriptions
+        );
     }
 }

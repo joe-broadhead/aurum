@@ -103,18 +103,31 @@ for key in ("schema_version", "release_tag", "source_commit", "generated_at_utc"
 if doc.get("schema_version") != 1:
     print("PROVENANCE.json: unsupported schema_version", file=sys.stderr)
     sys.exit(1)
+import re
+commit = str(doc.get("source_commit") or "").strip()
+# JOE-1919 / F-006: provenance must carry a full-length git object id (40 hex).
+if not re.fullmatch(r"[0-9a-fA-F]{40}", commit):
+    print(
+        f"PROVENANCE source_commit must be a full 40-char hex SHA (got {commit!r})",
+        file=sys.stderr,
+    )
+    sys.exit(1)
 expect_tag = os.environ.get("AURUM_EXPECT_TAG", "").strip()
 expect_commit = os.environ.get("AURUM_EXPECT_COMMIT", "").strip()
 if expect_tag and doc["release_tag"] != expect_tag:
     print(f"PROVENANCE tag mismatch: {doc['release_tag']} != {expect_tag}", file=sys.stderr)
     sys.exit(1)
-if expect_commit and not (
-    doc["source_commit"] == expect_commit
-    or doc["source_commit"].startswith(expect_commit)
-    or expect_commit.startswith(doc["source_commit"][:12])
-):
-    print(f"PROVENANCE commit mismatch: {doc['source_commit']} vs {expect_commit}", file=sys.stderr)
-    sys.exit(1)
+if expect_commit:
+    # Exact full identity only — no prefix/short-SHA matching (JOE-1919).
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", expect_commit):
+        print(
+            f"AURUM_EXPECT_COMMIT must be a full 40-char hex SHA (got {expect_commit!r})",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if commit.lower() != expect_commit.lower():
+        print(f"PROVENANCE commit mismatch: {commit} != {expect_commit}", file=sys.stderr)
+        sys.exit(1)
 # Assets listed in provenance must exist and match digests when provided
 assets = doc.get("assets") or []
 for a in assets:

@@ -83,6 +83,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config
 
+      - name: Publication policy gate (JOE-1915 / JOE-1920)
+        run: |
+          chmod +x scripts/check_crates_publish_policy.sh
+          ./scripts/check_crates_publish_policy.sh
+
       - name: Version gate
         run: |
           chmod +x scripts/version_check.sh
@@ -91,6 +96,40 @@ jobs:
       - name: Test gate (required for real and dry-run publish)
         run: cargo test --workspace --locked
 
+      - name: Enforce reviewed crate publication order
+        env:
+          CRATE: ${{ inputs.crate }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          # Code-owned order: aurum-core → aurum-stt → aurum-ffi (CRATE_ORDER / publish_order).
+          CRATE_ORDER="aurum-core aurum-stt aurum-ffi"
+          case " ${CRATE_ORDER} " in
+            *" ${CRATE} "*) ;;
+            *)
+              echo "Crate '${CRATE}' is not in reviewed CRATE_ORDER: ${CRATE_ORDER}" >&2
+              exit 1
+              ;;
+          esac
+          # When publishing dependents, require the prior crate version already on crates.io
+          # (except dry-run, where the registry may not yet have this tag's packages).
+          ver="${TAG#v}"
+          need_prior=""
+          case "${CRATE}" in
+            aurum-stt) need_prior="aurum-core" ;;
+            aurum-ffi) need_prior="aurum-stt" ;;
+          esac
+          if [ -n "${need_prior}" ] && [ "${{ inputs.dry_run }}" != "true" ]; then
+            if ! curl -fsSL -A "aurum-publish/1.0" \
+              "https://crates.io/api/v1/crates/${need_prior}/${ver}" \
+              | python3 -c "import sys,json; d=json.load(sys.stdin); sys.exit(0 if 'version' in d else 1)"; then
+              echo "Refusing ${CRATE}: prerequisite ${need_prior}@${ver} not on crates.io" >&2
+              echo "Publish in order: aurum-core → aurum-stt → aurum-ffi" >&2
+              exit 1
+            fi
+            echo "publish_order ok: ${need_prior}@${ver} present for ${CRATE}"
+          fi
+
       - name: Package list
         env:
           CRATE: ${{ inputs.crate }}
@@ -98,6 +137,8 @@ jobs:
 
       - name: Publish (verified package contents)
         env:
+          # EMERGENCY credential path only (JOE-1715 / JOE-1915). Prefer crates.io
+          # trusted publishing/OIDC when configured for this repo/environment.
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           CRATE: ${{ inputs.crate }}
           DRY_RUN: ${{ inputs.dry_run }}
@@ -105,7 +146,8 @@ jobs:
           set -euo pipefail
           if [ -z "${CARGO_REGISTRY_TOKEN:-}" ] && [ "${DRY_RUN}" != "true" ]; then
             echo "CARGO_REGISTRY_TOKEN secret is required for real publish" >&2
-            echo "Prefer crates.io trusted publishing/OIDC when available; token is emergency-only." >&2
+            echo "This is an emergency long-lived token route; rotate after use (JOE-1715)." >&2
+            echo "Prefer crates.io trusted publishing/OIDC when available." >&2
             exit 1
           fi
           # Do NOT pass --no-verify: cargo must re-verify the exact package tarball.

@@ -2,10 +2,10 @@
 # Publish missing crates.io versions from git tags (local or CI).
 #
 # Env:
-#   VERSIONS   — comma-separated x.y.z (default 0.0.10..0.0.17)
-#   CRATES     — comma-separated crate order (default aurum-core,aurum-stt,aurum-ffi)
+#   VERSIONS   — must be a subset of the code-owned ALLOWLIST (see below)
+#   CRATES     — must be a subset of CRATE_ORDER (aurum-core,aurum-stt,aurum-ffi)
 #   DRY_RUN    — true|false (default true)
-#   CARGO_REGISTRY_TOKEN — required when DRY_RUN=false
+#   CARGO_REGISTRY_TOKEN — emergency token path only (JOE-1715); required when DRY_RUN=false
 #   SKIP_IF_EXISTS — true (default): skip crate/version already on crates.io
 #   SLEEP_SECS — pause between publishes (default 45)
 #
@@ -17,14 +17,34 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-VERSIONS="${VERSIONS:-0.0.10,0.0.11,0.0.12,0.0.13,0.0.14,0.0.15,0.0.16,0.0.17}"
+# Reviewed allowlist of historical tags eligible for backfill (JOE-1915 / JOE-1920).
+# VERSIONS env may only request a subset of this list.
+ALLOWLIST_VERSIONS="0.0.10,0.0.11,0.0.12,0.0.13,0.0.14,0.0.15,0.0.16,0.0.17"
+VERSIONS="${VERSIONS:-${ALLOWLIST_VERSIONS}}"
 CRATES="${CRATES:-aurum-core,aurum-stt,aurum-ffi}"
 DRY_RUN="${DRY_RUN:-true}"
 SKIP_IF_EXISTS="${SKIP_IF_EXISTS:-true}"
 SLEEP_SECS="${SLEEP_SECS:-45}"
 
+# Reject versions not on the allowlist.
+IFS=',' read -r -a REQ_VERS <<< "${VERSIONS}"
+IFS=',' read -r -a ALLOW_VERS <<< "${ALLOWLIST_VERSIONS}"
+for ver in "${REQ_VERS[@]}"; do
+  ver="$(echo "${ver}" | tr -d '[:space:]')"
+  [ -n "${ver}" ] || continue
+  ok=0
+  for a in "${ALLOW_VERS[@]}"; do
+    a="$(echo "${a}" | tr -d '[:space:]')"
+    if [ "${ver}" = "${a}" ]; then ok=1; break; fi
+  done
+  if [ "${ok}" -ne 1 ]; then
+    echo "ERROR: version ${ver} is not on ALLOWLIST_VERSIONS" >&2
+    exit 1
+  fi
+done
+
 if [ "${DRY_RUN}" != "true" ] && [ -z "${CARGO_REGISTRY_TOKEN:-}" ]; then
-  echo "CARGO_REGISTRY_TOKEN required when DRY_RUN=false" >&2
+  echo "CARGO_REGISTRY_TOKEN required when DRY_RUN=false (emergency token path; JOE-1715)" >&2
   exit 1
 fi
 

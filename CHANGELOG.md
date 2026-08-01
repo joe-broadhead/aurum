@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.16] - 2026-08-01
+
+v0.0.16 is **Group K — RC freeze foundations**: compatibility freeze inventory,
+dogfood checklist automation, rollback rehearsal, and support/security-fix
+policy for the path to 1.0 RC.
+
+### Added
+
+- **JOE-1896:** `docs/operations/rc-freeze.md` freeze inventory +
+  `scripts/rc_freeze_check.sh` + CI job `rc-freeze-check`.
+- **JOE-1897:** `docs/operations/rc-dogfood.md` multi-platform checklist +
+  `scripts/rc_dogfood_checklist.sh` + CI `rc-dogfood-smoke` evidence artifacts.
+- **JOE-1895:** `docs/operations/rc-rollback.md` + `scripts/rehearse_rc_rollback.sh`
+  (supersede-not-rewrite, human sign-off block).
+- **JOE-1898:** `docs/operations/support-policy.md` support / security-fix /
+  deprecation / incident / first-patch readiness.
+
 ## [0.0.15] - 2026-08-01
 
 v0.0.15 is **Group J — security evidence slice**: threat-model control matrix,

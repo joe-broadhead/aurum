@@ -8,6 +8,9 @@ Workflows live under `.github/workflows/`.
 | `docs.yml` | docs paths / master | MkDocs build + GitHub Pages deploy |
 | `fuzz-campaign.yml` | schedule + manual | Long cargo-fuzz campaigns (JOE-1884) |
 | `release-verify.yml` | schedule + release published + manual | Independent download+cosign verify (JOE-1891) + security rehearsal |
+
+RC freeze (JOE-1896–1898): `ci.yml` jobs `rc-freeze-check` and `rc-dogfood-smoke`
+run freeze inventory tests, dogfood automated subset, and rollback rehearsal.
 | `release-prepare.yml` | manual | Cut `release/x.y.z` PR |
 | `release-tag.yml` | merge release PR | Create `vX.Y.Z` after version_check + dispatch release |
 | `release.yml` | tag `v*` or manual | Fail-closed tag checkout, security gate, multi-platform **CLI** binaries + SBOM + SHA256SUMS + cosign + PROVENANCE + GitHub Release |

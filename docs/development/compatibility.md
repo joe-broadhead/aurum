@@ -1,7 +1,9 @@
-# Compatibility & deprecation (JOE-1612 / JOE-1780)
+# Compatibility & deprecation (JOE-1612 / JOE-1780 / JOE-1896)
 
-**Boundary:** contracts for the **0.0.x** line. This is not a 1.0 freeze — it
-makes pre-1.0 change **predictable and honest**.
+**Boundary:** contracts for the **0.0.x** line. Pre-1.0 change stays
+**predictable and honest**. For the **1.0 RC freeze inventory** (frozen
+surfaces, break-reset policy, automated checks), see
+[rc-freeze.md](../operations/rc-freeze.md).
 
 ## Classification
 

@@ -130,6 +130,10 @@ nav:
       - QE depth: operations/qe-depth.md
       - Model revocation: operations/model-revocation.md
       - Disclosure tabletop: operations/disclosure-tabletop.md
+      - RC freeze: operations/rc-freeze.md
+      - RC dogfood: operations/rc-dogfood.md
+      - RC rollback: operations/rc-rollback.md
+      - Support policy: operations/support-policy.md
       - Benchmarks: operations/benchmarks.md
       - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md

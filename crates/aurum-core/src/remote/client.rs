@@ -1,24 +1,39 @@
-//! Policy-enforcing HTTP client for remote STT and cleanup (JOE-1587).
+//! Policy-enforcing HTTP client for remote STT and cleanup (JOE-1587, JOE-1934).
+//!
+//! Auth, attribution headers, and official origins come from a named
+//! [`ProviderHttpPolicy`]. Timeouts, proxy, loopback, and custom-endpoint flags
+//! remain on [`RemotePolicy`].
 
+use super::policy::{
+    normalize_request_path, OpenRouterHttpPolicy, ProviderHttpPolicy, OPENROUTER_ORIGIN,
+};
 use crate::error::{ProviderError, Result, UserError};
 use reqwest::{Client, Method, RequestBuilder, StatusCode};
+use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
 /// Official OpenRouter HTTPS origin (credentialed default).
-pub const DEFAULT_OPENROUTER_ORIGIN: &str = "https://openrouter.ai";
+///
+/// Prefer [`super::policy::OPENROUTER_ORIGIN`]; kept for existing imports.
+pub const DEFAULT_OPENROUTER_ORIGIN: &str = OPENROUTER_ORIGIN;
 
 /// Validated remote endpoint with trust classification.
 #[derive(Debug, Clone)]
 pub struct RemoteEndpoint {
     pub base_url: String,
-    /// True when this is the official OpenRouter origin.
+    /// True when this matches an official origin of the selected provider policy.
     pub is_official: bool,
     /// True when credentials may be sent (official or explicit custom trust).
     pub credentials_allowed: bool,
+    /// Provider id that validated this endpoint.
+    pub provider_id: String,
 }
 
-/// Policy knobs for building the shared client.
+/// Policy knobs for building the shared client (timeouts / proxy / loopback).
+///
+/// Provider-specific trust (origins, auth, headers, paths) lives on
+/// [`ProviderHttpPolicy`], not here.
 #[derive(Debug, Clone)]
 pub struct RemotePolicy {
     /// Connect timeout.
@@ -27,8 +42,8 @@ pub struct RemotePolicy {
     pub total_timeout: Duration,
     /// When false (default), system proxy is not used.
     pub use_system_proxy: bool,
-    /// When true, allow custom non-OpenRouter HTTPS endpoints with credentials
-    /// (requires separate config opt-in).
+    /// When true, allow custom non-official HTTPS endpoints with credentials
+    /// (requires separate config opt-in; still provider-scoped).
     pub allow_custom_credentialed_endpoint: bool,
     /// When true, allow HTTP only for loopback hosts (tests).
     pub allow_loopback_http: bool,
@@ -46,8 +61,12 @@ impl Default for RemotePolicy {
     }
 }
 
-/// Parse and validate a base URL under the remote policy.
-pub fn validate_endpoint(raw: &str, policy: &RemotePolicy) -> Result<RemoteEndpoint> {
+/// Parse and validate a base URL under remote + provider policy.
+pub fn validate_endpoint(
+    raw: &str,
+    remote: &RemotePolicy,
+    provider: &dyn ProviderHttpPolicy,
+) -> Result<RemoteEndpoint> {
     let trimmed = raw.trim().trim_end_matches('/');
     if trimmed.is_empty() {
         return Err(UserError::InvalidConfig {
@@ -69,11 +88,11 @@ pub fn validate_endpoint(raw: &str, policy: &RemotePolicy) -> Result<RemoteEndpo
     let scheme = url.scheme();
     let host = url.host_str().unwrap_or("").to_ascii_lowercase();
     let is_loopback = matches!(host.as_str(), "127.0.0.1" | "localhost" | "::1");
-    let is_official = host == "openrouter.ai" && scheme == "https";
+    let is_official = provider.is_official_origin(scheme, &host);
 
     match scheme {
         "https" => {}
-        "http" if policy.allow_loopback_http && is_loopback => {}
+        "http" if remote.allow_loopback_http && is_loopback => {}
         "http" => {
             return Err(UserError::InvalidConfig {
                 reason: format!(
@@ -90,15 +109,18 @@ pub fn validate_endpoint(raw: &str, policy: &RemotePolicy) -> Result<RemoteEndpo
         }
     }
 
-    let credentials_allowed = is_official
-        || (is_loopback && policy.allow_loopback_http)
-        || (policy.allow_custom_credentialed_endpoint && scheme == "https");
+    let custom_ok = remote.allow_custom_credentialed_endpoint
+        && scheme == "https"
+        && provider.allows_custom_credentialed_endpoint();
+    let credentials_allowed =
+        is_official || (is_loopback && remote.allow_loopback_http) || custom_ok;
     if !credentials_allowed {
         return Err(UserError::InvalidConfig {
             reason: format!(
-                "credentialed remote endpoint '{trimmed}' is not the official OpenRouter origin.\n  \
-                 Hint: set openrouter.allow_custom_endpoint = true only for trusted compatible APIs, \
-                 or use {DEFAULT_OPENROUTER_ORIGIN}."
+                "credentialed remote endpoint '{trimmed}' is not an official {} origin.\n  \
+                 Hint: {}",
+                provider.provider_id(),
+                provider.custom_endpoint_hint()
             ),
         }
         .into());
@@ -108,15 +130,20 @@ pub fn validate_endpoint(raw: &str, policy: &RemotePolicy) -> Result<RemoteEndpo
         base_url: trimmed.to_string(),
         is_official,
         credentials_allowed,
+        provider_id: provider.provider_id().to_string(),
     })
 }
 
-/// Hardened reqwest client shared by STT and cleanup.
+/// Hardened reqwest client shared by remote STT and cleanup.
+///
+/// Provider identity, origins, auth, and extra headers come from the attached
+/// [`ProviderHttpPolicy`]. Transport flags remain on [`RemotePolicy`].
 #[derive(Clone)]
 pub struct HardenedHttpClient {
     http: Client,
     endpoint: RemoteEndpoint,
-    policy: RemotePolicy,
+    remote_policy: RemotePolicy,
+    provider: Arc<dyn ProviderHttpPolicy>,
 }
 
 impl std::fmt::Debug for HardenedHttpClient {
@@ -124,39 +151,60 @@ impl std::fmt::Debug for HardenedHttpClient {
         f.debug_struct("HardenedHttpClient")
             .field("base_url", &self.endpoint.base_url)
             .field("is_official", &self.endpoint.is_official)
+            .field("provider_id", &self.endpoint.provider_id)
             .finish()
     }
 }
 
 impl HardenedHttpClient {
-    pub fn build(base_url: Option<&str>, policy: RemotePolicy) -> Result<Self> {
+    /// Build a client for an arbitrary named provider policy.
+    pub fn build(
+        base_url: Option<&str>,
+        remote: RemotePolicy,
+        provider: impl ProviderHttpPolicy + 'static,
+    ) -> Result<Self> {
+        Self::build_arc(base_url, remote, Arc::new(provider))
+    }
+
+    /// Build with a pre-wrapped policy (shared across clones).
+    pub fn build_arc(
+        base_url: Option<&str>,
+        remote: RemotePolicy,
+        provider: Arc<dyn ProviderHttpPolicy>,
+    ) -> Result<Self> {
         let raw = base_url
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
-            .unwrap_or("https://openrouter.ai/api/v1");
-        let endpoint = validate_endpoint(raw, &policy)?;
+            .unwrap_or_else(|| provider.default_base_url());
+        let endpoint = validate_endpoint(raw, &remote, provider.as_ref())?;
 
         let mut builder = Client::builder()
             .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
-            .connect_timeout(policy.connect_timeout)
-            .timeout(policy.total_timeout)
+            .connect_timeout(remote.connect_timeout)
+            .timeout(remote.total_timeout)
             // Never follow redirects with credentials (JOE-1587).
             .redirect(reqwest::redirect::Policy::none());
 
-        if !policy.use_system_proxy {
+        if !remote.use_system_proxy {
             builder = builder.no_proxy();
         }
 
         let http = builder.build().map_err(|e| ProviderError::Network {
-            provider: "remote".into(),
+            provider: provider.provider_id().into(),
             reason: e.to_string(),
         })?;
 
         Ok(Self {
             http,
             endpoint,
-            policy,
+            remote_policy: remote,
+            provider,
         })
+    }
+
+    /// Convenience: OpenRouter policy (STT + cleanup default path).
+    pub fn openrouter(base_url: Option<&str>, remote: RemotePolicy) -> Result<Self> {
+        Self::build(base_url, remote, OpenRouterHttpPolicy)
     }
 
     pub fn endpoint(&self) -> &RemoteEndpoint {
@@ -168,10 +216,14 @@ impl HardenedHttpClient {
     }
 
     pub fn policy(&self) -> &RemotePolicy {
-        &self.policy
+        &self.remote_policy
     }
 
-    /// Build a request with auth + standard OpenRouter headers.
+    pub fn provider_id(&self) -> &str {
+        self.provider.provider_id()
+    }
+
+    /// Build a request with policy auth + extra headers + shared request id.
     pub fn request(&self, method: Method, path: &str, api_key: &str) -> Result<RequestBuilder> {
         if !self.endpoint.credentials_allowed {
             return Err(UserError::InvalidConfig {
@@ -179,7 +231,27 @@ impl HardenedHttpClient {
             }
             .into());
         }
-        let path = path.trim_start_matches('/');
+
+        let Some(path) = normalize_request_path(path) else {
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "remote path is empty or contains disallowed segments ({})",
+                    self.provider.provider_id()
+                ),
+            }
+            .into());
+        };
+
+        if !self.provider.allows_path(path) {
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "path '{path}' is not allowed for provider {}",
+                    self.provider.provider_id()
+                ),
+            }
+            .into());
+        }
+
         let url = format!("{}/{}", self.endpoint.base_url, path);
         // Reject if path somehow rewrites host (defense in depth).
         if let Ok(u) = Url::parse(&url) {
@@ -193,22 +265,20 @@ impl HardenedHttpClient {
                 }
             }
         }
-        Ok(self
-            .http
-            .request(method, url)
-            .header("Authorization", format!("Bearer {api_key}"))
-            .header("HTTP-Referer", "https://github.com/joe-broadhead/aurum")
-            .header("X-Title", "Aurum")
-            .header(
-                "X-Request-Id",
-                format!(
-                    "aurum-{}",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_millis())
-                        .unwrap_or(0)
-                ),
-            ))
+
+        let mut req = self.http.request(method, url);
+        req = self.provider.apply_auth(req, api_key);
+        req = self.provider.apply_extra_headers(req);
+        Ok(req.header(
+            "X-Request-Id",
+            format!(
+                "aurum-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            ),
+        ))
     }
 
     pub fn get_raw(&self) -> &Client {
@@ -252,24 +322,76 @@ pub fn map_http_status(provider: &str, status: StatusCode, body: &str) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::remote::policy::{
+        ElevenLabsHttpPolicy, OpenAiHttpPolicy, OpenRouterHttpPolicy, XaiHttpPolicy,
+    };
 
     #[test]
     fn official_endpoint_ok() {
-        let ep =
-            validate_endpoint("https://openrouter.ai/api/v1", &RemotePolicy::default()).unwrap();
+        let ep = validate_endpoint(
+            "https://openrouter.ai/api/v1",
+            &RemotePolicy::default(),
+            &OpenRouterHttpPolicy,
+        )
+        .unwrap();
         assert!(ep.is_official);
         assert!(ep.credentials_allowed);
+        assert_eq!(ep.provider_id, "openrouter");
     }
 
     #[test]
     fn foreign_host_rejected_by_default() {
-        let err =
-            validate_endpoint("https://evil.example/api", &RemotePolicy::default()).unwrap_err();
+        let err = validate_endpoint(
+            "https://evil.example/api",
+            &RemotePolicy::default(),
+            &OpenRouterHttpPolicy,
+        )
+        .unwrap_err();
         assert_eq!(err.exit_code(), 2);
         assert!(
             err.to_string().contains("allow_custom_endpoint")
                 || err.to_string().contains("official")
         );
+    }
+
+    #[test]
+    fn openrouter_origin_not_official_for_openai_policy() {
+        let err = validate_endpoint(
+            "https://openrouter.ai/api/v1",
+            &RemotePolicy::default(),
+            &OpenAiHttpPolicy,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("openai") || err.to_string().contains("official"));
+    }
+
+    #[test]
+    fn openai_official_ok() {
+        let ep = validate_endpoint(
+            "https://api.openai.com/v1",
+            &RemotePolicy::default(),
+            &OpenAiHttpPolicy,
+        )
+        .unwrap();
+        assert!(ep.is_official);
+    }
+
+    #[test]
+    fn elevenlabs_and_xai_official_ok() {
+        let el = validate_endpoint(
+            "https://api.elevenlabs.io",
+            &RemotePolicy::default(),
+            &ElevenLabsHttpPolicy,
+        )
+        .unwrap();
+        assert!(el.is_official);
+        let xai = validate_endpoint(
+            "https://api.x.ai/v1",
+            &RemotePolicy::default(),
+            &XaiHttpPolicy,
+        )
+        .unwrap();
+        assert!(xai.is_official);
     }
 
     #[test]
@@ -312,7 +434,12 @@ mod tests {
             allow_custom_credentialed_endpoint: true,
             ..Default::default()
         };
-        let ep = validate_endpoint("https://compatible.example/v1", &policy).unwrap();
+        let ep = validate_endpoint(
+            "https://compatible.example/v1",
+            &policy,
+            &OpenRouterHttpPolicy,
+        )
+        .unwrap();
         assert!(!ep.is_official);
         assert!(ep.credentials_allowed);
     }
@@ -322,6 +449,7 @@ mod tests {
         let err = validate_endpoint(
             "https://user:pass@openrouter.ai/api/v1",
             &RemotePolicy::default(),
+            &OpenRouterHttpPolicy,
         )
         .unwrap_err();
         assert!(err.to_string().contains("userinfo") || err.to_string().contains("credential"));
@@ -333,12 +461,85 @@ mod tests {
             allow_loopback_http: true,
             ..Default::default()
         };
-        let ep = validate_endpoint("http://127.0.0.1:9", &policy).unwrap();
+        let ep = validate_endpoint("http://127.0.0.1:9", &policy, &OpenRouterHttpPolicy).unwrap();
         assert!(ep.credentials_allowed);
     }
 
     #[test]
     fn http_non_loopback_rejected() {
-        assert!(validate_endpoint("http://evil.example", &RemotePolicy::default()).is_err());
+        assert!(validate_endpoint(
+            "http://evil.example",
+            &RemotePolicy::default(),
+            &OpenRouterHttpPolicy
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn request_applies_openrouter_headers_only() {
+        let client = HardenedHttpClient::openrouter(None, RemotePolicy::default()).unwrap();
+        let req = client
+            .request(Method::POST, "chat/completions", "sk-test")
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(req.headers().get("Authorization").is_some());
+        assert!(
+            req.headers().get("HTTP-Referer").is_some() || req.headers().get("Referer").is_some()
+        );
+        assert!(req.headers().get("X-Title").is_some());
+        assert!(req.headers().get("X-Request-Id").is_some());
+        assert!(req.headers().get("xi-api-key").is_none());
+    }
+
+    #[test]
+    fn request_openai_has_no_openrouter_headers() {
+        let client =
+            HardenedHttpClient::build(None, RemotePolicy::default(), OpenAiHttpPolicy).unwrap();
+        let req = client
+            .request(Method::POST, "audio/transcriptions", "sk-test")
+            .unwrap()
+            .build()
+            .unwrap();
+        assert!(req.headers().get("Authorization").is_some());
+        assert!(req.headers().get("HTTP-Referer").is_none());
+        assert!(req.headers().get("X-Title").is_none());
+        assert!(req.headers().get("xi-api-key").is_none());
+    }
+
+    #[test]
+    fn request_elevenlabs_uses_xi_api_key() {
+        let client =
+            HardenedHttpClient::build(None, RemotePolicy::default(), ElevenLabsHttpPolicy).unwrap();
+        let req = client
+            .request(Method::POST, "v1/text-to-speech/voice1", "el-key")
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            req.headers().get("xi-api-key").unwrap().to_str().unwrap(),
+            "el-key"
+        );
+        assert!(req.headers().get("Authorization").is_none());
+        assert!(req.headers().get("HTTP-Referer").is_none());
+        assert!(req.headers().get("X-Title").is_none());
+    }
+
+    #[test]
+    fn request_rejects_disallowed_path() {
+        let client = HardenedHttpClient::openrouter(None, RemotePolicy::default()).unwrap();
+        let err = client
+            .request(Method::GET, "models", "sk-test")
+            .unwrap_err();
+        assert!(err.to_string().contains("not allowed") || err.to_string().contains("path"));
+    }
+
+    #[test]
+    fn default_base_url_per_provider() {
+        let or = HardenedHttpClient::openrouter(None, RemotePolicy::default()).unwrap();
+        assert!(or.base_url().contains("openrouter.ai"));
+        let oa =
+            HardenedHttpClient::build(None, RemotePolicy::default(), OpenAiHttpPolicy).unwrap();
+        assert!(oa.base_url().contains("api.openai.com"));
     }
 }

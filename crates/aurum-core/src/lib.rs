@@ -138,7 +138,7 @@ pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,
     TranscriptionProvider, TranscriptionResult,
 };
-pub use remote::{HardenedHttpClient, RemotePolicy};
+pub use remote::{HardenedHttpClient, OpenRouterHttpPolicy, ProviderHttpPolicy, RemotePolicy};
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,
 };

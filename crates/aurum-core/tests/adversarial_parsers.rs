@@ -96,7 +96,9 @@ fn output_format_parse_rejects_unknown() {
 
 #[test]
 fn remote_endpoint_seeds_fail_closed() {
+    use aurum_core::remote::OpenRouterHttpPolicy;
     let policy = RemotePolicy::default();
+    let provider = OpenRouterHttpPolicy;
     let bad = [
         "",
         "not a url",
@@ -108,11 +110,11 @@ fn remote_endpoint_seeds_fail_closed() {
     ];
     for raw in bad {
         assert!(
-            validate_endpoint(raw, &policy).is_err(),
+            validate_endpoint(raw, &policy, &provider).is_err(),
             "expected reject for {raw:?}"
         );
     }
-    assert!(validate_endpoint("https://openrouter.ai", &policy).is_ok());
+    assert!(validate_endpoint("https://openrouter.ai", &policy, &provider).is_ok());
 }
 
 #[test]

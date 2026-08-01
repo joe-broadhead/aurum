@@ -55,7 +55,7 @@ impl OpenRouterCleanup {
         {
             policy.allow_loopback_http = true;
         }
-        let http = HardenedHttpClient::build(base_url.as_deref(), policy)?;
+        let http = HardenedHttpClient::openrouter(base_url.as_deref(), policy)?;
         let model = model
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| DEFAULT_MODEL.to_string());

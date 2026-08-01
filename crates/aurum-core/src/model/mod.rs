@@ -518,17 +518,8 @@ async fn download_model(
     let url = format!("{HF_BASE}/{}?download=true", info.filename);
     tracing::info!(model = info.name, %url, "downloading model");
 
-    let partial = dest.with_extension(format!(
-        "bin.partial.{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    ));
-    if partial.exists() {
-        let _ = fs::remove_file(&partial);
-    }
+    // JOE-1918: exclusive create_new partial (unpredictable name, no clobber).
+    let partial = exclusive_stt_partial(dest)?;
 
     // Bound total download time so a stalled transfer can't hold the lock forever.
     // Follow redirects only onto known HuggingFace CDN hosts (HF always 302s resolve/
@@ -578,9 +569,11 @@ async fn download_model(
         None
     };
 
-    let mut file = File::create(&partial).map_err(|e| EnvironmentError::DirectoryAccess {
-        path: partial.display().to_string(),
-        reason: e.to_string(),
+    let mut file = OpenOptions::new().write(true).open(&partial).map_err(|e| {
+        EnvironmentError::DirectoryAccess {
+            path: partial.display().to_string(),
+            reason: e.to_string(),
+        }
     })?;
 
     let mut stream = response.bytes_stream();
@@ -627,8 +620,14 @@ async fn download_model(
         }
     }
 
-    file.flush().ok();
-    let _ = file.sync_all();
+    file.flush().map_err(|e| EnvironmentError::DiskSpace {
+        path: partial.display().to_string(),
+        reason: e.to_string(),
+    })?;
+    file.sync_all().map_err(|e| EnvironmentError::DiskSpace {
+        path: partial.display().to_string(),
+        reason: format!("sync partial download: {e}"),
+    })?;
     drop(file);
 
     let digest = hex::encode(hasher.finalize());
@@ -674,29 +673,109 @@ async fn download_model(
         }
     }
 
-    // Atomic publish after verification.
-    if dest.exists() {
-        let _ = fs::remove_file(dest);
-    }
-    fs::rename(&partial, dest).map_err(|e| {
+    // Durable publish after verification (no pre-delete availability gap when possible).
+    if let Err(e) = publish_stt_partial(&partial, dest) {
         let _ = fs::remove_file(&partial);
-        EnvironmentError::DirectoryAccess {
-            path: dest.display().to_string(),
-            reason: e.to_string(),
-        }
-    })?;
+        return Err(e);
+    }
 
     if let Some(pb) = pb {
         pb.finish_with_message(format!("Downloaded {} ({downloaded} bytes)", info.name));
     }
 
     let checksum_path = dest.with_extension("bin.sha256");
+    // Best-effort sidecar; authenticity is the pin check above.
     let _ = fs::write(&checksum_path, format!("{digest}  {}\n", info.filename));
 
     // Best-effort cleanup of orphaned partials from prior crashed runs.
     sweep_stale_partials(dest.parent().unwrap_or_else(|| Path::new(".")));
 
     Ok(())
+}
+
+fn exclusive_stt_partial(dest: &Path) -> Result<PathBuf> {
+    let parent = dest.parent().unwrap_or_else(|| Path::new("."));
+    fs::create_dir_all(parent).map_err(|e| EnvironmentError::DirectoryAccess {
+        path: parent.display().to_string(),
+        reason: e.to_string(),
+    })?;
+    for _ in 0..32 {
+        let name = format!(
+            ".{}.{}-{}.aurum.partial",
+            dest.file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("model.bin"),
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        );
+        let path = parent.join(name);
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(f) => {
+                drop(f);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
+                }
+                return Ok(path);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(e) => {
+                return Err(EnvironmentError::DirectoryAccess {
+                    path: parent.display().to_string(),
+                    reason: format!("exclusive partial create failed: {e}"),
+                }
+                .into());
+            }
+        }
+    }
+    Err(EnvironmentError::DirectoryAccess {
+        path: parent.display().to_string(),
+        reason: "could not allocate exclusive STT partial path".into(),
+    }
+    .into())
+}
+
+fn publish_stt_partial(tmp: &Path, dest: &Path) -> Result<()> {
+    match fs::rename(tmp, dest) {
+        Ok(()) => Ok(()),
+        Err(e) if dest.exists() => {
+            let backup = dest.with_extension(format!(
+                "aurum.bak.{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            fs::rename(dest, &backup).map_err(|re| EnvironmentError::DirectoryAccess {
+                path: dest.display().to_string(),
+                reason: format!("stage previous model: {re} (after rename: {e})"),
+            })?;
+            match fs::rename(tmp, dest) {
+                Ok(()) => {
+                    let _ = fs::remove_file(&backup);
+                    Ok(())
+                }
+                Err(re) => {
+                    let _ = fs::rename(&backup, dest);
+                    Err(EnvironmentError::DirectoryAccess {
+                        path: dest.display().to_string(),
+                        reason: format!("publish verified model: {re}"),
+                    }
+                    .into())
+                }
+            }
+        }
+        Err(e) => Err(EnvironmentError::DirectoryAccess {
+            path: dest.display().to_string(),
+            reason: e.to_string(),
+        }
+        .into()),
+    }
 }
 
 /// Allow HuggingFace CDN redirects; stop on anything else.
@@ -856,7 +935,8 @@ fn sweep_stale_partials(dir: &Path) {
         let name = ent.file_name();
         let name = name.to_string_lossy();
         // Only stale leftovers — never touch another live download's unique partial.
-        if !name.contains(".bin.partial.") {
+        // Matches both legacy `.bin.partial.PID-ms` and exclusive `.name.PID-ns.aurum.partial`.
+        if !name.contains(".bin.partial.") && !name.ends_with(".aurum.partial") {
             continue;
         }
         let Ok(meta) = ent.metadata() else {

@@ -305,7 +305,11 @@ async fn download_to_partial(
         path: tmp.display().to_string(),
         reason: e.to_string(),
     })?;
-    file.sync_all().ok();
+    // JOE-1918: durability failures must fail closed, not be ignored.
+    file.sync_all().map_err(|e| EnvironmentError::DiskSpace {
+        path: tmp.display().to_string(),
+        reason: format!("sync partial download: {e}"),
+    })?;
     drop(file);
 
     let digest = hex::encode(hasher.finalize());
@@ -331,20 +335,17 @@ async fn download_to_partial(
         }
     }
 
-    // Atomic publish.
-    if dest.exists() {
-        fs::remove_file(dest).map_err(|e| EnvironmentError::DirectoryAccess {
-            path: dest.display().to_string(),
-            reason: format!("replace existing: {e}"),
-        })?;
-    }
-    fs::rename(tmp, dest).map_err(|e| EnvironmentError::DirectoryAccess {
-        path: dest.display().to_string(),
-        reason: e.to_string(),
-    })?;
+    // Durable publish: rename verified partial into place.
+    // Unix rename replaces atomically; avoid deleting dest first (availability gap).
+    // Windows: rename over existing may fail — fall back to remove+rename.
+    publish_verified_download(tmp, dest)?;
     if let Some(parent) = dest.parent() {
         if let Ok(dir) = File::open(parent) {
-            let _ = dir.sync_all();
+            dir.sync_all()
+                .map_err(|e| EnvironmentError::DirectoryAccess {
+                    path: parent.display().to_string(),
+                    reason: format!("sync parent dir after publish: {e}"),
+                })?;
         }
     }
 
@@ -357,6 +358,50 @@ async fn download_to_partial(
     let _ = fs::write(&sidecar, format!("{}  {}\n", digest, spec.filename));
 
     Ok(())
+}
+
+/// Publish a verified partial into `dest` without a durable-window gap (JOE-1918).
+///
+/// Prefer atomic rename over pre-delete. On platforms where rename cannot
+/// replace, stage the previous file aside and restore it if the new rename fails.
+fn publish_verified_download(tmp: &Path, dest: &Path) -> Result<()> {
+    match fs::rename(tmp, dest) {
+        Ok(()) => Ok(()),
+        Err(e) if dest.exists() => {
+            // Replacement path (common on Windows when dest exists).
+            let backup = dest.with_extension(format!(
+                "aurum.bak.{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            fs::rename(dest, &backup).map_err(|re| EnvironmentError::DirectoryAccess {
+                path: dest.display().to_string(),
+                reason: format!("stage previous artifact: {re} (after rename: {e})"),
+            })?;
+            match fs::rename(tmp, dest) {
+                Ok(()) => {
+                    let _ = fs::remove_file(&backup);
+                    Ok(())
+                }
+                Err(re) => {
+                    let _ = fs::rename(&backup, dest);
+                    Err(EnvironmentError::DirectoryAccess {
+                        path: dest.display().to_string(),
+                        reason: format!("publish verified artifact: {re}"),
+                    }
+                    .into())
+                }
+            }
+        }
+        Err(e) => Err(EnvironmentError::DirectoryAccess {
+            path: dest.display().to_string(),
+            reason: e.to_string(),
+        }
+        .into()),
+    }
 }
 
 /// Sweep only this process-family stale partials (never another live writer's file).

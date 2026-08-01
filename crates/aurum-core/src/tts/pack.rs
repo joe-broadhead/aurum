@@ -26,18 +26,7 @@ pub fn load_pack_dir(
     allow_unverified: bool,
 ) -> Result<(PathBuf, ModelPackManifest)> {
     let root = canonicalize_local(pack_dir)?;
-    let manifest_path = root.join(MANIFEST_FILENAME);
-    if !manifest_path.is_file() {
-        return Err(UserError::InvalidConfig {
-            reason: format!(
-                "TTS pack missing {MANIFEST_FILENAME} under {}\n  \
-                 Hint: pass a model-pack directory with a manifest, not a bare .onnx file",
-                root.display()
-            ),
-        }
-        .into());
-    }
-    let mut manifest = ModelPackManifest::load_path(&manifest_path)?;
+    let mut manifest = load_manifest_no_symlink(&root)?;
     if matches!(manifest.trust, TrustMode::LocalUnverified) && !allow_unverified {
         return Err(UserError::InvalidConfig {
             reason:
@@ -88,6 +77,77 @@ fn canonicalize_local(path: &Path) -> Result<PathBuf> {
         }
         .into()
     })
+}
+
+/// Open and parse the pack manifest with the same no-symlink regular-file policy
+/// as artifacts (JOE-1918 / F-005). Never follows a final symlink via `is_file()`.
+fn load_manifest_no_symlink(root: &Path) -> Result<ModelPackManifest> {
+    let manifest_path = root.join(MANIFEST_FILENAME);
+    let meta = fs::symlink_metadata(&manifest_path).map_err(|e| UserError::InvalidConfig {
+        reason: format!(
+            "TTS pack missing {MANIFEST_FILENAME} under {}: {e}\n  \
+             Hint: pass a model-pack directory with a manifest, not a bare .onnx file",
+            root.display()
+        ),
+    })?;
+    if meta.file_type().is_symlink() {
+        return Err(UserError::InvalidConfig {
+            reason: format!(
+                "refusing {MANIFEST_FILENAME} that is a symlink under {}\n  \
+                 Hint: packs must use a regular manifest file",
+                root.display()
+            ),
+        }
+        .into());
+    }
+    if !meta.is_file() {
+        return Err(UserError::InvalidConfig {
+            reason: format!(
+                "{MANIFEST_FILENAME} under {} is not a regular file",
+                root.display()
+            ),
+        }
+        .into());
+    }
+    ModelPackManifest::load_path(&manifest_path)
+}
+
+/// Re-hash a pack artifact immediately before native load (JOE-1918 TOCTOU close).
+///
+/// Rejects symlinks and, when `expect_sha256` is set, requires a matching digest
+/// of the bytes currently on disk.
+pub fn reverify_artifact_before_load(path: &Path, expect_sha256: Option<&str>) -> Result<()> {
+    let meta = fs::symlink_metadata(path).map_err(|e| UserError::InvalidConfig {
+        reason: format!("artifact missing at load: {}: {e}", path.display()),
+    })?;
+    if meta.file_type().is_symlink() {
+        return Err(UserError::InvalidConfig {
+            reason: format!(
+                "artifact became a symlink before load (refused): {}",
+                path.display()
+            ),
+        }
+        .into());
+    }
+    if !meta.is_file() {
+        return Err(UserError::InvalidConfig {
+            reason: format!("artifact is not a regular file at load: {}", path.display()),
+        }
+        .into());
+    }
+    if let Some(expect) = expect_sha256 {
+        let got = sha256_file(path)?;
+        if !got.eq_ignore_ascii_case(expect) {
+            return Err(UserError::InvalidConfig {
+                reason: format!(
+                    "artifact digest changed between verify and load\n  path {}\n  expected {expect}\n  got      {got}",
+                    path.display()
+                ),
+            }
+            .into());
+        }
+    }
+    Ok(())
 }
 
 /// Verify digests/sizes for pack artifacts relative to `root` (JOE-1649).
@@ -391,5 +451,40 @@ mod tests {
             .collect();
         assert!(leftovers.is_empty(), "tmp left behind: {leftovers:?}");
         assert!(pack.join(MANIFEST_FILENAME).is_file());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn manifest_symlink_rejected() {
+        let dir = tempdir().unwrap();
+        let pack = dir.path().join("pack");
+        write_fake_sine_pack(&pack, "msym").unwrap();
+        let outside = dir.path().join("evil-manifest.json");
+        fs::write(&outside, b"{}").unwrap();
+        let manifest = pack.join(MANIFEST_FILENAME);
+        fs::remove_file(&manifest).unwrap();
+        std::os::unix::fs::symlink(&outside, &manifest).unwrap();
+        let err = load_pack_dir(&pack, true).unwrap_err();
+        assert!(
+            err.to_string().contains("symlink"),
+            "expected symlink rejection: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn reverify_detects_post_verify_swap() {
+        let dir = tempdir().unwrap();
+        let pack = dir.path().join("pack");
+        let m = write_fake_sine_pack(&pack, "swap").unwrap();
+        let config = pack.join("config.json");
+        let expect = m.artifacts[0].sha256.clone().unwrap();
+        reverify_artifact_before_load(&config, Some(&expect)).unwrap();
+        fs::write(&config, b"mutated-after-verify").unwrap();
+        let err = reverify_artifact_before_load(&config, Some(&expect)).unwrap_err();
+        assert!(
+            err.to_string().contains("digest") || err.to_string().contains("changed"),
+            "expected digest change detection: {err}"
+        );
     }
 }

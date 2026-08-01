@@ -15,7 +15,7 @@ use super::catalogue::{
 use super::chunk::{prepare_tts_chunks_with, PhonemeCodec, TtsChunk, CHUNK_PAUSE_MS};
 use super::conformance::synthesize_fake_sine_ms;
 use super::npz::load_voices_npz;
-use super::pack::load_pack_dir;
+use super::pack::{load_pack_dir, reverify_artifact_before_load};
 use super::pcm_post::{
     duration_ms_from_pcm, trim_trailing_silence, validate_raw_pcm, TailTrimPolicy, PEAK_LIMIT,
 };
@@ -324,6 +324,8 @@ impl LocalTtsProvider {
             })?;
         let onnx = root.join(onnx_name);
         let voices_file = root.join(voices_name);
+        let onnx_sha = manifest.artifact("onnx").and_then(|a| a.sha256.clone());
+        let voices_sha = manifest.artifact("voices").and_then(|a| a.sha256.clone());
         let sample_rate = manifest.sample_rate_hz;
         let catalogue_max = manifest.max_phoneme_tokens;
         let model_id = manifest.model_id.clone();
@@ -350,6 +352,10 @@ impl LocalTtsProvider {
 
         let pin = tokio::task::spawn_blocking(move || {
             pool.get_or_load_pin(key_for_load, weight, &gov, || {
+                // JOE-1918: re-hash immediately before native open to close
+                // verify-then-swap TOCTOU window for pack-backed loads.
+                reverify_artifact_before_load(&onnx, onnx_sha.as_deref())?;
+                reverify_artifact_before_load(&voices_file, voices_sha.as_deref())?;
                 load_pack(
                     &onnx,
                     &voices_file,

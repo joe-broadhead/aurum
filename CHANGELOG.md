@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1784:** engine-owned `SttContextPool` / `TtsSessionPool`;
+  `LocalWhisperProvider::with_runtime` / `LocalTtsProvider::with_runtime`;
+  independent engines no longer share model residency; `clear_model_caches` /
+  shutdown clear engine pools only.
+- **JOE-1787:** `AurumEngine::transcribe` / `transcribe_pcm` / `preload_stt` /
+  `synthesize` (feature `tts`) with engine-local governor + metrics.
+- **JOE-1786 (progressive):** `AudioInput::from_pcm*` rejects non-finite
+  samples and invalid duration; domain docs updated.
+
 ## [0.0.7] - 2026-08-01
 
 v0.0.7 is the **SDK hardening residual** after owned-engine foundations v0.0.6:

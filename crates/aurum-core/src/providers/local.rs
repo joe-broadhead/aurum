@@ -1,11 +1,13 @@
 //! Local transcription via whisper.cpp (through the `whisper-rs` bindings).
 //!
-//! Maintains a process-level cache of loaded `WhisperContext` values keyed by
-//! model path so repeated calls (library batch use, tests) do not reload ggml.
+//! Maintains a cache of loaded `WhisperContext` values keyed by model path so
+//! repeated calls do not reload ggml. By default providers share a
+//! **process-global** pool; [`AurumEngine`](crate::AurumEngine) owns an
+//! isolated pool per engine (JOE-1784).
 //!
 //! Concurrent cold starts coalesce via singleflight (JOE-1597). Resident weight
-//! and eviction use the shared model registry (JOE-1598). Inference threads and
-//! blocking work are admitted by the process [`ResourceGovernor`] (JOE-1596/1599).
+//! and eviction use the model registry (JOE-1598). Inference threads and
+//! blocking work are admitted by a [`ResourceGovernor`] (JOE-1596/1599).
 //!
 //! Embedders (mic hosts) should prefer:
 //! - [`LocalWhisperProvider::preload`] at startup
@@ -31,18 +33,31 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 static LOGGING_HOOKS: once_cell::sync::OnceCell<()> = once_cell::sync::OnceCell::new();
 
-/// Process-global STT context residency + singleflight loader.
-struct ContextCache {
+/// STT context residency + singleflight loader (JOE-1784).
+///
+/// Own one per [`crate::AurumEngine`], or share via [`process_global_stt_pool`].
+pub struct SttContextPool {
     flight: Singleflight<WhisperContext>,
     registry: ModelRegistry<WhisperContext>,
 }
 
-impl ContextCache {
-    fn new() -> Self {
+impl Default for SttContextPool {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SttContextPool {
+    pub fn new() -> Self {
         Self {
             flight: Singleflight::default(),
             registry: ModelRegistry::new(RegistryConfig::default()),
         }
+    }
+
+    /// Number of resident (loaded) contexts in this pool.
+    pub fn resident_len(&self) -> usize {
+        self.registry.len()
     }
 
     fn load_key(model_path: &Path, model_name: &str) -> LoadKey {
@@ -58,10 +73,11 @@ impl ContextCache {
 
     /// Load or reuse a context and return an **active registry pin** held for the
     /// whole operation (JOE-1646). No unpinned Arc is returned to callers.
-    fn get_or_load_pin(
+    pub fn get_or_load_pin(
         &self,
         model_path: &Path,
         model_name: &str,
+        gov: &Arc<ResourceGovernor>,
     ) -> Result<RegistryPin<WhisperContext>> {
         let key = Self::load_key(model_path, model_name);
         // Atomic lookup+pin under registry lock.
@@ -99,9 +115,9 @@ impl ContextCache {
                     .into());
                 }
                 Ok(Some(leader)) => {
-                    let gov = ResourceGovernor::process_global();
                     let path_owned = model_path.to_path_buf();
                     let name_owned = model_name.to_string();
+                    let gov = Arc::clone(gov);
 
                     let load_result = (|| -> Result<Arc<WhisperContext>> {
                         let _permit = gov.acquire(PermitKind::ModelLoad, None)?;
@@ -148,34 +164,40 @@ impl ContextCache {
         }
     }
 
-    fn get_or_load(&self, model_path: &Path, model_name: &str) -> Result<Arc<WhisperContext>> {
+    pub fn get_or_load(
+        &self,
+        model_path: &Path,
+        model_name: &str,
+        gov: &Arc<ResourceGovernor>,
+    ) -> Result<Arc<WhisperContext>> {
         Ok(Arc::clone(
-            self.get_or_load_pin(model_path, model_name)?.value(),
+            self.get_or_load_pin(model_path, model_name, gov)?.value(),
         ))
     }
 
     /// Drop idle STT contexts only; active decode pins keep residency (JOE-1646).
-    fn clear(&self) {
+    pub fn clear(&self) {
         let _ = self.registry.clear_idle();
     }
 
-    fn contains(&self, model_path: &Path, model_name: &str) -> bool {
+    pub fn contains(&self, model_path: &Path, model_name: &str) -> bool {
         let key = Self::load_key(model_path, model_name);
         self.registry.get(&key).is_some()
     }
-
-    /// Snapshot residency diagnostics (registry only — no hidden flight Ready).
-    #[allow(dead_code)]
-    fn residency_len(&self) -> usize {
-        self.registry.len()
-    }
 }
 
-static CONTEXT_CACHE: Lazy<ContextCache> = Lazy::new(ContextCache::new);
+static PROCESS_STT_POOL: Lazy<Arc<SttContextPool>> = Lazy::new(|| Arc::new(SttContextPool::new()));
 
-/// Drop all cached whisper contexts (call before process exit, only when idle).
+/// Process-global STT pool used by default providers / CLI (JOE-1784).
+pub fn process_global_stt_pool() -> Arc<SttContextPool> {
+    Arc::clone(&PROCESS_STT_POOL)
+}
+
+/// Drop idle contexts in the **process-global** STT pool (call before exit when idle).
+///
+/// Prefer [`crate::AurumEngine::clear_model_caches`] for engine-owned pools.
 pub fn clear_context_cache() {
-    CONTEXT_CACHE.clear();
+    PROCESS_STT_POOL.clear();
 }
 
 /// Local whisper.cpp provider.
@@ -185,15 +207,34 @@ pub struct LocalWhisperProvider {
     /// When true, never download models — fail if missing from cache.
     local_only: bool,
     on_download_progress: Option<DownloadProgressCallback>,
+    /// Model residency pool (process-global by default; engine-local when injected).
+    pool: Arc<SttContextPool>,
+    /// Admission governor for load/STT permits.
+    governor: Arc<ResourceGovernor>,
 }
 
 impl LocalWhisperProvider {
     pub fn new(cache_dir: PathBuf) -> Self {
+        Self::with_runtime(
+            cache_dir,
+            process_global_stt_pool(),
+            ResourceGovernor::process_global(),
+        )
+    }
+
+    /// Construct with an explicit STT pool and governor (JOE-1784 / engine path).
+    pub fn with_runtime(
+        cache_dir: PathBuf,
+        pool: Arc<SttContextPool>,
+        governor: Arc<ResourceGovernor>,
+    ) -> Self {
         Self {
             cache_dir,
             show_progress: true,
             local_only: false,
             on_download_progress: None,
+            pool,
+            governor,
         }
     }
 
@@ -227,13 +268,21 @@ impl LocalWhisperProvider {
         model::is_model_cached(&self.cache_dir, model)
     }
 
-    /// Whether a WhisperContext for this model is already loaded in-process.
+    /// Whether a WhisperContext for this model is already loaded in this provider's pool.
     pub fn is_model_loaded(&self, model: &str) -> bool {
         let Ok(info) = model::lookup_model(model) else {
             return false;
         };
         let path = model::model_path(&self.cache_dir, info);
-        CONTEXT_CACHE.contains(&path, model)
+        self.pool.contains(&path, model)
+    }
+
+    pub fn pool(&self) -> &Arc<SttContextPool> {
+        &self.pool
+    }
+
+    pub fn governor(&self) -> &Arc<ResourceGovernor> {
+        &self.governor
     }
 
     fn ensure_opts(&self) -> EnsureModelOptions {
@@ -246,13 +295,15 @@ impl LocalWhisperProvider {
         opts
     }
 
-    /// Download (unless `local_only`) and load the model into the process cache.
+    /// Download (unless `local_only`) and load the model into this provider's pool.
     pub async fn preload(&self, model: &str) -> Result<PathBuf> {
         let path =
             model::ensure_model_with_options(&self.cache_dir, model, self.ensure_opts()).await?;
         let model_name = model.to_string();
         let path_clone = path.clone();
-        tokio::task::spawn_blocking(move || CONTEXT_CACHE.get_or_load(&path_clone, &model_name))
+        let pool = Arc::clone(&self.pool);
+        let gov = Arc::clone(&self.governor);
+        tokio::task::spawn_blocking(move || pool.get_or_load(&path_clone, &model_name, &gov))
             .await
             .map_err(|e| ProviderError::TranscriptionFailed {
                 reason: format!("preload worker panicked: {e}"),
@@ -323,15 +374,18 @@ impl TranscriptionProvider for LocalWhisperProvider {
         op.check()?;
         op.emit("stt", "inference");
 
+        let pool = Arc::clone(&self.pool);
+        let gov = Arc::clone(&self.governor);
         let result = tokio::task::spawn_blocking(move || {
             // Admission inside the worker so queue wait does not occupy a Tokio worker.
-            let gov = ResourceGovernor::process_global();
             let n_threads = gov.recommend_stt_threads();
             let op_inner = OpContext::with_cancel(cancel.clone());
             let _permit = gov.acquire_stt(n_threads, 0, Some(&op_inner))?;
             // Re-check after queue wait so late work does not start after cancel.
             op_inner.check()?;
             run_whisper(
+                &pool,
+                &gov,
                 &model_path,
                 &model_name,
                 &samples,
@@ -361,6 +415,8 @@ unsafe extern "C" fn abort_callback_atomic(user_data: *mut std::ffi::c_void) -> 
 
 #[allow(clippy::too_many_arguments)]
 fn run_whisper(
+    pool: &SttContextPool,
+    gov: &Arc<ResourceGovernor>,
     model_path: &Path,
     model_name: &str,
     samples: &[f32],
@@ -375,7 +431,7 @@ fn run_whisper(
     }
 
     // Atomic registry lease held for the entire decode (JOE-1646).
-    let lease = CONTEXT_CACHE.get_or_load_pin(model_path, model_name)?;
+    let lease = pool.get_or_load_pin(model_path, model_name, gov)?;
     let ctx = Arc::clone(lease.value());
 
     let mut state = ctx

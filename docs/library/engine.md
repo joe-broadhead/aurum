@@ -1,17 +1,30 @@
 # AurumEngine (library hosts)
 
 `AurumEngine` is the preferred **owned** entry point for Rust library hosts
-(JOE-1654 / JOE-1782). It holds a validated configuration, an engine-local
-resource governor, and engine-local metrics.
+(JOE-1654 / JOE-1782 / JOE-1784 / JOE-1787). It holds:
+
+* validated configuration
+* engine-local resource governor
+* engine-local metrics
+* **engine-local STT context pool** and (with `tts`) **TTS session pool**
 
 ```rust
-use aurum_core::AurumEngine;
+use aurum_core::{AurumEngine, TranscriptionOptions};
 
 let engine = AurumEngine::load()?;
 let report = engine.doctor();
 let bundle = engine.support_bundle(None);
-// High-level STT still uses providers today; engine owns config/governor/metrics.
-engine.shutdown();
+
+// High-level STT (uses this engine's pool + governor + metrics)
+let opts = TranscriptionOptions {
+    model: "tiny-q5_1".into(),
+    language: "en".into(),
+    timestamps: false,
+    cancel: None,
+};
+// let result = engine.transcribe_pcm(&samples, &opts).await?;
+
+engine.shutdown(); // closes + clears idle model residency in *this* engine
 ```
 
 ## What the engine owns
@@ -19,34 +32,47 @@ engine.shutdown();
 | Component | Scope |
 |-----------|--------|
 | `ValidatedConfig` | Engine |
-| `ResourceGovernor` | Engine-local `Arc` (not shared across engines) |
+| `ResourceGovernor` | Engine-local `Arc` |
 | `Metrics` | Engine-local `Arc` |
+| `SttContextPool` | Engine-local `Arc` (JOE-1784) |
+| `TtsSessionPool` | Engine-local `Arc` when feature `tts` |
 | Lifecycle `closed` flag | Engine |
 
-## Residual process-global state (honest)
+## Isolation (JOE-1784)
 
-Local whisper contexts and TTS session pools remain **process-global** in the
-current release line. Multiple engines share those caches. Call
-`aurum_core::providers::local::clear_context_cache()` before process exit when
-using Metal. Per-engine model isolation is a follow-up under JOE-1654.
+Independent engines do **not** share whisper/TTS residency:
+
+```rust
+let a = AurumEngine::load()?;
+let b = AurumEngine::load()?;
+// a.stt_pool() and b.stt_pool() are distinct Arcs
+a.shutdown(); // does not clear b's models
+```
+
+Default `LocalWhisperProvider::new` / `LocalTtsProvider::new` still use
+**process-global** pools for CLI compatibility. Prefer:
+
+* `engine.local_whisper()` / `engine.local_tts()`
+* `LocalWhisperProvider::with_runtime(dir, pool, governor)`
+* `engine.clear_model_caches()` or `engine.shutdown()`
+
+Process-global cleanup (legacy CLI/Metal exit):
+`aurum_core::clear_context_cache()`.
 
 ## ValidatedConfig
 
 ```rust
-use aurum_core::{Config, ValidatedConfig};
+use aurum_core::{Config, ValidatedConfig, AurumEngine};
 
 let cfg = Config::load()?;
 let validated = ValidatedConfig::try_from_config(cfg)?;
 let engine = AurumEngine::new(validated);
 ```
 
-Invalid provider/output/TTS ceilings fail closed at construction.
-
 ## Secrets
 
-`Config.openrouter_api_key` is `Option<SecretString>`. Debug/Display never print
-the payload. Use `Config::openrouter_api_key_exposed()` only when constructing a
-remote client.
+`Config.openrouter_api_key` is `Option<SecretString>`. Use
+`Config::openrouter_api_key_exposed()` only when constructing a remote client.
 
 ## Segment / result construction
 
@@ -63,5 +89,5 @@ let result = TranscriptionResult::try_local(
 )?;
 ```
 
-Deserialized segments are untrusted DTOs — call `validate()` / `validate_segments()`
-before use. Prefer `try_local` / `try_openrouter` over the infallible builders.
+Deserialized segments are untrusted DTOs — call `validate()` /
+`validate_segments()` before use.

@@ -73,7 +73,7 @@ impl AudioInput {
         max_duration_secs: f64,
         max_decoded_bytes: usize,
     ) -> Result<Self> {
-        if sample_rate != WHISPER_SAMPLE_RATE {
+        if sample_rate == 0 || sample_rate != WHISPER_SAMPLE_RATE {
             return Err(UserError::UnsupportedSampleRate {
                 got: sample_rate,
                 need: WHISPER_SAMPLE_RATE,
@@ -87,8 +87,25 @@ impl AudioInput {
             }
             .into());
         }
+        // Reject non-finite samples early (JOE-1786 progressive domain hardening).
+        for (i, s) in samples.iter().enumerate() {
+            if !s.is_finite() {
+                return Err(UserError::InvalidAudio {
+                    reason: format!("PCM sample[{i}] is not finite"),
+                }
+                .into());
+            }
+        }
         let decoded_bytes = samples.len().saturating_mul(std::mem::size_of::<f32>());
         let duration_secs = samples.len() as f64 / f64::from(sample_rate);
+        if !duration_secs.is_finite() || duration_secs < 0.0 {
+            return Err(UserError::InvalidAudio {
+                reason: format!(
+                    "computed duration is not a valid non-negative finite value ({duration_secs})"
+                ),
+            }
+            .into());
+        }
         if duration_secs > max_duration_secs {
             return Err(UserError::AudioTooLong {
                 duration_secs,

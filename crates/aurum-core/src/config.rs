@@ -226,7 +226,8 @@ pub struct Config {
     pub output_file: Option<PathBuf>,
     pub timestamps: bool,
     pub verbose: bool,
-    pub openrouter_api_key: Option<String>,
+    /// Remote API key — redacted via [`crate::secret::SecretString`] Debug/Display (JOE-1779).
+    pub openrouter_api_key: Option<crate::secret::SecretString>,
     pub openrouter_base_url: String,
     pub openrouter_default_model: String,
     /// Allow custom credentialed endpoints (JOE-1587).
@@ -266,10 +267,7 @@ impl std::fmt::Debug for Config {
             .field("output_file", &self.output_file)
             .field("timestamps", &self.timestamps)
             .field("verbose", &self.verbose)
-            .field(
-                "openrouter_api_key",
-                &self.openrouter_api_key.as_ref().map(|_| "***"),
-            )
+            .field("openrouter_api_key", &self.openrouter_api_key)
             .field("openrouter_base_url", &self.openrouter_base_url)
             .field("openrouter_default_model", &self.openrouter_default_model)
             .field(
@@ -455,6 +453,14 @@ impl Config {
         Ok(cfg)
     }
 
+    /// Expose the OpenRouter API key as a plain string for provider construction.
+    /// Prefer not logging the return value.
+    pub fn openrouter_api_key_exposed(&self) -> Option<String> {
+        self.openrouter_api_key
+            .as_ref()
+            .map(|s| s.expose().to_string())
+    }
+
     /// Validate provider/model/style/limit cross-fields (JOE-1608).
     pub fn validate(&self) -> Result<()> {
         match self.provider.as_str() {
@@ -635,7 +641,8 @@ impl Config {
         let openrouter_api_key = std::env::var("OPENROUTER_API_KEY")
             .ok()
             .filter(|s| !s.is_empty())
-            .or(file.openrouter.api_key.clone());
+            .or(file.openrouter.api_key.clone())
+            .map(crate::secret::SecretString::new);
 
         let openrouter_base_url = std::env::var("OPENROUTER_BASE_URL")
             .ok()
@@ -1031,7 +1038,11 @@ model = "google/gemini-2.5-flash"
         assert_eq!(cfg.model.as_deref(), Some("small"));
         assert_eq!(cfg.language, "en");
         assert_eq!(cfg.output, "json");
-        assert_eq!(cfg.openrouter_api_key.as_deref(), Some("test-key"));
+        assert_eq!(
+            cfg.openrouter_api_key.as_ref().map(|s| s.expose()),
+            Some("test-key")
+        );
+        assert!(!format!("{:?}", cfg).contains("test-key"));
         assert_eq!(cfg.openrouter_default_model, "google/gemini-2.5-flash");
         assert_eq!(cfg.cleanup_style, "raw");
         assert_eq!(cfg.cleanup_provider, "rules");

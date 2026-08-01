@@ -1,7 +1,8 @@
 # crates.io credential rotation runbook (JOE-1715)
 
-Complete this **after** any publish that still used the disclosed token (v0.0.4
-crates are published). Do **not** paste token values into chat, tickets, or git.
+Complete this **after** any publish that still used the disclosed token (v0.0.3–
+v0.0.6 crates were published with the publish environment secret). Do **not**
+paste token values into chat, tickets, or git.
 
 ## Steps
 

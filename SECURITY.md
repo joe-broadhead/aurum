@@ -9,7 +9,7 @@ the repository owner's GitHub profile before opening a public issue.
 Do **not** include vulnerability details, exploit steps, or private logs in
 public issues or pull requests.
 
-## Disclosure rehearsal (JOE-1638)
+## Disclosure rehearsal (JOE-1638 / JOE-1890)
 
 Before 1.0, maintainers rehearse the vulnerability response path at least once
 per major line (tabletop is acceptable when no live issue exists):
@@ -26,8 +26,17 @@ per major line (tabletop is acceptable when no live issue exists):
    release tags; yank crates.io only for safety-critical broken builds.
 6. **Postmortem** — update threat model / hardening docs if assumptions changed.
 
-Sensitive fuzz or adversarial findings follow the same private path until a fix
-or public advisory is ready.
+Run the sample tabletop evidence pack:
+
+```bash
+./scripts/rehearse_disclosure_tabletop.sh
+```
+
+Details: `docs/operations/disclosure-tabletop.md`. Sensitive fuzz or adversarial
+findings follow the same private path until a fix or public advisory is ready.
+
+Model pin compromise: `docs/operations/model-revocation.md` and
+`./scripts/rehearse_model_revocation.sh`.
 
 ## Scope notes
 

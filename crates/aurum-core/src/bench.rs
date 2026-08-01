@@ -142,10 +142,12 @@ pub fn sample_srt_stream(segments: usize, iters: u32) -> BenchSample {
     use crate::output::{write_result_with_limit, OutputFormat};
     use crate::providers::{Segment, TranscriptionResult};
     let segs: Vec<Segment> = (0..segments)
-        .map(|i| Segment {
-            start: i as f64 * 0.5,
-            end: i as f64 * 0.5 + 0.4,
-            text: format!("segment number {i}"),
+        .map(|i| {
+            Segment::from_parts_unchecked(
+                i as f64 * 0.5,
+                i as f64 * 0.5 + 0.4,
+                format!("segment number {i}"),
+            )
         })
         .collect();
     let result = TranscriptionResult::local(

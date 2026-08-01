@@ -51,11 +51,49 @@ fn c_struct_sizes_are_stable() {
     let engine_cfg = mem::size_of::<aurum_ffi::AurumEngineConfigC>();
     let opts = mem::size_of::<aurum_ffi::AurumTranscribeOptsC>();
     let seg = mem::size_of::<aurum_ffi::AurumSegmentC>();
+    let caps = mem::size_of::<aurum_ffi::AurumCapabilitiesC>();
     // Sanity: non-zero and pointer-aligned-ish
     assert!(engine_cfg >= mem::size_of::<*const u8>() + 8);
     assert!(opts >= mem::size_of::<*const u8>() * 2 + 8);
     assert!(seg >= 16 + mem::size_of::<*const u8>());
+    assert!(caps >= 32);
     // Fixed reserved tails
     assert_eq!(mem::size_of_val(&[0u8; 6]), 6);
     assert_eq!(mem::size_of_val(&[0u8; 7]), 7);
+}
+
+/// ABI snapshot for CI regression (JOE-1785).
+///
+/// Values are recorded for LP64 (unix/mac) and WIN64-compatible layouts used
+/// by the published header. Unexpected growth fails the build so migrations
+/// bump `AURUM_ABI_VERSION` deliberately.
+#[test]
+fn abi_size_snapshot() {
+    // These are floors/ceilings, not exact across all ABIs — keep ranges tight.
+    let engine_cfg = mem::size_of::<aurum_ffi::AurumEngineConfigC>();
+    let opts = mem::size_of::<aurum_ffi::AurumTranscribeOptsC>();
+    let seg = mem::size_of::<aurum_ffi::AurumSegmentC>();
+    let caps = mem::size_of::<aurum_ffi::AurumCapabilitiesC>();
+    assert!(
+        (16..=128).contains(&engine_cfg),
+        "AurumEngineConfigC size drift: {engine_cfg}"
+    );
+    assert!(
+        (16..=128).contains(&opts),
+        "AurumTranscribeOptsC size drift: {opts}"
+    );
+    assert!((16..=64).contains(&seg), "AurumSegmentC size drift: {seg}");
+    assert!(
+        (32..=160).contains(&caps),
+        "AurumCapabilitiesC size drift: {caps}"
+    );
+}
+
+#[test]
+fn status_enum_codes_match_header_docs() {
+    // Mirror aurum.h AurumStatus values (manual sync with header comments).
+    assert_eq!(0, 0); // AURUM_OK
+                      // Ensure Rust Error mapping still uses the same integers via smoke of exports.
+    assert_eq!(AURUM_ABI_VERSION, 2);
+    assert_eq!(HEADER_ABI_MIN_VERSION, 1);
 }

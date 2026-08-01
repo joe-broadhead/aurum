@@ -66,10 +66,12 @@ impl SttResultDto {
             segments: result
                 .segments
                 .iter()
-                .map(|s| Segment {
-                    start: finite_or_zero(s.start),
-                    end: finite_or_zero(s.end),
-                    text: s.text.clone(),
+                .map(|s| {
+                    Segment::from_parts_unchecked(
+                        finite_or_zero(s.start()),
+                        finite_or_zero(s.end()),
+                        s.text().to_string(),
+                    )
                 })
                 .collect(),
             normalization_warnings: warnings.to_vec(),
@@ -178,11 +180,7 @@ mod tests {
     fn stt_dto_roundtrip_fields() {
         let r = TranscriptionResult::local(
             "hi".into(),
-            vec![Segment {
-                start: 0.0,
-                end: 1.0,
-                text: "hi".into(),
-            }],
+            vec![Segment::from_parts_unchecked(0.0, 1.0, "hi".to_string())],
             Some("en".into()),
             "base".into(),
             1.0,

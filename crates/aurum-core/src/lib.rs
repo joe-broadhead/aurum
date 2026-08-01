@@ -68,6 +68,7 @@ pub mod capabilities;
 pub mod cleanup;
 pub mod config;
 pub mod doctor;
+pub mod domain;
 pub mod download;
 pub mod dto;
 pub mod engine;
@@ -107,6 +108,7 @@ pub use cleanup::{
 };
 pub use config::{Config, EffectiveConfigDiagnostic, RawConfig, ValidatedConfig};
 pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_SCHEMA_VERSION};
+pub use domain::{FiniteDurationSecs, ModelId, SampleRateHz};
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
 pub use engine::AurumEngine;
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};

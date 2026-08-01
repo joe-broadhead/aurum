@@ -108,11 +108,11 @@ async fn cleanup_adversarial_control_chars_and_huge_repeat() {
 fn normalization_handles_nan_segment_without_panic() {
     let result = TranscriptionResult::local(
         "hi".into(),
-        vec![Segment {
-            start: f64::NAN,
-            end: 1.0,
-            text: "hi".into(),
-        }],
+        vec![Segment::from_parts_unchecked(
+            f64::NAN,
+            1.0,
+            "hi".to_string(),
+        )],
         Some("en".into()),
         "tiny".into(),
         1.0,
@@ -120,8 +120,8 @@ fn normalization_handles_nan_segment_without_panic() {
     let (normalized, report) = normalize_result_with_report(result);
     assert!(normalized.duration_secs.is_finite());
     for s in &normalized.segments {
-        assert!(s.start.is_finite());
-        assert!(s.end.is_finite());
+        assert!(s.start().is_finite());
+        assert!(s.end().is_finite());
     }
     let _ = report;
 }
@@ -131,16 +131,8 @@ fn normalization_handles_inverted_and_infinite_segments() {
     let result = TranscriptionResult::local(
         "x".into(),
         vec![
-            Segment {
-                start: f64::INFINITY,
-                end: f64::NEG_INFINITY,
-                text: "a".into(),
-            },
-            Segment {
-                start: 5.0,
-                end: 1.0,
-                text: "b".into(),
-            },
+            Segment::from_parts_unchecked(f64::INFINITY, f64::NEG_INFINITY, "a".to_string()),
+            Segment::from_parts_unchecked(5.0, 1.0, "b".to_string()),
         ],
         None,
         "m".into(),
@@ -149,8 +141,8 @@ fn normalization_handles_inverted_and_infinite_segments() {
     let (normalized, _) = normalize_result_with_report(result);
     assert!(normalized.duration_secs.is_finite());
     for s in &normalized.segments {
-        assert!(s.start.is_finite() && s.end.is_finite());
-        assert!(s.end >= s.start || s.text.is_empty());
+        assert!(s.start().is_finite() && s.end().is_finite());
+        assert!(s.end() >= s.start() || s.text().is_empty());
     }
 }
 

@@ -241,16 +241,17 @@ fn write_srt<W: Write>(result: &TranscriptionResult, w: &mut W) -> io::Result<()
 
     let mut cue = 1usize;
     for seg in &result.segments {
-        if !seg.start.is_finite() || !seg.end.is_finite() || seg.end < seg.start {
+        if !seg.start().is_finite() || !seg.end().is_finite() || seg.end() < seg.start() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!(
                     "invalid SRT timestamps at cue {cue}: start={} end={}",
-                    seg.start, seg.end
+                    seg.start(),
+                    seg.end()
                 ),
             ));
         }
-        let text = seg.text.trim();
+        let text = seg.text().trim();
         if text.is_empty() {
             continue;
         }
@@ -259,8 +260,8 @@ fn write_srt<W: Write>(result: &TranscriptionResult, w: &mut W) -> io::Result<()
             w,
             "{}\n{} --> {}\n{}\n\n",
             cue,
-            format_ts(seg.start),
-            format_ts(seg.end),
+            format_ts(seg.start()),
+            format_ts(seg.end()),
             text
         )?;
         cue += 1;
@@ -296,16 +297,8 @@ mod tests {
         TranscriptionResult::local(
             "Hello world. This is a test.".into(),
             vec![
-                Segment {
-                    start: 0.0,
-                    end: 1.2,
-                    text: "Hello world.".into(),
-                },
-                Segment {
-                    start: 1.4,
-                    end: 3.5,
-                    text: "This is a test.".into(),
-                },
+                Segment::from_parts_unchecked(0.0, 1.2, "Hello world.".to_string()),
+                Segment::from_parts_unchecked(1.4, 3.5, "This is a test.".to_string()),
             ],
             Some("en".into()),
             "base".into(),
@@ -402,7 +395,7 @@ mod tests {
     #[test]
     fn invalid_srt_timestamps_rejected() {
         let mut r = sample_result();
-        r.segments[0].end = f64::NAN;
+        r.segments[0].set_end(f64::NAN);
         let err = write_result(&r, OutputFormat::Srt, Vec::new()).unwrap_err();
         assert!(err.to_string().contains("timestamp") || err.to_string().contains("invalid"));
     }
@@ -410,11 +403,7 @@ mod tests {
     #[test]
     fn large_segment_set_streams() {
         let segs: Vec<Segment> = (0..5000)
-            .map(|i| Segment {
-                start: i as f64,
-                end: i as f64 + 0.5,
-                text: format!("cue {i}"),
-            })
+            .map(|i| Segment::from_parts_unchecked(i as f64, i as f64 + 0.5, format!("cue {i}")))
             .collect();
         let r = TranscriptionResult::local(
             "many".into(),

@@ -9,11 +9,11 @@ use tempfile::tempdir;
 fn sample() -> TranscriptionResult {
     TranscriptionResult::local(
         "One two three.".into(),
-        vec![Segment {
-            start: 0.0,
-            end: 2.0,
-            text: "One two three.".into(),
-        }],
+        vec![Segment::from_parts_unchecked(
+            0.0,
+            2.0,
+            "One two three.".to_string(),
+        )],
         Some("en".into()),
         "tiny".into(),
         2.0,

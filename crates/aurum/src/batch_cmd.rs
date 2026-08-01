@@ -14,8 +14,7 @@ use aurum_core::error::{Result, UserError};
 use aurum_core::output::{self, CommitMode, OutputFormat};
 use aurum_core::profile::{resolve_profile, QualityProfile};
 use aurum_core::providers::{
-    LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, TranscriptionOptions,
-    TranscriptionProvider,
+    OpenRouterProvider, OpenRouterSttMode, TranscriptionOptions, TranscriptionProvider,
 };
 use aurum_core::remote::RemotePolicy;
 use clap::Parser;
@@ -208,7 +207,12 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
     }
 
     let local = if provider_name == "local" {
-        Some(LocalWhisperProvider::new(cfg.cache_dir.clone()).with_progress(cli.verbose))
+        Some({
+            // Engine-owned STT pool for batch (JOE-1795). Process exit still clears
+            // process-global cache for any residual shared path.
+            let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
+            engine.local_whisper()?.with_progress(cli.verbose)
+        })
     } else {
         None
     };

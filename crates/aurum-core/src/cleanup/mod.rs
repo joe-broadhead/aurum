@@ -257,7 +257,7 @@ pub async fn apply_cleanup_with_segments(
             .into());
         }
         for (i, seg) in result.segments.iter().enumerate() {
-            let n = seg.text.chars().count();
+            let n = seg.text().chars().count();
             if n > MAX_PER_SEGMENT_CHARS {
                 return Err(UserError::Other {
                     message: format!(
@@ -306,7 +306,7 @@ pub async fn apply_cleanup_with_segments(
         SegmentCleanupPolicy::PerSegment => {
             let mut cleaned = Vec::with_capacity(original_segments.len());
             for (i, seg) in original_segments.iter().enumerate() {
-                let piece = match cleanup.cleanup(&seg.text, style).await {
+                let piece = match cleanup.cleanup(seg.text(), style).await {
                     Ok(p) => p,
                     Err(e) => {
                         // No mutation yet — original `result` is intact.
@@ -317,8 +317,8 @@ pub async fn apply_cleanup_with_segments(
                     }
                 };
                 let mut seg = seg.clone();
-                seg.text = piece.text;
-                if seg.text.trim().is_empty() {
+                seg.set_text(piece.text);
+                if seg.text().trim().is_empty() {
                     dropped_segments += 1;
                 } else {
                     cleaned.push(seg);
@@ -427,16 +427,8 @@ mod tests {
         let mut result = TranscriptionResult::local(
             "One. Two. Three.".into(),
             vec![
-                Segment {
-                    start: 0.0,
-                    end: 1.0,
-                    text: "One.".into(),
-                },
-                Segment {
-                    start: 1.0,
-                    end: 2.0,
-                    text: "Two.".into(),
-                },
+                Segment::from_parts_unchecked(0.0, 1.0, "One.".to_string()),
+                Segment::from_parts_unchecked(1.0, 2.0, "Two.".to_string()),
             ],
             Some("en".into()),
             "tiny".into(),
@@ -464,11 +456,11 @@ mod tests {
         let c = RulesCleanup::new();
         let mut result = TranscriptionResult::local(
             "um hello there".into(),
-            vec![Segment {
-                start: 0.0,
-                end: 1.0,
-                text: "um hello there".into(),
-            }],
+            vec![Segment::from_parts_unchecked(
+                0.0,
+                1.0,
+                "um hello there".to_string(),
+            )],
             None,
             "tiny".into(),
             1.0,
@@ -482,7 +474,7 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(result.segments.len(), 1);
-        assert_eq!(result.segments[0].text, "um hello there");
+        assert_eq!(result.segments[0].text(), "um hello there");
         assert!(result.original_text.is_some());
     }
 
@@ -524,16 +516,8 @@ mod tests {
         let mut result = TranscriptionResult::local(
             "um one. um two.".into(),
             vec![
-                Segment {
-                    start: 0.0,
-                    end: 1.0,
-                    text: "um one.".into(),
-                },
-                Segment {
-                    start: 1.0,
-                    end: 2.0,
-                    text: "um two.".into(),
-                },
+                Segment::from_parts_unchecked(0.0, 1.0, "um one.".to_string()),
+                Segment::from_parts_unchecked(1.0, 2.0, "um two.".to_string()),
             ],
             None,
             "tiny".into(),

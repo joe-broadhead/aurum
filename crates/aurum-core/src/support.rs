@@ -145,6 +145,25 @@ fn redact_path_str(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::secret::SecretString;
+    use tempfile::tempdir;
+
+    #[test]
+    fn support_bundle_redacts_secrets_and_stays_offline() {
+        let dir = tempdir().unwrap();
+        let mut cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        cfg.cache_dir = dir.path().join("cache");
+        cfg.openrouter_api_key = Some(SecretString::new("sk-leaked-api-key-value"));
+        let bundle = build_support_bundle(&cfg, Some("notes only".into()));
+        let json = bundle.to_json_pretty().unwrap();
+        assert!(!json.contains("sk-leaked-api-key-value"));
+        assert!(json.contains("***") || bundle.config.openrouter_api_key.as_deref() == Some("***"));
+        assert!(bundle
+            .redaction_notes
+            .iter()
+            .any(|n| n.contains("no network")));
+        assert!(bundle.doctor.checks.iter().any(|c| c.id == "offline"));
+    }
 
     #[test]
     fn bundle_has_no_home_leak_when_redacted() {

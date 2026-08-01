@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1786:** `Segment` fields private with accessors; domain primitives
+  `SampleRateHz` / `FiniteDurationSecs` / `ModelId`;
+  `Segment::from_parts_unchecked` for trusted paths.
+- **JOE-1783:** doctor `cache_writable` + explicit offline check; redaction
+  tests for doctor JSON and support bundles.
+- **JOE-1785:** expanded ABI size snapshot tests; FFI install docs for C11/C++17
+  examples.
+- **JOE-1795:** CLI local STT/TTS and batch local path use `AurumEngine` pools.
+
 ## [0.0.8] - 2026-08-01
 
 v0.0.8 is **Group C — engine ownership completion**: per-engine whisper/TTS model

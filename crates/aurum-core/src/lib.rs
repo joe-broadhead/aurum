@@ -99,8 +99,10 @@ pub use batch::{
 };
 pub use cancel::CancelFlag;
 pub use capabilities::{
-    lookup_openrouter_stt, preflight_cleanup, preflight_stt, preflight_tts, OpenRouterSttPath,
-    OpenRouterSttRecord, ProviderCapabilities, CAPABILITY_SCHEMA_VERSION, OPENROUTER_STT_REGISTRY,
+    apply_stt_request_gates, lookup_openrouter_stt, preflight_cleanup, preflight_cleanup_for,
+    preflight_stt, preflight_stt_for, preflight_tts, preflight_tts_for, CapabilityOperation,
+    DescriptorFreshness, OpenRouterSttPath, OpenRouterSttRecord, ProviderCapabilities,
+    SttBackendClass, VoiceModel, CAPABILITY_SCHEMA_VERSION, OPENROUTER_STT_REGISTRY,
 };
 pub use cleanup::{
     apply_cleanup, apply_cleanup_with_segments, apply_cleanup_with_segments_op, cleanup_text,
@@ -132,7 +134,11 @@ pub use profile::{
     format_recommendation, resolve_profile, ProfileResolution, QualityProfile,
     PROFILE_EVIDENCE_VERSION,
 };
-pub use provider_platform::{ProviderBuildContext, ProviderId, ProviderRegistry};
+pub use provider_platform::{
+    capabilities_for, check_builtin_conformance, list_provider_summaries,
+    preflight_stt_with_registry, preflight_tts_with_registry, provider_list, ProviderBuildContext,
+    ProviderId, ProviderList, ProviderRegistry, ProviderSummary, PROVIDER_LIST_SCHEMA_VERSION,
+};
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,

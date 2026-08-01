@@ -19,7 +19,7 @@ surfaces, break-reset policy, automated checks), see
 | `TranscriptionResult::try_local` / `try_openrouter` | **stable-at-0.x** | Fail-closed builders |
 | Process-global STT/TTS pools | **legacy shared default** | Used only when constructing providers without an engine |
 | `SttResultDto` `schema_version = 1` | **stable-at-0.x** | Unknown future fields: ignore on read when possible; unsupported version → error |
-| `ProviderCapabilities` `schema_version = 1` | **stable-at-0.x** | Preflight before expensive work |
+| `ProviderCapabilities` `schema_version = 1` | **stable-at-0.x** | Preflight before expensive work; optional remote TTS/STT fields (JOE-1936) are additive with defaults |
 | `PartialSession`, `PcmBuffer`, `ResourceGovernor` | **stable-at-0.x** | Host-facing concurrency / progressive STT |
 | C ABI (`AURUM_ABI_VERSION = 2`) | **provisional** | Jobs include STT/cleanup/TTS; additive status codes preferred |
 | Process-global whisper/TTS caches | **legacy shared default** | Isolated when using `AurumEngine`; residual only for non-engine paths |

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7] - 2026-08-01
+
+v0.0.7 is the **SDK hardening residual** after owned-engine foundations v0.0.6:
+`SecretString` on the OpenRouter API key field, fail-closed CLI/batch
+`ValidatedConfig` re-validation after overrides, and fail-closed
+`TranscriptionResult::try_local` / `try_openrouter` builders.
+
 ### Changed
 
 - **JOE-1779 residual:** `Config.openrouter_api_key` is `Option<SecretString>`;
@@ -357,7 +364,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.6...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.7...HEAD
+[0.0.7]: https://github.com/joe-broadhead/aurum/compare/v0.0.6...v0.0.7
 [0.0.6]: https://github.com/joe-broadhead/aurum/compare/v0.0.5...v0.0.6
 [0.0.5]: https://github.com/joe-broadhead/aurum/compare/v0.0.4...v0.0.5
 [0.0.4]: https://github.com/joe-broadhead/aurum/compare/v0.0.3...v0.0.4

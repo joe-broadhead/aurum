@@ -71,5 +71,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.6** — owned `AurumEngine` / `ValidatedConfig` foundations + STT/TTS/`aurum-ffi`.  
+**v0.0.7** — SDK hardening residual on top of owned engine foundations + STT/TTS/`aurum-ffi`.  
 APIs may change before `0.1.0`; pin a release tag in dependents.

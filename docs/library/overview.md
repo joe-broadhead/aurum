@@ -24,8 +24,8 @@ Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 | TTS | `LocalTtsProvider`, catalogue, WAV write (feature `tts`, default on) |
 
 ```toml
-aurum-core = "0.0.6"
-# or git tag = "v0.0.6"
+aurum-core = "0.0.7"
+# or git tag = "v0.0.7"
 ```
 
 See [Integration](integration.md).
@@ -42,6 +42,6 @@ narrow; see [Native embeds](ffi.md).
 
 | Package | Install / depend |
 |---------|------------------|
-| `aurum-core` | `aurum-core = "0.0.6"` (default features include TTS; use `default-features = false` for STT-only) |
+| `aurum-core` | `aurum-core = "0.0.7"` (default features include TTS; use `default-features = false` for STT-only) |
 | `aurum-stt` | `cargo install aurum-stt` → runs `aurum` |
-| `aurum-ffi` | `aurum-ffi = "0.0.6"` or build from source (`libaurum_ffi` + `aurum.h`) |
+| `aurum-ffi` | `aurum-ffi = "0.0.7"` or build from source (`libaurum_ffi` + `aurum.h`) |

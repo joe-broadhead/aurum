@@ -1,15 +1,15 @@
 name: Publish crates.io
 
 # Manual only. Does not run on tag/push.
+# Production publication is tag-only and fully verified (JOE-1915 / F-002).
 # Order for a full release: aurum-core → aurum-stt → aurum-ffi.
 on:
   workflow_dispatch:
     inputs:
-      git_ref:
-        description: "Git tag or ref to publish from (e.g. v0.0.17 or master)"
+      tag:
+        description: "Immutable release tag only (e.g. v0.0.17). Branches and bare SHAs are rejected."
         required: true
         type: string
-        default: "master"
       crate:
         description: "Which crate to publish"
         required: true
@@ -19,15 +19,10 @@ on:
           - aurum-stt
           - aurum-ffi
       dry_run:
-        description: "Dry run (no upload)"
+        description: "Dry run (no upload). Dry runs still require an immutable tag."
         required: true
         type: boolean
         default: true
-      skip_tests:
-        description: "Skip workspace tests (for historical tag backfill)"
-        required: false
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -38,26 +33,46 @@ jobs:
     timeout-minutes: 60
     environment: crates-io
     steps:
+      - name: Require immutable semantic-version tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "${TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Refusing publish: tag must match vX.Y.Z (got '${TAG}')." >&2
+            echo "Branches, master, and bare SHAs are not allowed (JOE-1915)." >&2
+            exit 1
+          fi
+          echo "tag=${TAG}"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          ref: ${{ inputs.git_ref }}
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Confirm VERSION vs tag
+      - name: Bind tag to exact commit and VERSION
         env:
-          GIT_REF: ${{ inputs.git_ref }}
+          TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
-          ver="$(tr -d '[:space:]' < VERSION)"
-          echo "VERSION=${ver} ref=${GIT_REF}"
-          if [[ "${GIT_REF}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            tag_ver="${GIT_REF#v}"
-            if [ "${tag_ver}" != "${ver}" ]; then
-              echo "Tag ${GIT_REF} does not match VERSION ${ver}"
-              exit 1
-            fi
+          if ! git rev-parse -q --verify "refs/tags/${TAG}" >/dev/null; then
+            echo "Missing immutable tag ${TAG}" >&2
+            exit 1
           fi
+          tag_commit="$(git rev-list -n1 "${TAG}")"
+          head_commit="$(git rev-parse HEAD)"
+          if [ "${tag_commit}" != "${head_commit}" ]; then
+            echo "Checkout HEAD ${head_commit} does not match tag ${TAG} → ${tag_commit}" >&2
+            exit 1
+          fi
+          ver="$(tr -d '[:space:]' < VERSION)"
+          tag_ver="${TAG#v}"
+          if [ "${tag_ver}" != "${ver}" ]; then
+            echo "Tag ${TAG} does not match VERSION ${ver}" >&2
+            exit 1
+          fi
+          echo "bound tag=${TAG} commit=${head_commit} version=${ver}"
 
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
         with:
@@ -73,16 +88,15 @@ jobs:
           chmod +x scripts/version_check.sh
           ./scripts/version_check.sh
 
-      - name: Test gate
-        if: ${{ inputs.skip_tests != true && inputs.skip_tests != 'true' }}
+      - name: Test gate (required for real and dry-run publish)
         run: cargo test --workspace --locked
 
-      - name: Package list (always)
+      - name: Package list
         env:
           CRATE: ${{ inputs.crate }}
         run: cargo package -p "${CRATE}" --list --locked | head -40
 
-      - name: Publish
+      - name: Publish (verified package contents)
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           CRATE: ${{ inputs.crate }}
@@ -90,15 +104,13 @@ jobs:
         run: |
           set -euo pipefail
           if [ -z "${CARGO_REGISTRY_TOKEN:-}" ] && [ "${DRY_RUN}" != "true" ]; then
-            echo "CARGO_REGISTRY_TOKEN secret is required for real publish"
-            echo "Add it under Settings → Environments → crates-io (or repo secrets)."
+            echo "CARGO_REGISTRY_TOKEN secret is required for real publish" >&2
+            echo "Prefer crates.io trusted publishing/OIDC when available; token is emergency-only." >&2
             exit 1
           fi
-          args=(-p "${CRATE}" --locked --no-verify)
-          # --no-verify: avoid re-running full test suite inside cargo publish
-          # (we already ran tests unless skip_tests; historical tags may lack modern deps).
+          # Do NOT pass --no-verify: cargo must re-verify the exact package tarball.
+          args=(-p "${CRATE}" --locked)
           if [ "${DRY_RUN}" = "true" ]; then
             args+=(--dry-run)
           fi
-          # aurum-stt / aurum-ffi need matching aurum-core already on crates.io
           cargo publish "${args[@]}"

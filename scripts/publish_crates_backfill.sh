@@ -36,7 +36,8 @@ crate_has_version() {
 
 publish_one() {
   local crate="$1"
-  local args=(-p "${crate}" --locked --no-verify)
+  # JOE-1915 / F-002: never --no-verify; cargo re-checks the exact package.
+  local args=(-p "${crate}" --locked)
   if [ "${DRY_RUN}" = "true" ]; then
     args+=(--dry-run)
   fi
@@ -70,7 +71,11 @@ for ver in "${VER_ARR[@]}"; do
     exit 1
   fi
   if [ -x scripts/version_check.sh ]; then
-    ./scripts/version_check.sh || true
+    # Fail closed on version/package drift (JOE-1915).
+    ./scripts/version_check.sh
+  else
+    echo "ERROR: scripts/version_check.sh missing or not executable" >&2
+    exit 1
   fi
 
   for crate in "${CRATE_ARR[@]}"; do

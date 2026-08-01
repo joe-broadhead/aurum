@@ -8,7 +8,7 @@ members = [
 default-members = ["crates/aurum"]
 
 [workspace.package]
-version = "0.0.11"
+version = "0.0.12"
 edition = "2021"
 license = "MIT"
 authors = ["Joe Broadhead"]
@@ -20,7 +20,7 @@ readme = "README.md"
 
 [workspace.dependencies]
 # default-features = false so dependents can opt out of TTS/ORT (JOE-1647 native examples).
-aurum-core = { path = "crates/aurum-core", version = "0.0.11", default-features = false }
+aurum-core = { path = "crates/aurum-core", version = "0.0.12", default-features = false }
 async-trait = "0.1"
 base64 = "0.22"
 clap = { version = "4", features = ["derive", "env"] }

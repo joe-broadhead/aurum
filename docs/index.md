@@ -71,5 +71,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.11** — Group F SDK residual: domain privacy + FFI engine-local pools.  
+**v0.0.12** — Group G 1.0 assurance slice: SBOM, provenance, fuzz, platforms.  
 APIs may change before `0.1.0`; pin a release tag in dependents.

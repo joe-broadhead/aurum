@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.12] - 2026-08-01
+
+v0.0.12 is **Group G — first 1.0 assurance slice**: formal SBOM, structured
+provenance verification, cargo-fuzz smoke, and platform support docs.
+
 ### Added
 
 - **JOE-1859:** Formal CycloneDX 1.5 (`aurum.cdx.json`) + SPDX 2.3 lite
@@ -446,7 +451,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.11...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.12...HEAD
+[0.0.12]: https://github.com/joe-broadhead/aurum/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/joe-broadhead/aurum/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/joe-broadhead/aurum/compare/v0.0.9...v0.0.10
 [0.0.9]: https://github.com/joe-broadhead/aurum/compare/v0.0.8...v0.0.9

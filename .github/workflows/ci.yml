@@ -236,20 +236,29 @@ jobs:
   fuzz-smoke:
     name: fuzz smoke (nightly, short)
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      # Install cargo-fuzz on stable — building it on bleeding nightly can break
+      # transitive deps (rustix cfg attrs). Fuzz *targets* still need nightly.
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
       - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
         with:
           toolchain: nightly
-      - name: Install cargo-fuzz
-        run: cargo install cargo-fuzz --locked --version 0.12.0
+      - name: Install cargo-fuzz (stable host)
+        run: cargo +stable install cargo-fuzz --locked --version 0.12.0 --force
       - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
         with:
           prefix-key: v2-aurum-fuzz
           workspaces: fuzz
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
       - name: Short fuzz campaigns (JOE-1861)
         working-directory: fuzz
         run: |

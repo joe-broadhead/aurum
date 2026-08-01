@@ -71,5 +71,5 @@ flowchart LR
 
 ## Status
 
-**v0.0.9** — Group D domain/ops/ABI residual + STT/TTS/`aurum-ffi`.  
+**v0.0.10** — Group E remote maturity: capability routing, OpContext, TTS soft-deadline, batch cleanup.  
 APIs may change before `0.1.0`; pin a release tag in dependents.

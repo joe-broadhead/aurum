@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.10] - 2026-08-01
+
+v0.0.10 is **Group E — provider routing and remote operation maturity**:
+capability-authoritative OpenRouter auto routing, end-to-end OpContext stages,
+uniform TTS soft-deadline for packs, and transactional batched remote cleanup.
+
 ### Added
 
 - **JOE-1829:** Capability-authoritative OpenRouter `auto` STT routing via a

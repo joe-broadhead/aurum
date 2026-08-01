@@ -88,14 +88,17 @@ pub fn redact_secret_with(s: &str, known_secrets: &[&str]) -> String {
         };
         let idx = cursor + rel;
         let after = idx + "authorization:".len();
-        let ws = out[after..].chars().take_while(|c| c.is_whitespace()).count();
+        let ws = out[after..]
+            .chars()
+            .take_while(|c| c.is_whitespace())
+            .count();
         let value_start = after + ws;
         if out[value_start..].starts_with("***") {
             cursor = value_start + 3;
             continue;
         }
         let end = out[value_start..]
-            .find(|c: char| c == '\n' || c == '\r' || c == '"' || c == '\'')
+            .find(['\n', '\r', '"', '\''])
             .map(|i| value_start + i)
             .unwrap_or(out.len());
         if end <= value_start {
@@ -135,8 +138,7 @@ fn sanitize_code(s: &str) -> Option<String> {
     if t.is_empty() || t.len() > 64 {
         return None;
     }
-    if t
-        .chars()
+    if t.chars()
         .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
     {
         Some(t.to_string())

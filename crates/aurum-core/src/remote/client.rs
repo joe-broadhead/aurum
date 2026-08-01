@@ -274,7 +274,8 @@ mod tests {
     #[test]
     fn map_http_status_never_echoes_body_payload() {
         let body = r#"{"error":{"message":"sk-or-v1-canary-should-not-appear","code":401}}"#;
-        let err = map_http_status("openrouter", reqwest::StatusCode::UNAUTHORIZED, body).unwrap_err();
+        let err =
+            map_http_status("openrouter", reqwest::StatusCode::UNAUTHORIZED, body).unwrap_err();
         let msg = err.to_string();
         assert!(!msg.contains("canary"));
         assert!(!msg.contains("sk-or-v1"));
@@ -283,7 +284,8 @@ mod tests {
 
     #[test]
     fn map_http_status_remote_allowlists_code_only() {
-        let body = r#"{"error":{"message":"transcript: hello world secret","code":"no_endpoints"}}"#;
+        let body =
+            r#"{"error":{"message":"transcript: hello world secret","code":"no_endpoints"}}"#;
         let err = map_http_status("openrouter", reqwest::StatusCode::NOT_FOUND, body).unwrap_err();
         let msg = err.to_string();
         assert!(!msg.contains("transcript"));

@@ -11,6 +11,7 @@ pub mod rules;
 
 use crate::error::{Result, UserError};
 use crate::providers::TranscriptionResult;
+use crate::runtime::OpContext;
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
@@ -192,6 +193,18 @@ pub trait TextCleanup: Send + Sync {
     fn kind(&self) -> CleanupProviderKind;
 
     async fn cleanup(&self, text: &str, style: CleanupStyle) -> Result<CleanupResult>;
+
+    /// Clean many segment texts transactionally (JOE-1832).
+    ///
+    /// Default: sequential single-text calls. Remote backends may batch with
+    /// stable indices and must return only after all work succeeds.
+    async fn cleanup_segments(&self, texts: &[&str], style: CleanupStyle) -> Result<Vec<String>> {
+        let mut out = Vec::with_capacity(texts.len());
+        for t in texts {
+            out.push(self.cleanup(t, style).await?.text);
+        }
+        Ok(out)
+    }
 }
 
 /// Apply cleanup to a full transcription result.
@@ -218,7 +231,32 @@ pub async fn apply_cleanup_with_segments(
     style: CleanupStyle,
     segments: SegmentCleanupPolicy,
 ) -> Result<(CleanupResult, CleanupReport)> {
+    apply_cleanup_with_segments_op(result, cleanup, style, segments, None).await
+}
+
+/// Like [`apply_cleanup_with_segments`] with an optional [`OpContext`] for cancel,
+/// deadline, and progress (JOE-1831).
+pub async fn apply_cleanup_with_segments_op(
+    result: &mut TranscriptionResult,
+    cleanup: &dyn TextCleanup,
+    style: CleanupStyle,
+    segments: SegmentCleanupPolicy,
+    op: Option<&OpContext>,
+) -> Result<(CleanupResult, CleanupReport)> {
+    let owned_op;
+    let op = match op {
+        Some(o) => o,
+        None => {
+            owned_op = OpContext::new();
+            &owned_op
+        }
+    };
     let policy = segments.resolve(style);
+    op.emit(
+        "cleanup",
+        format!("style={} policy={policy:?}", style.as_str()),
+    );
+    op.check()?;
 
     if matches!(style, CleanupStyle::Raw) {
         // Raw remains the identity default — no metadata pollution.
@@ -277,14 +315,13 @@ pub async fn apply_cleanup_with_segments(
     let mut dropped_segments = 0usize;
     let mut segments_cleared = false;
 
+    op.emit("cleanup", "full_text");
     let out = cleanup.cleanup(&original_text, style).await?;
+    op.check()?;
 
     let proposed_segments = match policy {
         SegmentCleanupPolicy::Keep | SegmentCleanupPolicy::Auto => {
             // Keep timings; TXT may diverge from SRT segment text for light styles.
-            if !matches!(style, CleanupStyle::Clean | CleanupStyle::Professional) {
-                // Should not happen for Keep defaults, but record honesty.
-            }
             if matches!(style, CleanupStyle::Clean | CleanupStyle::Professional) {
                 warnings.push(
                     "segment timings kept; segment text is pre-cleanup ASR while \
@@ -304,20 +341,31 @@ pub async fn apply_cleanup_with_segments(
             Vec::new()
         }
         SegmentCleanupPolicy::PerSegment => {
+            op.emit("cleanup", "per_segment");
+            // Transactional: no host mutation until every segment cleans successfully
+            // (JOE-1832). OpenRouter batches remotely with stable ids.
+            let refs: Vec<&str> = original_segments.iter().map(|s| s.text()).collect();
+            let cleaned_texts =
+                cleanup
+                    .cleanup_segments(&refs, style)
+                    .await
+                    .map_err(|e| UserError::Other {
+                        message: format!("per-segment cleanup failed (transaction aborted): {e}"),
+                    })?;
+            if cleaned_texts.len() != original_segments.len() {
+                return Err(UserError::Other {
+                    message: format!(
+                        "per-segment cleanup returned {} texts for {} segments",
+                        cleaned_texts.len(),
+                        original_segments.len()
+                    ),
+                }
+                .into());
+            }
             let mut cleaned = Vec::with_capacity(original_segments.len());
-            for (i, seg) in original_segments.iter().enumerate() {
-                let piece = match cleanup.cleanup(seg.text(), style).await {
-                    Ok(p) => p,
-                    Err(e) => {
-                        // No mutation yet — original `result` is intact.
-                        return Err(UserError::Other {
-                            message: format!("per-segment cleanup failed on segment {i}: {e}"),
-                        }
-                        .into());
-                    }
-                };
+            for (seg, text) in original_segments.iter().zip(cleaned_texts) {
                 let mut seg = seg.clone();
-                seg.set_text(piece.text);
+                seg.set_text(text);
                 if seg.text().trim().is_empty() {
                     dropped_segments += 1;
                 } else {
@@ -329,6 +377,7 @@ pub async fn apply_cleanup_with_segments(
     };
 
     // Commit proposed state only now.
+    op.emit("cleanup", "commit");
     let mut changed_fields = vec![
         "text".into(),
         "cleanup_style".into(),

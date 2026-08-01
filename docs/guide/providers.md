@@ -23,25 +23,32 @@ aurum talk.m4a --model base
 
 | | |
 |--|--|
-| Transport | Multimodal chat completions (`input_audio`) |
 | Auth | `OPENROUTER_API_KEY` (preferred) or config |
-| Semantics | **LLM-assisted** — may paraphrase; not a dedicated ASR API |
-| JSON | `backend_kind: "llm_assisted"`, `timestamps_reliable: false` |
-| SRT | Refused unless `--allow-unreliable-timestamps` |
+| Paths | Dedicated `/audio/transcriptions` **or** multimodal chat (`input_audio`) |
+| Mode | `--openrouter-stt-mode auto\|chat\|transcriptions` (default `auto`) |
+| SRT | Only when the route reports reliable timestamps (dedicated ASR) |
 
-### Suggested models (audio input)
+### Capability-authoritative `auto` routing
 
-| Model | Notes |
-|-------|--------|
-| `google/gemini-2.5-flash-lite` | Cheap multimodal |
-| `openai/gpt-audio-mini` | Strong audio quality in our tests |
-| `mistralai/voxtral-small-24b-2507` | Speech-oriented |
-| `google/gemini-2.5-flash` | Balanced default-class Gemini |
+`auto` does **not** guess from model-name substrings. It only routes models
+present in the reviewed static registry (`OPENROUTER_STT_REGISTRY` in
+`aurum-core`). Unknown model ids **fail closed** with an explicit error — set
+`--openrouter-stt-mode chat` or `transcriptions` yourself for unlisted models.
+
+| Registry class | HTTP path | `backend_kind` | Timestamps |
+|----------------|-----------|----------------|------------|
+| Dedicated ASR (e.g. `openai/whisper-large-v3`, `openai/gpt-4o-transcribe`) | `/audio/transcriptions` | `asr` | reliable |
+| Multimodal chat (e.g. `google/gemini-2.5-flash`) | `/chat/completions` | `llm_assisted` | unreliable |
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
-aurum talk.mp3 --provider openrouter --model google/gemini-2.5-flash-lite
-aurum talk.mp3 --provider openrouter --model openai/gpt-audio-mini -o json
+# Registered multimodal chat model (auto → chat)
+aurum talk.mp3 --provider openrouter --model google/gemini-2.5-flash
+# Registered dedicated ASR (auto → transcriptions)
+aurum talk.mp3 --provider openrouter --model openai/whisper-large-v3 -o srt
+# Unregistered model: must choose a path explicitly
+aurum talk.mp3 --provider openrouter --model vendor/custom-audio \
+  --openrouter-stt-mode chat -o json
 ```
 
 !!! note "Privacy settings"
@@ -56,7 +63,11 @@ flowchart TB
     B --> C[segments + text]
   end
   subgraph remote [openrouter]
-    D[mp3 upload] --> E[chat completions]
-    E --> F[text]
+    D[encode upload] --> R{auto registry}
+    R -->|ASR record| E1[/audio/transcriptions]
+    R -->|chat record| E2[/chat/completions]
+    R -->|unknown| X[fail closed]
+    E1 --> F[text + timestamps]
+    E2 --> G[text LLM-assisted]
   end
 ```

@@ -1060,10 +1060,10 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
                 stt_mode,
             )?;
             if cli.verbose {
+                let path = provider.resolve_path(&model)?;
                 eprintln!(
-                    "aurum: provider=openrouter model={model} stt_mode={} path={:?}",
+                    "aurum: provider=openrouter model={model} stt_mode={} path={path:?}",
                     stt_mode.as_str(),
-                    provider.resolve_path(&model)
                 );
             }
             provider.transcribe(&audio, &options).await?

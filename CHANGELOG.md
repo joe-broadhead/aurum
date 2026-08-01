@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1829:** Capability-authoritative OpenRouter `auto` STT routing via a
+  reviewed static registry (`OPENROUTER_STT_REGISTRY`). Unknown models fail
+  closed; explicit `chat` / `transcriptions` modes still accept any model id.
+- **JOE-1831:** End-to-end `OpContext` stages on remote STT and cleanup; resource
+  governor permit wait uses `Condvar` notify instead of busy sleep polling.
+- **JOE-1830:** Uniform TTS soft-deadline contract for built-in and local-pack
+  paths (caller timeout vs still-running native work that retains permits).
+- **JOE-1832:** Streaming file→base64 for chat-audio STT; transactional batched
+  remote per-segment cleanup with stable segment ids (commit only after all
+  batches succeed).
+
 ## [0.0.9] - 2026-08-01
 
 v0.0.9 is **Group D — domain privacy, doctor ops, ABI, and CLI engine pools**:

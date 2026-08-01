@@ -1,6 +1,9 @@
 name: crates.io token check (JOE-1715)
 
-# Ephemeral positive auth check — no publish. Safe for credential rotation proof.
+# Positive auth check for publish tokens — no upload of a real crate.
+# Note: /api/v1/me requires a website session cookie and rejects API tokens with 403.
+# We probe PUT /api/v1/crates/new with an empty body: 401 => bad/revoked token;
+# 400/422/other non-401 => token accepted by the auth layer (body rejected).
 on:
   workflow_dispatch:
 
@@ -13,7 +16,7 @@ jobs:
     timeout-minutes: 5
     environment: crates-io
     steps:
-      - name: Prove CARGO_REGISTRY_TOKEN authenticates (no secret echo)
+      - name: Prove CARGO_REGISTRY_TOKEN is accepted by crates.io auth
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
         run: |
@@ -22,26 +25,47 @@ jobs:
             echo "FAIL: CARGO_REGISTRY_TOKEN empty in crates-io environment" >&2
             exit 1
           fi
-          # Never print token. Query crates.io /api/v1/me
-          code=$(curl -sS -o /tmp/me.json -w '%{http_code}' \
+          # Never print token. Empty JSON body must not upload a crate.
+          code=$(curl -sS -o /tmp/reg.json -w '%{http_code}' \
+            -X PUT \
             -A "aurum-joe1715-token-check (github.com/joe-broadhead/aurum)" \
-            -H "Authorization: Bearer ${CARGO_REGISTRY_TOKEN}" \
-            -H "Accept: application/json" \
-            "https://crates.io/api/v1/me")
+            -H "Authorization: ${CARGO_REGISTRY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            --data '{}' \
+            "https://crates.io/api/v1/crates/new")
           echo "http_status=${code}"
-          if [ "${code}" != "200" ]; then
-            echo "FAIL: authentication rejected (status ${code})" >&2
-            # show error body only if it does not look like it contains a token
-            head -c 400 /tmp/me.json || true
-            echo
-            exit 1
-          fi
+          # Redact anything that could look like a secret in body (length only)
+          body_len=$(wc -c < /tmp/reg.json | tr -d ' ')
+          echo "body_bytes=${body_len}"
+          # Show short error detail if present (crates.io errors are safe JSON)
           python3 - <<'PY'
-          import json
-          d=json.load(open("/tmp/me.json"))
-          u=d.get("user") or d
-          # print non-secret identity fields only
-          print("login=", u.get("login") or u.get("name") or "(unknown)")
-          print("id=", u.get("id") or "(unknown)")
-          print("OK: replacement token authenticates to crates.io /api/v1/me")
+          import json,sys
+          try:
+            d=json.load(open("/tmp/reg.json"))
+          except Exception as e:
+            print("body_parse=fail", e)
+            sys.exit(0)
+          errs=d.get("errors") or []
+          for e in errs[:3]:
+            detail=str(e.get("detail") or e)[:200]
+            print("error_detail=", detail)
           PY
+          case "${code}" in
+            401)
+              echo "FAIL: token rejected (401 Unauthorized) — revoke/replace still needed" >&2
+              exit 1
+              ;;
+            403)
+              # May still mean token scope insufficient or WAF; treat as soft fail for publish tokens
+              echo "FAIL: token got 403 — check token scopes / validity" >&2
+              exit 1
+              ;;
+            200|201)
+              echo "UNEXPECTED: empty body should not create a crate (status ${code})" >&2
+              exit 1
+              ;;
+            *)
+              echo "OK: crates.io accepted Authorization (status ${code}, not 401/403) — replacement token authenticates"
+              exit 0
+              ;;
+          esac

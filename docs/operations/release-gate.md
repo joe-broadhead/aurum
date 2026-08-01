@@ -31,10 +31,14 @@ Enforced in CI:
 | Scheduled long fuzz campaigns | `fuzz-campaign.yml` (JOE-1884) |
 | Tier A clean-install matrix | `ci.yml` clean-install (JOE-1883) |
 | Two-builder variance report | `ci.yml` repro-smoke / `release.yml` repro-compare (JOE-1885) |
+| Miri pure filters | `ci.yml` miri / `scripts/run_miri.sh` (JOE-1889) |
+| ASan + concurrency stress | `ci.yml` sanitizer-stress / `scripts/run_sanitizers.sh` (JOE-1887) |
+| Trust-boundary coverage report | `ci.yml` coverage-trust / `scripts/coverage_trust.sh` (JOE-1888) |
+| Mutation smoke (scoped) | `ci.yml` mutants-smoke / `scripts/run_mutants.sh` (JOE-1886) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
 
-See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md).
+See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md).
 
 ## Compatibility freeze (toward 1.0)
 

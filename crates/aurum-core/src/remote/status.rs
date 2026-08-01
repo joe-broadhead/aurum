@@ -1,4 +1,4 @@
-//! Secret redaction helpers for remote diagnostics (JOE-1914).
+//! Secret redaction helpers for remote diagnostics (JOE-1914 / retest JOE-1920).
 
 use crate::secret::SecretString;
 
@@ -56,7 +56,6 @@ pub fn redact_secret_with(s: &str, known_secrets: &[&str]) -> String {
                     .unwrap_or(out.len());
                 // Require material after the prefix.
                 if end > value_start + 4 {
-                    // Prefer earliest match; on tie, longer needle.
                     let take = match best {
                         None => true,
                         Some((b_start, _, _)) => idx < b_start,
@@ -79,7 +78,7 @@ pub fn redact_secret_with(s: &str, known_secrets: &[&str]) -> String {
         out.replace_range(start..end, replacement);
     }
 
-    // Authorization: header form (value after colon). Scan once left-to-right.
+    // Authorization: header form (value after colon). Byte-safe whitespace skip.
     let mut cursor = 0;
     while cursor < out.len() {
         let lower = out[cursor..].to_ascii_lowercase();
@@ -88,11 +87,16 @@ pub fn redact_secret_with(s: &str, known_secrets: &[&str]) -> String {
         };
         let idx = cursor + rel;
         let after = idx + "authorization:".len();
-        let ws = out[after..]
+        // Sum UTF-8 byte lengths of leading whitespace — never use char count as offset.
+        let ws_bytes: usize = out[after..]
             .chars()
             .take_while(|c| c.is_whitespace())
-            .count();
-        let value_start = after + ws;
+            .map(|c| c.len_utf8())
+            .sum();
+        let value_start = after + ws_bytes;
+        if value_start > out.len() {
+            break;
+        }
         if out[value_start..].starts_with("***") {
             cursor = value_start + 3;
             continue;
@@ -111,40 +115,58 @@ pub fn redact_secret_with(s: &str, known_secrets: &[&str]) -> String {
     out
 }
 
-/// Extract a short allowlisted provider error code from a JSON body, if present.
+/// Closed, **locally defined** provider code set that may appear in public errors.
 ///
-/// Only returns compact alphanumeric / underscore / hyphen tokens (≤ 64 chars).
-/// Never returns free-form message text.
+/// Anything else from the remote JSON `code` field is dropped (JOE-1920 retest of F-001).
+/// Character-class “looks safe” validation is intentionally **not** used for strings.
+const CLOSED_PROVIDER_STRING_CODES: &[&str] = &[
+    // Stable, non-secret labels we choose to surface (not provider free text).
+    "rate_limit_exceeded",
+    "insufficient_quota",
+    "invalid_request",
+    "invalid_api_key",
+    "model_not_found",
+    "context_length_exceeded",
+    "server_error",
+    "timeout",
+    "not_found",
+];
+
+/// Extract a public-safe provider code from a JSON body, if any.
+///
+/// - Integer codes are allowed only when they fit in a small non-negative range
+///   used as coarse categories (not free-form secrets).
+/// - String codes must match [`CLOSED_PROVIDER_STRING_CODES`] exactly (case-sensitive).
+/// - Arbitrary alphanumeric “codes” (including credential-shaped strings) are dropped.
 pub fn extract_allowlisted_provider_code(body: &str) -> Option<String> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
     let code = v
         .get("error")
         .and_then(|e| e.get("code"))
         .or_else(|| v.get("code"))?;
-    if let Some(s) = code.as_str() {
-        return sanitize_code(s);
-    }
-    if let Some(n) = code.as_i64() {
-        return Some(n.to_string());
-    }
-    if let Some(n) = code.as_u64() {
-        return Some(n.to_string());
-    }
-    None
-}
 
-fn sanitize_code(s: &str) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() || t.len() > 64 {
+    if let Some(n) = code.as_u64() {
+        // Coarse HTTP-like / OpenAPI style numeric codes only.
+        if n <= 599 {
+            return Some(n.to_string());
+        }
         return None;
     }
-    if t.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '.')
-    {
-        Some(t.to_string())
-    } else {
-        None
+    if let Some(n) = code.as_i64() {
+        if (0..=599).contains(&n) {
+            return Some(n.to_string());
+        }
+        return None;
     }
+    if let Some(s) = code.as_str() {
+        let t = s.trim();
+        if CLOSED_PROVIDER_STRING_CODES.contains(&t) {
+            return Some(t.to_string());
+        }
+        // Unknown or free-form string codes are never echoed.
+        return None;
+    }
+    None
 }
 
 /// Build a public, allowlisted remote-error reason (no provider body echo).
@@ -158,6 +180,8 @@ pub fn public_http_reason(status: u16, body: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const CANARY: &str = "sk-or-v1-TESTCANARY-JOE1920-DO-NOT-USE-001";
 
     #[test]
     fn redacts_openrouter_key() {
@@ -183,6 +207,15 @@ mod tests {
     }
 
     #[test]
+    fn authorization_redaction_handles_unicode_whitespace_without_panic() {
+        // NBSP (U+00A0) after the colon — must not use char-count as byte offset.
+        let s = format!("Authorization:\u{00a0}Bearer {CANARY}");
+        let out = redact_secret(&s);
+        assert!(!out.contains("TESTCANARY"));
+        assert!(!out.contains(CANARY));
+    }
+
+    #[test]
     fn public_reason_no_body_echo() {
         let body = r#"{"error":{"message":"sk-or-v1-secretvaluehere","code":404}}"#;
         let r = public_http_reason(404, body);
@@ -197,5 +230,40 @@ mod tests {
         let r = public_http_reason(500, "internal boom with sk-or-v1-abcdef");
         assert_eq!(r, "HTTP 500");
         assert!(!r.contains("sk-or"));
+    }
+
+    #[test]
+    fn provider_code_channel_drops_credential_shaped_string() {
+        // High retest failure: character-class codes leaked secrets.
+        let body = format!(r#"{{"error":{{"message":"ignored","code":"{CANARY}"}}}}"#);
+        let r = public_http_reason(401, &body);
+        assert!(
+            !r.contains("TESTCANARY") && !r.contains("sk-or-v1"),
+            "credential-shaped provider code leaked: {r}"
+        );
+        assert_eq!(r, "HTTP 401");
+    }
+
+    #[test]
+    fn provider_code_channel_drops_unknown_alphanumeric_string() {
+        let body = r#"{"error":{"message":"x","code":"no_endpoints_available_xyz"}}"#;
+        let r = public_http_reason(404, body);
+        assert!(!r.contains("no_endpoints"));
+        assert_eq!(r, "HTTP 404");
+    }
+
+    #[test]
+    fn provider_code_allows_closed_string_set_only() {
+        let body = r#"{"error":{"code":"rate_limit_exceeded","message":"slow down"}}"#;
+        let r = public_http_reason(429, body);
+        assert!(r.contains("provider_code=rate_limit_exceeded"));
+        assert!(!r.contains("slow down"));
+    }
+
+    #[test]
+    fn provider_code_drops_oversized_numeric() {
+        let body = r#"{"error":{"code":999999,"message":"nope"}}"#;
+        let r = public_http_reason(500, body);
+        assert_eq!(r, "HTTP 500");
     }
 }

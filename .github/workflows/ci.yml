@@ -60,6 +60,11 @@ jobs:
           chmod +x scripts/check_action_pins.sh
           ./scripts/check_action_pins.sh
 
+      - name: crates.io publish policy (JOE-1915 / JOE-1920)
+        run: |
+          chmod +x scripts/check_crates_publish_policy.sh
+          ./scripts/check_crates_publish_policy.sh
+
   test:
     name: test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

@@ -11,6 +11,9 @@ echo "== version sync =="
 echo "== action pins =="
 ./scripts/check_action_pins.sh
 
+echo "== crates.io publish policy (JOE-1915) =="
+./scripts/check_crates_publish_policy.sh
+
 echo "== fmt =="
 cargo fmt --all -- --check
 

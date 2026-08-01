@@ -218,11 +218,12 @@ impl HardenedHttpClient {
 
 /// Map HTTP status codes to typed provider errors.
 ///
-/// Public reasons are **allowlisted only** (HTTP status + optional provider code).
-/// Arbitrary remote response bodies are never echoed (JOE-1914).
+/// Public reasons are **allowlisted only** (HTTP status + optional closed provider code).
+/// Arbitrary remote response bodies and free-form string codes are never echoed (JOE-1914 / JOE-1920).
 pub fn map_http_status(provider: &str, status: StatusCode, body: &str) -> Result<()> {
     use super::status::public_http_reason;
     let code = status.as_u16();
+    // Body is only scanned for a closed local code set — never free text.
     let reason = public_http_reason(code, body);
     match code {
         200..=299 => Ok(()),
@@ -283,15 +284,26 @@ mod tests {
     }
 
     #[test]
-    fn map_http_status_remote_allowlists_code_only() {
+    fn map_http_status_drops_unknown_string_provider_code() {
         let body =
             r#"{"error":{"message":"transcript: hello world secret","code":"no_endpoints"}}"#;
         let err = map_http_status("openrouter", reqwest::StatusCode::NOT_FOUND, body).unwrap_err();
         let msg = err.to_string();
         assert!(!msg.contains("transcript"));
         assert!(!msg.contains("hello world"));
+        assert!(!msg.contains("no_endpoints"));
         assert!(msg.contains("404"));
-        assert!(msg.contains("no_endpoints"));
+    }
+
+    #[test]
+    fn map_http_status_drops_credential_shaped_provider_code() {
+        let body =
+            r#"{"error":{"message":"x","code":"sk-or-v1-TESTCANARY-JOE1920-DO-NOT-USE-001"}}"#;
+        let err =
+            map_http_status("openrouter", reqwest::StatusCode::UNAUTHORIZED, body).unwrap_err();
+        let msg = err.to_string();
+        assert!(!msg.contains("TESTCANARY"));
+        assert!(!msg.contains("sk-or-v1"));
     }
 
     #[test]

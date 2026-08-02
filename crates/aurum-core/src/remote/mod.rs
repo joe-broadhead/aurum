@@ -13,6 +13,7 @@ mod limits;
 mod openai_speech;
 mod policy;
 mod status;
+mod stt_chunk;
 mod wire_format;
 
 pub use client::{
@@ -33,4 +34,8 @@ pub use policy::{
     XAI_DEFAULT_BASE, XAI_ORIGIN,
 };
 pub use status::{public_network_reason, redact_secret, redact_secret_with};
+pub use stt_chunk::{
+    effective_chunk_secs, needs_time_chunk, plan_chunk_windows, soft_split_text_segments,
+    stitch_chunk_results, transcribe_maybe_chunked, DEFAULT_REMOTE_STT_CHUNK_SECS,
+};
 pub use wire_format::{resolve_encoded_format, ExpectedWireFormat};

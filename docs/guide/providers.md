@@ -131,6 +131,11 @@ aurum talk.mp3 --provider openrouter --model vendor/custom-audio \
     will see `No endpoints available matching your guardrail restrictions`.
     Configure at https://openrouter.ai/settings/privacy
 
+!!! note "Long-form remote STT (JOE-2212)"
+    For OpenRouter, OpenAI, and xAI, audio longer than ~210s is **time-chunked and
+    stitched** automatically (text + segment offsets). Override with
+    `AURUM_REMOTE_STT_CHUNK_SECS`. Local whisper is unchanged.
+
 ```mermaid
 flowchart TB
   subgraph local [local]

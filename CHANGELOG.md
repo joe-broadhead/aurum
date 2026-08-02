@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-2212 — Remote STT chunk-and-stitch:** OpenAI, OpenRouter, and xAI STT
+  automatically split long audio into ~210s windows, transcribe each chunk with
+  cancel checks, and stitch text/segments with time offsets. Short files stay
+  single-request. Override with `AURUM_REMOTE_STT_CHUNK_SECS`. Soft-splits rare
+  overlong single segments past the 8k char bound. Local whisper unchanged.
+
 ## [0.0.20] - 2026-08-02
 
 Post–security-sign-off product cut: live OpenRouter TTS catalogue refresh and

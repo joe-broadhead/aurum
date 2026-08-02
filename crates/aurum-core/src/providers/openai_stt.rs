@@ -10,9 +10,9 @@ use crate::audio::{self, AudioInput, DEFAULT_FFMPEG_TIMEOUT, DEFAULT_MAX_UPLOAD_
 use crate::error::{ProviderError, Result, UserError};
 use crate::postprocess;
 use crate::remote::{
-    map_http_status, read_body_limited_with_op, send_with_op, validate_segments,
-    validate_text_bounds, HardenedHttpClient, OpenAiHttpPolicy, RemoteBodyLimits, RemotePolicy,
-    TranscriptLimits,
+    effective_chunk_secs, map_http_status, read_body_limited_with_op, send_with_op,
+    transcribe_maybe_chunked, validate_segments, validate_text_bounds, HardenedHttpClient,
+    OpenAiHttpPolicy, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
 };
 use crate::runtime::{PermitKind, ResourceGovernor};
 use crate::secret::SecretString;
@@ -124,6 +124,40 @@ impl TranscriptionProvider for OpenAiSttProvider {
     }
 
     async fn transcribe(
+        &self,
+        input: &AudioInput,
+        options: &TranscriptionOptions,
+    ) -> Result<TranscriptionResult> {
+        // Fail closed on unknown models before any chunk work (JOE-2212).
+        let _ = lookup_openai_stt(&options.model).ok_or_else(|| {
+            UserError::UnsupportedCapability {
+                provider: PROVIDER_NAME.into(),
+                model: options.model.clone(),
+                reason: "model is not in the reviewed OpenAI STT registry".into(),
+                hint: format!(
+                    "use one of: {}",
+                    OPENAI_STT_REGISTRY
+                        .iter()
+                        .map(|r| r.model)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ),
+            }
+        })?;
+        transcribe_maybe_chunked(
+            input,
+            options,
+            PROVIDER_NAME,
+            effective_chunk_secs(),
+            |chunk, opts| async move { self.transcribe_one_shot(&chunk, &opts).await },
+        )
+        .await
+    }
+}
+
+impl OpenAiSttProvider {
+    /// Single remote request for one audio window (used by chunk-and-stitch).
+    async fn transcribe_one_shot(
         &self,
         input: &AudioInput,
         options: &TranscriptionOptions,

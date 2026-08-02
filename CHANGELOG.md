@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.20] - 2026-08-02
+
+Post–security-sign-off product cut: live OpenRouter TTS catalogue refresh and
+provider-aware remote TTS defaults (PR #82), after JOE-1920 human approval of
+the `v0.0.19` post-provider freeze.
+
 ### Fixed
 
 - **OpenRouter TTS catalogue drift:** default model is now `hexgrad/kokoro-82m`

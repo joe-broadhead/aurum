@@ -19,6 +19,22 @@ aurum talk.m4a --model tiny-q5_1
 aurum talk.m4a --model base
 ```
 
+## xAI / Grok (JOE-1942)
+
+| | |
+|--|--|
+| Auth | `XAI_API_KEY` or `[providers.xai]` |
+| Alias | config/CLI may use `grok` → canonical `xai` |
+| STT | REST multipart `/audio/transcriptions` |
+| TTS | REST `/audio/speech` (OpenAI-compatible body) |
+| Not in this vertical | Realtime/WebSocket voice |
+
+```bash
+export XAI_API_KEY=...
+aurum talk.mp3 --provider xai --model grok-asr
+aurum tts "Hello" --provider xai --model grok-tts --voice alloy -O /tmp/x.wav
+```
+
 ## ElevenLabs (TTS only, JOE-1941)
 
 | | |

@@ -509,6 +509,19 @@ pub use elevenlabs_tts::{
     EXAMPLE_ELEVENLABS_VOICE_ID,
 };
 
+pub mod xai_stt;
+pub use xai_stt::{
+    lookup_xai_stt, XaiSttProvider, XaiSttRecord, DEFAULT_XAI_STT_MODEL, XAI_STT_REGISTRY,
+};
+
+#[cfg(feature = "tts")]
+pub mod xai_tts;
+#[cfg(feature = "tts")]
+pub use xai_tts::{
+    lookup_xai_tts, XaiTtsProvider, XaiTtsRecord, DEFAULT_XAI_TTS_MODEL, DEFAULT_XAI_TTS_VOICE,
+    XAI_TTS_REGISTRY,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

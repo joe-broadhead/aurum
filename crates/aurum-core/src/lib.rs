@@ -163,6 +163,11 @@ pub use providers::{
     lookup_openrouter_tts, OpenRouterTtsProvider, DEFAULT_OPENROUTER_TTS_MODEL,
     DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_REGISTRY,
 };
+pub use providers::{lookup_xai_stt, XaiSttProvider, DEFAULT_XAI_STT_MODEL, XAI_STT_REGISTRY};
+#[cfg(feature = "tts")]
+pub use providers::{
+    lookup_xai_tts, XaiTtsProvider, DEFAULT_XAI_TTS_MODEL, DEFAULT_XAI_TTS_VOICE, XAI_TTS_REGISTRY,
+};
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,
     TranscriptionProvider, TranscriptionResult,

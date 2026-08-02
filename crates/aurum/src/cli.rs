@@ -683,10 +683,17 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         }
     }
 
-    let model = cli.model.clone().unwrap_or_else(|| cfg.tts_model.clone());
+    // Provider-aware defaults: remote providers never inherit local kitten/Luna
+    // when the operator only sets --provider openrouter|openai|… (live smoke).
+    let model =
+        aurum_core::resolve_tts_model(provider_id.as_str(), cli.model.as_deref(), &cfg.tts_model)?;
     let voice = {
-        let requested = cli.voice.clone().unwrap_or_else(|| cfg.tts_voice.clone());
-        // Opt-in Kokoro: if the selected model is Kokoro and the requested voice
+        let requested = aurum_core::resolve_tts_voice(
+            provider_id.as_str(),
+            cli.voice.as_deref(),
+            &cfg.tts_voice,
+        )?;
+        // Opt-in local Kokoro: if the selected model is Kokoro and the requested voice
         // is not model-scoped (e.g. default "Luna"), use Kokoro's default voice.
         if model.eq_ignore_ascii_case(aurum_core::KOKORO_TTS_MODEL)
             && aurum_core::resolve_voice_for_model(&model, &requested).is_err()

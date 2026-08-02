@@ -523,6 +523,120 @@ pub use xai_tts::{
     XAI_TTS_REGISTRY,
 };
 
+/// Default TTS model id when the operator selects a provider without `--model`.
+///
+/// Local uses the on-device catalogue default. Remote providers use their reviewed
+/// registry default so CLI/config local models (e.g. `kitten-nano-int8`) are never
+/// sent to OpenRouter/OpenAI/etc.
+#[cfg(feature = "tts")]
+pub fn default_tts_model_for_provider(provider: &str) -> Option<&'static str> {
+    match provider {
+        "local" => Some(crate::tts::DEFAULT_TTS_MODEL),
+        "openrouter" => Some(DEFAULT_OPENROUTER_TTS_MODEL),
+        "openai" => Some(DEFAULT_OPENAI_TTS_MODEL),
+        "elevenlabs" => Some(DEFAULT_ELEVENLABS_TTS_MODEL),
+        "xai" | "grok" => Some(DEFAULT_XAI_TTS_MODEL),
+        _ => None,
+    }
+}
+
+/// Default TTS voice for a provider when `--voice` is omitted.
+///
+/// ElevenLabs has no universal default voice id (account-specific); returns `None`.
+#[cfg(feature = "tts")]
+pub fn default_tts_voice_for_provider(provider: &str) -> Option<&'static str> {
+    match provider {
+        "local" => Some(crate::tts::DEFAULT_TTS_VOICE),
+        "openrouter" => Some(DEFAULT_OPENROUTER_TTS_VOICE),
+        "openai" => Some(DEFAULT_OPENAI_TTS_VOICE),
+        "elevenlabs" => None,
+        "xai" | "grok" => Some(DEFAULT_XAI_TTS_VOICE),
+        _ => None,
+    }
+}
+
+/// Whether `model` is a reviewed id for the given TTS provider (fail closed).
+#[cfg(feature = "tts")]
+pub fn tts_model_known_for_provider(provider: &str, model: &str) -> bool {
+    match provider {
+        "local" => crate::tts::lookup_model(model).is_ok(),
+        "openrouter" => lookup_openrouter_tts(model).is_some(),
+        "openai" => lookup_openai_tts(model).is_some(),
+        "elevenlabs" => lookup_elevenlabs_tts(model).is_some(),
+        "xai" | "grok" => lookup_xai_tts(model).is_some(),
+        _ => false,
+    }
+}
+
+/// Resolve effective TTS model: explicit CLI wins; otherwise config if valid for
+/// the selected provider; otherwise the provider registry default.
+#[cfg(feature = "tts")]
+pub fn resolve_tts_model(
+    provider: &str,
+    cli_model: Option<&str>,
+    config_model: &str,
+) -> Result<String> {
+    if let Some(m) = cli_model.map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(m.to_string());
+    }
+    if tts_model_known_for_provider(provider, config_model) {
+        return Ok(config_model.to_string());
+    }
+    if let Some(d) = default_tts_model_for_provider(provider) {
+        return Ok(d.to_string());
+    }
+    Err(crate::error::UserError::UnsupportedCapability {
+        provider: provider.into(),
+        model: config_model.into(),
+        reason: "no reviewed default TTS model for this provider".into(),
+        hint: "pass --model with a reviewed id for the selected provider".into(),
+    }
+    .into())
+}
+
+/// Resolve effective TTS voice: explicit CLI wins; then config if non-empty for
+/// local; otherwise provider default when available.
+#[cfg(feature = "tts")]
+pub fn resolve_tts_voice(
+    provider: &str,
+    cli_voice: Option<&str>,
+    config_voice: &str,
+) -> Result<String> {
+    if let Some(v) = cli_voice.map(str::trim).filter(|s| !s.is_empty()) {
+        return Ok(v.to_string());
+    }
+    match provider {
+        "local" => {
+            let v = config_voice.trim();
+            if !v.is_empty() {
+                Ok(v.to_string())
+            } else {
+                Ok(crate::tts::DEFAULT_TTS_VOICE.to_string())
+            }
+        }
+        "elevenlabs" => Err(crate::error::UserError::Other {
+            message: "ElevenLabs requires an explicit --voice <voice_id> (no local alias remap)"
+                .into(),
+        }
+        .into()),
+        other => {
+            if let Some(d) = default_tts_voice_for_provider(other) {
+                Ok(d.to_string())
+            } else {
+                let v = config_voice.trim();
+                if !v.is_empty() {
+                    Ok(v.to_string())
+                } else {
+                    Err(crate::error::UserError::Other {
+                        message: format!("TTS voice is required for provider '{other}'"),
+                    }
+                    .into())
+                }
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

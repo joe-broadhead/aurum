@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **OpenRouter TTS catalogue drift:** default model is now `hexgrad/kokoro-82m`
+  (live speech catalogue PCM). Removed dead `openai/gpt-4o-mini-tts-2025-12-15`
+  pin (upstream HTTP 400). Registry includes `fish-audio/s1`, `sesame/csm-1b`,
+  and MP3-only `minimax/speech-2.8-turbo`; each record declares
+  `response_format` so vendors that reject PCM still work.
+- **TTS provider defaults:** CLI/config no longer send local `kitten-nano-int8` /
+  `Luna` to remote TTS when only `--provider` is set; each remote provider uses
+  its reviewed default model/voice (`resolve_tts_model` / `resolve_tts_voice`).
+
 ## [0.0.19] - 2026-08-02
 
 v0.0.19 is the **post-provider security freeze**: provider platform (JOE-1932

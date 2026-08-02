@@ -88,15 +88,19 @@ explicit `provider=openai`.
 ```bash
 export OPENROUTER_API_KEY=sk-or-...
 aurum tts "Hello from OpenRouter" --provider openrouter \
-  --model openai/gpt-4o-mini-tts --voice alloy -O /tmp/or.wav --emit-json
+  --model hexgrad/kokoro-82m --voice alloy -O /tmp/or.wav --emit-json
 ```
 
 - Only **reviewed exact** OpenRouter TTS model ids are accepted (fail closed). Default:
-  `openai/gpt-4o-mini-tts-2025-12-15` (no silent undated alias).
+  `hexgrad/kokoro-82m` (PCM). Other live speech pins include `fish-audio/s1`,
+  `sesame/csm-1b`, and MP3-only `minimax/speech-2.8-turbo` (explicit). Dead
+  OpenAI-family OpenRouter ids (e.g. `openai/gpt-4o-mini-tts*`) are not accepted.
 - Tier is **experimental** until a protected live speech smoke is retained; mock CI alone
   does not promote to supported (JOE-1978).
 - Voices are provider voice ids (e.g. `alloy`); local Kitten aliases are **not** remapped.
-- Prefer PCM wire format; Aurum normalizes to mono `i16` via the shared remote-audio pipeline.
+- Wire format is per reviewed record (PCM preferred when the vendor allows it;
+  e.g. MiniMax is MP3-only). Aurum normalizes to mono `i16` via the shared
+  remote-audio pipeline.
 - **Privacy:** synthesis text is sent to OpenRouter (and potentially an upstream model).
 
 ### Capability-authoritative `auto` routing

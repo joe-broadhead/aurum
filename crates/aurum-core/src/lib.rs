@@ -147,6 +147,12 @@ pub use provider_platform::{
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
 #[cfg(feature = "tts")]
 pub use providers::{
+    default_tts_model_for_provider, default_tts_voice_for_provider, lookup_openrouter_tts,
+    resolve_tts_model, resolve_tts_voice, tts_model_known_for_provider, OpenRouterTtsProvider,
+    DEFAULT_OPENROUTER_TTS_MODEL, DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_REGISTRY,
+};
+#[cfg(feature = "tts")]
+pub use providers::{
     lookup_elevenlabs_tts, ElevenLabsTtsProvider, DEFAULT_ELEVENLABS_TTS_MODEL,
     ELEVENLABS_TTS_REGISTRY, EXAMPLE_ELEVENLABS_VOICE_ID,
 };
@@ -157,11 +163,6 @@ pub use providers::{
 pub use providers::{
     lookup_openai_tts, OpenAiTtsProvider, DEFAULT_OPENAI_TTS_MODEL, DEFAULT_OPENAI_TTS_VOICE,
     OPENAI_TTS_REGISTRY,
-};
-#[cfg(feature = "tts")]
-pub use providers::{
-    lookup_openrouter_tts, OpenRouterTtsProvider, DEFAULT_OPENROUTER_TTS_MODEL,
-    DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_REGISTRY,
 };
 pub use providers::{lookup_xai_stt, XaiSttProvider, DEFAULT_XAI_STT_MODEL, XAI_STT_REGISTRY};
 #[cfg(feature = "tts")]

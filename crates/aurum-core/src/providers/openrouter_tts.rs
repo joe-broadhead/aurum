@@ -20,13 +20,14 @@ use std::time::Duration;
 
 const PROVIDER_NAME: &str = "openrouter";
 
-/// Default OpenRouter TTS model: exact dated id from OpenRouter TTS docs (JOE-1978).
+/// Default OpenRouter TTS model (live `output_modalities=speech` catalogue).
 ///
-/// Support tier is **experimental** until a protected live smoke is retained.
-/// Bare undated `openai/gpt-4o-mini-tts` is not accepted (no silent alias).
-pub const DEFAULT_OPENROUTER_TTS_MODEL: &str = "openai/gpt-4o-mini-tts-2025-12-15";
+/// Support tier is **experimental**. The former OpenAI-family pin
+/// `openai/gpt-4o-mini-tts-2025-12-15` was removed from OpenRouter (HTTP 400
+/// "does not exist"); registry tracks currently reachable speech models only.
+pub const DEFAULT_OPENROUTER_TTS_MODEL: &str = "hexgrad/kokoro-82m";
 
-/// Default OpenAI-compatible voice for the reviewed OpenAI-family TTS model.
+/// Default OpenAI-compatible voice id accepted by the default speech model.
 pub const DEFAULT_OPENROUTER_TTS_VOICE: &str = "alloy";
 
 /// Static evidence date for the reviewed registry (UTC calendar day).
@@ -48,50 +49,77 @@ pub enum OpenRouterTtsTier {
 pub struct OpenRouterTtsRecord {
     pub model: &'static str,
     pub voices: &'static [&'static str],
+    /// Nominal PCM sample rate when [`Self::response_format`] is PCM (must match
+    /// Content-Type `rate=` when the vendor includes it).
     pub default_sample_rate_hz: u32,
     pub max_text_chars: usize,
     pub rate_min: f32,
     pub rate_max: f32,
+    /// Wire `response_format` this vendor accepts (PCM preferred when available).
+    pub response_format: SpeechResponseFormat,
     pub tier: OpenRouterTtsTier,
     /// UTC YYYY-MM-DD for last human/doc evidence note (not live discovery).
     pub evidence_date: &'static str,
     pub evidence_source: &'static str,
 }
 
-/// Static reviewed TTS models for OpenRouter (JOE-1939 / JOE-1978).
+/// Static reviewed TTS models for OpenRouter (JOE-1939 / live speech catalogue).
 ///
 /// None of these are promoted to [`OpenRouterTtsTier::Supported`] without a
 /// protected credentialed speech smoke. Discovery via
 /// `GET /api/v1/models?output_modalities=speech` is an explicit refresh workflow
-/// (offline startup never fetches).
+/// (offline startup never fetches). Dead upstream ids are removed, not aliased.
 pub static OPENROUTER_TTS_REGISTRY: &[OpenRouterTtsRecord] = &[
     OpenRouterTtsRecord {
-        // Official OpenRouter TTS guide exact model id (2025-12-15 pin).
-        model: "openai/gpt-4o-mini-tts-2025-12-15",
-        voices: &[
-            "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-            "verse",
-        ],
+        // Live speech catalogue; PCM 24 kHz; default experimental pin (2026-08-02).
+        model: "hexgrad/kokoro-82m",
+        voices: &["alloy"],
         default_sample_rate_hz: 24_000,
         max_text_chars: 4_096,
         rate_min: 0.25,
         rate_max: 4.0,
+        response_format: SpeechResponseFormat::Pcm,
         tier: OpenRouterTtsTier::Experimental,
         evidence_date: OPENROUTER_TTS_EVIDENCE_DATE,
-        evidence_source: "openrouter.ai/docs TTS guide exact model id; protected smoke pending",
+        evidence_source:
+            "models?output_modalities=speech + live POST /audio/speech PCM smoke (rate=24000)",
     },
     OpenRouterTtsRecord {
-        // Present in Models API speech modality listing (2026-08-02 probe); explicit-only.
-        model: "mistralai/voxtral-mini-tts-2603",
-        voices: &["alloy"], // conservative; provider may ignore — not advertised as guaranteed
+        model: "fish-audio/s1",
+        voices: &["alloy"],
+        default_sample_rate_hz: 44_100,
+        max_text_chars: 4_096,
+        rate_min: 0.25,
+        rate_max: 4.0,
+        response_format: SpeechResponseFormat::Pcm,
+        tier: OpenRouterTtsTier::Experimental,
+        evidence_date: OPENROUTER_TTS_EVIDENCE_DATE,
+        evidence_source: "live POST /audio/speech PCM smoke (rate=44100)",
+    },
+    OpenRouterTtsRecord {
+        model: "sesame/csm-1b",
+        voices: &["alloy"],
         default_sample_rate_hz: 24_000,
         max_text_chars: 4_096,
         rate_min: 0.25,
         rate_max: 4.0,
+        response_format: SpeechResponseFormat::Pcm,
+        tier: OpenRouterTtsTier::Experimental,
+        evidence_date: OPENROUTER_TTS_EVIDENCE_DATE,
+        evidence_source: "live POST /audio/speech PCM smoke (rate=24000)",
+    },
+    OpenRouterTtsRecord {
+        // MiniMax refuses PCM; MP3 only (streaming contract).
+        model: "minimax/speech-2.8-turbo",
+        voices: &["alloy"],
+        default_sample_rate_hz: 24_000,
+        max_text_chars: 4_096,
+        rate_min: 0.25,
+        rate_max: 4.0,
+        response_format: SpeechResponseFormat::Mp3,
         tier: OpenRouterTtsTier::ExplicitOnly,
         evidence_date: OPENROUTER_TTS_EVIDENCE_DATE,
-        evidence_source:
-            "models?output_modalities=speech listing; explicit-only until voice evidence",
+        evidence_source: "live POST /audio/speech MP3-only (PCM rejected by vendor)",
     },
 ];
 
@@ -277,13 +305,8 @@ impl SynthesisProvider for OpenRouterTtsProvider {
         op.check()?;
         op.emit("tts", "request");
 
-        let body = OpenAiSpeechRequest::new(
-            &opts.model,
-            text,
-            &voice,
-            SpeechResponseFormat::Pcm,
-            Some(rate),
-        );
+        let body =
+            OpenAiSpeechRequest::new(&opts.model, text, &voice, rec.response_format, Some(rate));
         let json = body.to_json_bytes().map_err(|e| ProviderError::Other {
             message: format!("speech request serialize: {e}"),
         })?;
@@ -326,7 +349,10 @@ impl SynthesisProvider for OpenRouterTtsProvider {
         // Never echo response body text; status mapping is allowlisted only.
         map_http_status(PROVIDER_NAME, status, "")?;
 
-        let expected = ExpectedWireFormat::pcm(rec.default_sample_rate_hz, 1);
+        let expected = match rec.response_format {
+            SpeechResponseFormat::Pcm => ExpectedWireFormat::pcm(rec.default_sample_rate_hz, 1),
+            SpeechResponseFormat::Mp3 => ExpectedWireFormat::Mp3,
+        };
         let format = resolve_encoded_format(PROVIDER_NAME, expected, &content_type, &bytes)?;
         let bounded = BoundedAudioBody::try_from_bytes(
             bytes,
@@ -379,14 +405,18 @@ mod tests {
     fn registry_lookup() {
         assert!(lookup_openrouter_tts(DEFAULT_OPENROUTER_TTS_MODEL).is_some());
         assert!(lookup_openrouter_tts("not-a-real-model").is_none());
-        // Undated bare id is not accepted (JOE-1978).
+        // Dead OpenAI-family OpenRouter pins are not silently accepted.
         assert!(lookup_openrouter_tts("openai/gpt-4o-mini-tts").is_none());
+        assert!(lookup_openrouter_tts("openai/gpt-4o-mini-tts-2025-12-15").is_none());
         let def = lookup_openrouter_tts(DEFAULT_OPENROUTER_TTS_MODEL).unwrap();
         assert_eq!(def.tier, OpenRouterTtsTier::Experimental);
+        assert_eq!(def.response_format, SpeechResponseFormat::Pcm);
         assert!(openrouter_tts_model_in_discovery(
-            "mistralai/voxtral-mini-tts-2603",
-            &["mistralai/voxtral-mini-tts-2603"]
+            "hexgrad/kokoro-82m",
+            &["hexgrad/kokoro-82m", "fish-audio/s1"]
         ));
+        let mp3 = lookup_openrouter_tts("minimax/speech-2.8-turbo").unwrap();
+        assert_eq!(mp3.response_format, SpeechResponseFormat::Mp3);
     }
 
     #[test]

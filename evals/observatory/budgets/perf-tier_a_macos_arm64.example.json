@@ -1,0 +1,51 @@
+{
+  "schema_version": 2,
+  "evidence_version": "0.0.22-perf-v1",
+  "hardware_profile_id": "tier_a_macos_arm64",
+  "notes": "Example release-gated budget skeleton. Replace baselines with reviewed same-machine reports before enforcing. Cross-machine comparisons are informational only.",
+  "scenarios": [
+    {
+      "scenario_id": "workflow/cli_stt_one_file",
+      "baseline_p50_ms": 600.0,
+      "baseline_p95_ms": 900.0,
+      "baseline_rtf_p50": 0.12,
+      "max_p50_relative_warn": 0.10,
+      "max_p95_relative_fail": 0.15,
+      "max_rss_relative_fail": 0.15,
+      "max_rss_absolute_bytes": 268435456,
+      "max_throughput_relative_drop": 0.15
+    },
+    {
+      "scenario_id": "stt_local/tiny-q5_1/30s/warm",
+      "baseline_p50_ms": 800.0,
+      "baseline_p95_ms": 1200.0,
+      "baseline_rtf_p50": 0.03,
+      "max_p50_relative_warn": 0.10,
+      "max_p95_relative_fail": 0.15,
+      "max_rss_relative_fail": 0.15,
+      "max_rss_absolute_bytes": 268435456,
+      "max_throughput_relative_drop": 0.15
+    },
+    {
+      "scenario_id": "tts_local/kitten-nano-int8/Luna/short",
+      "baseline_p50_ms": 200.0,
+      "baseline_p95_ms": 350.0,
+      "baseline_rtf_p50": 0.25,
+      "max_p50_relative_warn": 0.10,
+      "max_p95_relative_fail": 0.15,
+      "max_rss_relative_fail": 0.15,
+      "max_rss_absolute_bytes": 268435456,
+      "max_throughput_relative_drop": 0.15
+    },
+    {
+      "scenario_id": "workflow/doctor_startup",
+      "baseline_p50_ms": 50.0,
+      "baseline_p95_ms": 120.0,
+      "max_p50_relative_warn": 0.10,
+      "max_p95_relative_fail": 0.15,
+      "max_rss_relative_fail": 0.15,
+      "max_rss_absolute_bytes": 268435456,
+      "max_throughput_relative_drop": 0.15
+    }
+  ]
+}

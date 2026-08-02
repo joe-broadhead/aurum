@@ -80,11 +80,13 @@ pub mod output;
 pub mod partial;
 pub mod pcm;
 pub mod postprocess;
+pub mod prelude;
 pub mod profile;
 pub mod provider_platform;
 pub mod providers;
 pub mod remote;
 pub mod runtime;
+pub mod sdk;
 pub mod secret;
 pub mod support;
 #[cfg(feature = "tts")]
@@ -122,6 +124,12 @@ pub use domain::{FiniteDurationSecs, ModelId, SampleRateHz};
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
 pub use engine::AurumEngine;
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
+pub use sdk::{
+    AurumConfig, CleanupConfig, OperationOptions, ProviderProfiles, RuntimeConfig, SttConfig,
+    TranscriptionRequest,
+};
+#[cfg(feature = "tts")]
+pub use sdk::{SynthesisRequest, TtsConfig};
 pub use eval::{
     aggregate_listening, allowed_mean_wer, budget_exit_code, build_report, char_error_rate,
     compare_perf_budget, compare_stt_budget, evaluate_support_tier, join_discontinuity_score,

@@ -1,7 +1,13 @@
 # AurumEngine (library hosts)
 
 `AurumEngine` is the preferred **owned** entry point for Rust library hosts
-(JOE-1654 / JOE-1782 / JOE-1784 / JOE-1787 / **JOE-1938**). It holds:
+(JOE-1654 / JOE-1782 / JOE-1784 / JOE-1787 / **JOE-1938** / **JOE-2221**).
+
+For typed configuration and request contracts see
+[`migration-0.0.21-0.0.22.md`](migration-0.0.21-0.0.22.md) and
+`aurum_core::prelude`.
+
+It holds:
 
 * validated configuration
 * engine-local resource governor

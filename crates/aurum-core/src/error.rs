@@ -1,14 +1,15 @@
-//! Error taxonomy for Aurum (JOE-1611).
+//! Error taxonomy for Aurum (JOE-1611 / JOE-2221).
 //!
-//! [`TranscriptionError`] is the crate-wide error type (also exported as
-//! [`AurumError`]). High-level [`ErrorCategory`] identifiers are stable at
-//! v0.0.3 / v0.1.0; detailed variants may evolve under a non-exhaustive policy.
+//! [`AurumError`] is the concrete crate-wide error type. [`TranscriptionError`]
+//! is a compatibility alias for one 0.0.x release. High-level [`ErrorCategory`]
+//! identifiers are stable at v0.0.3 / v0.1.0; detailed variants may evolve under
+//! a non-exhaustive policy.
 //!
 //! Groups:
-//! - [`TranscriptionError::User`] — bad input, missing key, invalid model name
-//! - [`TranscriptionError::Environment`] — missing ffmpeg, disk full, cache issues
-//! - [`TranscriptionError::Provider`] — network, rate limit, model load failure
-//! - [`TranscriptionError::Internal`] — unexpected bugs
+//! - [`AurumError::User`] — bad input, missing key, invalid model name
+//! - [`AurumError::Environment`] — missing ffmpeg, disk full, cache issues
+//! - [`AurumError::Provider`] — network, rate limit, model load failure
+//! - [`AurumError::Internal`] — unexpected bugs
 
 use thiserror::Error;
 
@@ -63,9 +64,9 @@ impl ErrorCategory {
     }
 }
 
-/// Top-level error type used across the core library and CLI.
+/// Top-level product error type used across the core library and CLI (JOE-2221).
 #[derive(Debug, Error)]
-pub enum TranscriptionError {
+pub enum AurumError {
     #[error("{0}")]
     User(#[from] UserError),
 
@@ -79,8 +80,11 @@ pub enum TranscriptionError {
     Internal(String),
 }
 
-/// Synonym for [`TranscriptionError`] (JOE-1611).
-pub type AurumError = TranscriptionError;
+/// Compatibility alias for [`AurumError`] (JOE-1611 → JOE-2221).
+///
+/// Prefer [`AurumError`] in new code. This alias remains for one 0.0.x cycle so
+/// downstream hosts compile while migrating.
+pub type TranscriptionError = AurumError;
 
 #[derive(Debug, Error)]
 pub enum UserError {
@@ -126,6 +130,15 @@ pub enum UserError {
     )]
     UnsupportedSampleRate { got: u32, need: u32 },
 
+    /// Provider-scoped missing credential (preferred over OpenRouter-only wording).
+    #[error(
+        "API key is missing for provider '{provider}'.\n  \
+         Set the matching environment variable or config section for that provider, then retry.\n  \
+         Hint: never paste secrets into support tickets."
+    )]
+    MissingProviderCredential { provider: String },
+
+    /// Historical OpenRouter-only name; prefer [`UserError::MissingProviderCredential`].
     #[error(
         "OpenRouter API key is missing.\n  \
          Set OPENROUTER_API_KEY in your environment, or add api_key under [providers.openrouter] in the config file.\n  \
@@ -230,7 +243,7 @@ pub enum ProviderError {
     Other { message: String },
 }
 
-impl TranscriptionError {
+impl AurumError {
     /// Coarse group label for exit codes and ErrorDto category.
     pub fn category(&self) -> &'static str {
         match self {
@@ -249,7 +262,9 @@ impl TranscriptionError {
                 UserError::ModelNotCached { .. } | UserError::InvalidModel { .. } => {
                     ErrorCategory::ModelUnavailable
                 }
-                UserError::MissingApiKey => ErrorCategory::Auth,
+                UserError::MissingApiKey | UserError::MissingProviderCredential { .. } => {
+                    ErrorCategory::Auth
+                }
                 UserError::InvalidConfig { .. }
                 | UserError::InvalidProvider { .. }
                 | UserError::InvalidOutputFormat { .. }
@@ -336,11 +351,11 @@ impl TranscriptionError {
     }
 }
 
-impl From<std::io::Error> for TranscriptionError {
+impl From<std::io::Error> for AurumError {
     fn from(value: std::io::Error) -> Self {
         Self::Environment(EnvironmentError::Io(value))
     }
 }
 
 /// Result alias used throughout the crate.
-pub type Result<T> = std::result::Result<T, TranscriptionError>;
+pub type Result<T> = std::result::Result<T, AurumError>;

@@ -5,7 +5,7 @@ license: MIT
 metadata:
   owner: "aurum"
   persona: "support"
-  version: "0.0.4"
+  version: "0.0.20"
 ---
 
 # Aurum support skill
@@ -13,6 +13,9 @@ metadata:
 ## Mission
 
 Help users report problems with **redacted diagnostics** only.
+
+For reproducing STT/TTS failures first, load **`skills/aurum-speech/`** and
+`aurum doctor`, then bundle.
 
 ## Flow
 

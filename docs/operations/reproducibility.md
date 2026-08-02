@@ -40,7 +40,7 @@ with fully deterministic toolchains; **not** the default release gate).
    downloaders.
 2. Variance reports explain whether a second builder can recreate the same
    bytes — they do **not** replace signature verification.
-3. Toward 1.0, reduce variance with stripped release profiles and pinned
+3. Toward v0.0.21 (and later 0.0.x cuts), reduce variance with stripped release profiles and pinned
    toolchains where practical.
 
 ## Related

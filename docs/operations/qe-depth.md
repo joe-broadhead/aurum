@@ -48,7 +48,7 @@ Failures in the curated set **fail CI**.
 |-------------|--------|
 | ASan + pure lib tests on **Linux nightly** | Enabled in CI |
 | ASan on macOS/Windows hosts | **Gap** — toolchain/friction; covered by Linux CI |
-| UBSan full matrix | **Gap** — tracked for 1.0; ASan + Miri first |
+| UBSan full matrix | **Gap** — tracked for v0.0.21 residuals; ASan + Miri first |
 | Full whisper/ORT under ASan | **Gap** — link time / false positives; integration suite instead |
 | Concurrency stress (jobs / fault injection) | Enabled on stable in CI |
 
@@ -64,7 +64,7 @@ secret, cancel, runtime, audio parse). CI uploads the report as an artifact.
 
 ### Soft floors (0.0.x trend — not vanity PR blockers)
 
-| Module class | Line | Branch (when measured) | Before 1.0 RC |
+| Module class | Line | Branch (when measured) | Before v0.0.21 RC |
 |--------------|-----:|------------------------:|---------------|
 | domain / dto / output / cleanup rules | ≥70% | ≥50% | add tests if below |
 | model digest pins / error mapping | ≥80% | ≥60% | **RC exit blocker** if below |
@@ -86,7 +86,7 @@ Scoped to: `domain`, `dto`, `output`, `cleanup/rules`, `error`, `providers/mod`,
 
 ### Survivor policy
 
-* **Must kill** before 1.0 RC: digest mismatch acceptance, bounds bypass,
+* **Must kill** before v0.0.21 RC: digest mismatch acceptance, bounds bypass,
   invalid lifecycle transitions, capability/error mapping flips that weaken
   fail-closed behavior.
 * **Often acceptable**: `Display`/`Debug` formatting, pure logging branches.

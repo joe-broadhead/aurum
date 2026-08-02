@@ -1,6 +1,7 @@
-# 1.0 RC exit report (JOE-1904)
+# RC exit report (JOE-1904) — v0.0.21 programme
 
-**Purpose:** single binder linking all JOE-1655 evidence. Automation fills
+**Purpose:** single binder linking all JOE-1655 evidence for the **v0.0.21**
+production-assurance cut (formerly labelled “1.0 RC exit”). Automation fills
 machine-checkable rows; **humans** fill sign-off.
 
 ## Generate
@@ -13,7 +14,7 @@ machine-checkable rows; **humans** fill sign-off.
 CI job `rc-exit-pack` runs freeze + downstream + native SBOM + exit report and
 uploads the artifact.
 
-## Human sign-off (required for 1.0)
+## Human sign-off (required for v0.0.21)
 
 | Field | Value |
 |-------|--------|
@@ -23,7 +24,7 @@ uploads the artifact.
 | External review disposition closed for High/Critical | |
 | Residual risks accepted | |
 | **Approver name** | |
-| **Approve 1.0 release?** | yes / no |
+| **Approve v0.0.21 release?** | yes / no |
 | Date (UTC) | |
 
 Automation must leave approver fields blank.
@@ -32,3 +33,4 @@ Automation must leave approver fields blank.
 
 * [rc-freeze.md](rc-freeze.md) · [rc-dogfood.md](rc-dogfood.md) · [rc-rollback.md](rc-rollback.md)
 * [external-review-brief.md](external-review-brief.md) · [release-gate.md](release-gate.md)
+* [post-provider-security-freeze.md](post-provider-security-freeze.md)

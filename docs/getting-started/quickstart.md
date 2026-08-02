@@ -74,21 +74,37 @@ aurum cleanup notes.txt --style professional -o json
 
 See [Cleanup](../guide/cleanup.md).
 
-## OpenRouter (optional)
+## Remote providers (optional)
+
+Remote is never the default. Set a key **and** an explicit `--provider`.
 
 ```bash
+# OpenRouter — dedicated ASR when the model is in the reviewed registry
 export OPENROUTER_API_KEY=sk-or-...   # never commit real keys
+aurum talk.mp3 --provider openrouter --model openai/whisper-large-v3 -o srt
+# Multimodal chat models (llm_assisted) — timestamps may be unreliable
+aurum talk.mp3 --provider openrouter --model google/gemini-2.5-flash
 
-# Recommended cheap/audio-capable models:
-aurum talk.mp3 --provider openrouter --model google/gemini-2.5-flash-lite
-aurum talk.mp3 --provider openrouter --model openai/gpt-audio-mini
-aurum talk.mp3 --provider openrouter --model mistralai/voxtral-small-24b-2507 -o json
+# OpenAI first-party
+export OPENAI_API_KEY=sk-...
+aurum talk.mp3 --provider openai --model whisper-1
+
+# Remote TTS
+aurum tts "Hello" --provider openrouter -O /tmp/or.wav
+aurum tts "Hello" --provider openai --model tts-1 --voice alloy -O /tmp/oai.wav
 ```
 
-!!! warning "LLM-assisted, not dedicated ASR"
-    OpenRouter uses multimodal chat completions. Prefer `--provider local` when
-    verbatim accuracy matters. SRT is refused unless you pass
-    `--allow-unreliable-timestamps`.
+!!! note "OpenRouter privacy"
+    Account privacy/guardrails must allow the chosen model, or every request fails
+    with “No endpoints available matching your guardrail restrictions”.
+    Configure at https://openrouter.ai/settings/privacy
+
+!!! tip "When accuracy matters"
+    Prefer `--provider local` (whisper) for verbatim work. On OpenRouter, prefer
+    reviewed dedicated ASR ids over chat multimodal. SRT is refused when timestamps
+    are unreliable unless you pass `--allow-unreliable-timestamps`.
+
+Full catalogue and tiers: [Providers](../guide/providers.md) · [Matrix](../guide/provider-matrix.md).
 
 ## Configuration
 
@@ -109,7 +125,7 @@ provider = "rules"
 
 [openrouter]
 # api_key — prefer OPENROUTER_API_KEY env var
-# model = "google/gemini-2.5-flash-lite"
+# model = "openai/whisper-large-v3"
 ```
 
 Full reference: [Configuration](../guide/configuration.md).

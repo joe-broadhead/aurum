@@ -1,7 +1,8 @@
 # Support, security fix, deprecation, and first-patch policy (JOE-1898)
 
-**Document version:** 1.0  
-**Applies to:** Aurum toward and after 1.0 RC  
+**Document version:** 1.1  
+**Applies to:** Aurum on the continuous **0.0.x** line, including the **v0.0.21**
+production-assurance cut (formerly labelled “1.0 RC”).
 
 ## Maintainer ownership
 
@@ -12,11 +13,11 @@
 | Docs / handbook | Primary maintainer |
 | FFI ABI | Primary maintainer; bumps require ABI version review |
 
-## Support policy (v0.0.x / RC)
+## Support policy (v0.0.x / assurance cuts)
 
 * **Supported install:** GitHub Release Tier A binaries; `cargo install aurum-stt --locked` Tier B.
-* **Best-effort:** experimental platforms (Tier C), unpinned BYOM, multi-tenant without sandbox.
-* **Not supported as product guarantee:** multi-tenant isolation inside one process ([threat-model.md](threat-model.md) T-MT-01).
+* **Best-effort:** experimental platforms (Tier C), unpinned BYOM, multi-tenant without sandbox; experimental remote providers (see [provider-matrix.md](../guide/provider-matrix.md)).
+* **Not supported as product guarantee:** multi-tenant isolation inside one process ([threat-model.md](threat-model.md) T-MT-01); remote execution on the C ABI.
 * Issues: GitHub Issues for non-security bugs; security only via private path ([SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md)).
 
 ## Security-fix cadence
@@ -24,11 +25,11 @@
 | Severity | Target response |
 |----------|-----------------|
 | Critical (RCE, secret leak on default path) | Immediate private triage; patch release ASAP |
-| High | Patch in next 0.0.x / patch line; advisory when coordinated |
+| High | Patch in next 0.0.x; advisory when coordinated |
 | Medium | Scheduled fix; documented residual if deferred |
 | Low | Backlog |
 
-Default local path (no OpenRouter) is prioritized over optional remote surfaces.
+Default local path (no cloud keys) is prioritized over optional remote surfaces.
 
 ## Deprecation cadence
 
@@ -51,15 +52,15 @@ Default local path (no OpenRouter) is prioritized over optional remote surfaces.
 | User transcripts | User-owned paths; Aurum does not cloud-backup |
 | Release artifacts | Re-download from GitHub Release; verify cosign |
 
-## First-patch readiness (post-1.0)
+## First-patch readiness (post v0.0.21)
 
-Before calling 1.0 final:
+Before calling the **v0.0.21** assurance cut final:
 
 - [ ] RC freeze inventory current
 - [ ] Dogfood evidence for Tier A
 - [ ] Rollback rehearsal complete with human sign-off block blank→filled
 - [ ] SECURITY.md + this policy linked from handbook
-- [ ] Ability to cut a patch release within one working day of Critical fix
+- [ ] Ability to cut a patch release (`0.0.22+`) within one working day of Critical fix
 
 ## Related
 

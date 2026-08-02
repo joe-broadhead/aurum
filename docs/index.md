@@ -4,14 +4,14 @@
 
 Private **speech I/O** on your machine:
 
-- **STT** — audio → text (whisper.cpp; optional OpenRouter)
-- **Cleanup** — post-transcript flow styles (rules or LLM)
-- **TTS** — text → mono WAV (local ONNX KittenTTS; no cloud)
+- **STT** — audio → text (whisper.cpp local default; optional OpenRouter / OpenAI / xAI)
+- **Cleanup** — post-transcript styles (on-device rules or OpenRouter LLM)
+- **TTS** — text → mono WAV (local ONNX KittenTTS / Kokoro; optional OpenRouter / OpenAI / ElevenLabs / xAI)
 
-The same core powers the `aurum` CLI, Rust embeds (`aurum-core`), and native STT embeds (`aurum-ffi`).
+The same core powers the `aurum` CLI, Rust embeds (`aurum-core`), and native embeds (`aurum-ffi`).
 
 !!! tip "Local by default"
-    No API key required on the default path. Models download once into the platform cache, then stay local.
+    No API key required on the default path. Models download once into the platform cache, then stay local. Remote providers are **opt-in** and never selected merely because a key is present.
 
 ## 30-second path
 
@@ -35,7 +35,7 @@ flowchart LR
     A[Audio / PCM] --> B[Load]
     B --> C{Provider}
     C -->|local| D[whisper.cpp]
-    C -->|openrouter| E[LLM-assisted]
+    C -->|openrouter / openai / xai| E[Remote STT]
     D --> F[postprocess]
     E --> F
     F --> G[cleanup]
@@ -43,8 +43,11 @@ flowchart LR
   end
   subgraph tts [TTS]
     T[Text] --> U[validate]
-    U --> V[KittenTTS ONNX]
-    V --> W[mono WAV]
+    U --> V{Provider}
+    V -->|local| W[Kitten / Kokoro ONNX]
+    V -->|openrouter / openai / elevenlabs / xai| X[Remote TTS]
+    W --> Y[mono WAV]
+    X --> Y
   end
 ```
 
@@ -52,9 +55,9 @@ flowchart LR
 
 | Crate | Role |
 |-------|------|
-| [`aurum-core`](library/overview.md) | Engine (STT + TTS + cleanup) |
+| [`aurum-core`](library/overview.md) | Engine (STT + TTS + cleanup + providers) |
 | [`aurum-stt`](https://crates.io/crates/aurum-stt) | CLI (`aurum`) |
-| [`aurum-ffi`](library/ffi.md) | C ABI for native **STT** hosts |
+| [`aurum-ffi`](library/ffi.md) | C ABI for native **local** STT/TTS hosts |
 
 ## Where to go next
 
@@ -63,13 +66,18 @@ flowchart LR
 | Install | [Installation](getting-started/installation.md) |
 | Quickstart | [Quickstart](getting-started/quickstart.md) |
 | CLI | [CLI reference](getting-started/cli.md) |
+| Providers | [Providers](guide/providers.md) · [Matrix](guide/provider-matrix.md) |
 | TTS | [TTS guide](guide/tts.md) |
 | Cleanup | [Cleanup](guide/cleanup.md) |
 | Rust embed | [Integration](library/integration.md) |
-| Native STT | [FFI](library/ffi.md) |
+| Native embeds | [FFI](library/ffi.md) |
+| Operators | [Handbook](operations/handbook.md) |
 | Contribute | [Contributing](development/contributing.md) |
 
 ## Status
 
-**v0.0.17** — Group H 1.0 assurance slice: cosign, long fuzz, clean-install CI, repro.  
-APIs may change before `0.1.0`; pin a release tag in dependents.
+**v0.0.20** (current published tip) — post–security-sign-off product cut: multi-provider speech platform, OpenRouter TTS catalogue refresh, provider-aware remote TTS defaults.
+
+**Next programme cut: v0.0.21** — production-assurance package (formerly labelled “1.0”). Aurum stays on the **0.0.x** iteration line; a major `1.0.0` is **not** planned for this programme.
+
+APIs may still change on `0.0.x`; pin a release **tag** (or crates.io version) in dependents.

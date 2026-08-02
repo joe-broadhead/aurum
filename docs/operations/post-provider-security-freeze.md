@@ -9,12 +9,13 @@ remediation (JOE-1975–1980, F-005 snap staging), then hand to JOE-1920 human r
 
 - Overwrite or re-point `v0.0.18`
 - Represent green PR CI alone as independent security review
-- Mark JOE-1655 Done until the full 1.0 RC programme is approved
+- Mark JOE-1655 Done until the **v0.0.21** assurance programme residual is closed
 - Tag without explicit maintainer approval
 
 ## Freeze prep (maintainer)
 
-**Candidate VERSION:** `0.0.19` (branch `release/0.0.19`; tag `v0.0.19` on merge via release-tag workflow).
+**Historical candidate VERSION:** `0.0.19` (shipped as post-provider freeze; JOE-1920 signed off).
+Current published tip at docs refresh: **`0.0.20`**. Next assurance cut: **`0.0.21`**.
 
 1. Ensure `master` is clean and contains the remediation merges (1975–1980 + F-005 snap).
 2. Record exact `git rev-parse HEAD` (full 40 hex).
@@ -30,7 +31,7 @@ remediation (JOE-1975–1980, F-005 snap staging), then hand to JOE-1920 human r
    ./scripts/generate_sbom.sh dist/sbom
    ./scripts/generate_rc_exit_report.sh
    ```
-6. Propose tag name (e.g. `v0.0.19` or `rc-1.0.0-security.1`) — **wait for human GO**.
+6. Propose tag name on the 0.0.x line (e.g. `v0.0.19`) — **wait for human GO**. Do not invent a parallel `1.0.0` tag for this programme.
 7. After tag: independent clean clone of **that tag only** for retest.
 
 ## Independent retest recipes (clean clone + Cargo)
@@ -61,4 +62,5 @@ remediation (JOE-1975–1980, F-005 snap staging), then hand to JOE-1920 human r
 ## Human sign-off
 
 JOE-1920 only: qualified independent human on the **tagged** candidate.
-Automation may prepare evidence; it may not self-approve 1.0.
+Automation may prepare evidence; it may not self-approve the assurance cut
+(v0.0.19 freeze; subsequent **v0.0.21** programme GO).

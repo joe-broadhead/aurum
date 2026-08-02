@@ -21,16 +21,34 @@ Local and remote TTS share one in-memory result: **mono `i16` PCM**, accurate
 Remote providers convert wire formats (PCM / WAV / MP3) through a bounded
 pipeline — see [Remote audio formats](remote-audio.md).
 
-### OpenRouter TTS (JOE-1939)
+### Remote TTS (opt-in)
+
+Defaults remain **local**. Remote requires deliberate `--provider` and the matching API key.
+When only `--provider` is set, model and voice use that provider’s reviewed defaults
+(not Kitten / `Luna`).
 
 ```bash
+# OpenRouter (default model: hexgrad/kokoro-82m)
 export OPENROUTER_API_KEY=sk-or-...
-aurum tts "Hello" --provider openrouter \
-  --model openai/gpt-4o-mini-tts --voice alloy -O /tmp/or.wav --emit-json
+aurum tts "Hello" --provider openrouter -O /tmp/or.wav --emit-json
+
+# OpenAI
+export OPENAI_API_KEY=sk-...
+aurum tts "Hello" --provider openai --model tts-1 --voice alloy -O /tmp/oai.wav
+
+# ElevenLabs (voice_id required; no local alias remap)
+export ELEVENLABS_API_KEY=...
+aurum tts "Hello" --provider elevenlabs \
+  --model eleven_multilingual_v2 --voice 21m00Tcm4TlvDq8ikWAM -O /tmp/el.wav
+
+# xAI (experimental; voices eve|ara|leo|rex|sal)
+export XAI_API_KEY=...
+aurum tts "Hello" --provider xai --model xai-tts --voice eve -O /tmp/x.wav
 ```
 
-`--emit-json` reports `backend_kind: "remote"` and `provider: "openrouter"`.
-Defaults remain local; remote requires deliberate `--provider openrouter` and a key.
+`--emit-json` reports `backend_kind: "remote"` and the selected `provider`.
+OpenRouter TTS is **experimental** until protected live smoke is retained; see
+[provider matrix](provider-matrix.md).
 
 ## Quick start
 
@@ -93,9 +111,9 @@ The full synth test is `#[ignore]` by default (may download the voice pack). Emp
 | Flag | Required | Notes |
 |------|----------|-------|
 | `TEXT` / `-` / `--input-file` | exactly one | UTF-8 |
-| `--provider` | no | only `local` |
-| `--model` | no | default `kitten-nano-int8`; opt-in `kokoro-82m-int8` |
-| `--voice` | no | default `Luna` (Kitten); use `Heart` with Kokoro |
+| `--provider` | no | `local` (default) \| `openrouter` \| `openai` \| `elevenlabs` \| `xai` |
+| `--model` | no | local default `kitten-nano-int8` (opt-in `kokoro-82m-int8`); remote uses provider default |
+| `--voice` | no | local default `Luna` (Kitten) / `Heart` with Kokoro; remote uses provider voice ids |
 | `--language` | no | default `en` |
 | `-o/--output` | no | only `wav` |
 | `--output-file` / `-O` | **yes** for synth | destination path |
@@ -234,11 +252,13 @@ The CLI package keeps `tts` on so `aurum tts` works out of the box.
 
 Library hosts that need deterministic teardown should drop the `LocalTtsProvider` (and call `LocalTtsProvider::clear_sessions` when done) after cancelling in-flight work at the application layer.
 
-## Limits (MVP)
+## Limits (current 0.0.x)
 
-- English default voice only (additional languages out of scope).
-- WAV only (no ogg/mp3/ffmpeg).
-- No remote TTS, streaming, mic playback, voice cloning, or FFI surface for TTS.
+- Local default voice pack is English-focused (additional languages out of scope for Kitten default).
+- Output container is **WAV only** (remote wire formats are normalized to mono PCM then written as WAV).
+- No streaming synthesis, mic playback, or voice cloning.
+- Remote TTS is **opt-in** (OpenRouter / OpenAI / ElevenLabs / xAI); see [Providers](providers.md).
+- C ABI exposes **local** TTS jobs only — remote is not on the FFI.
 
 ## Model platform & safe BYOM (JOE-1576)
 

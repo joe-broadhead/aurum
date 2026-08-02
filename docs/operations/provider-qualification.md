@@ -64,6 +64,14 @@ Evidence record fields (redacted): provider, model, voice, UTC date, Aurum
 commit, latency_ms, encoded/decoded byte counts, result metadata, pass/fail.
 **Never** retain input text/audio, raw provider bodies, or keys.
 
+## Engine remote admission (JOE-1975)
+
+Engine-built remote providers hold the engine-local `ResourceGovernor` and
+acquire `PermitKind::Remote` for the full operation. HTTP send and body reads
+are interruptible via `OpContext` cancel/deadline (not only the long client
+timeout). Convenience constructors without a build context still use the
+documented process-global governor.
+
 ## No-network guarantee
 
 With all of `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, and

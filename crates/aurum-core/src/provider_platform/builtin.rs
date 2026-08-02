@@ -15,6 +15,7 @@ use crate::providers::local::LocalWhisperProvider;
 use crate::providers::openrouter::OpenRouterProvider;
 use crate::providers::TranscriptionProvider;
 use crate::remote::RemotePolicy;
+use crate::runtime::ResourceGovernor;
 use std::sync::Arc;
 
 #[cfg(feature = "tts")]
@@ -40,6 +41,12 @@ use crate::providers::xai_tts::XaiTtsProvider;
 use crate::tts::local::LocalTtsProvider;
 #[cfg(feature = "tts")]
 use crate::tts::provider::SynthesisProvider;
+
+fn engine_or_global_governor(ctx: &ProviderBuildContext) -> Arc<ResourceGovernor> {
+    ctx.governor()
+        .cloned()
+        .unwrap_or_else(ResourceGovernor::process_global)
+}
 
 // ── Local STT ───────────────────────────────────────────────────────────────
 
@@ -155,7 +162,8 @@ impl TranscriptionProviderFactory for OpenRouterSttFactory {
             ctx.base_url().map(|s| s.to_string()),
             policy,
             ctx.stt_mode(),
-        )?;
+        )?
+        .with_governor(engine_or_global_governor(ctx));
         Ok(Arc::new(provider))
     }
 }
@@ -276,7 +284,8 @@ impl SynthesisProviderFactory for OpenRouterTtsFactory {
             ..RemotePolicy::default()
         };
         let provider =
-            OpenRouterTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+            OpenRouterTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?
+                .with_governor(engine_or_global_governor(ctx));
         Ok(Arc::new(provider))
     }
 }
@@ -336,7 +345,8 @@ impl TranscriptionProviderFactory for OpenAiSttFactory {
             ..RemotePolicy::default()
         };
         let provider =
-            OpenAiSttProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+            OpenAiSttProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?
+                .with_governor(engine_or_global_governor(ctx));
         Ok(Arc::new(provider))
     }
 }
@@ -400,7 +410,8 @@ impl SynthesisProviderFactory for OpenAiTtsFactory {
             ..RemotePolicy::default()
         };
         let provider =
-            OpenAiTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+            OpenAiTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?
+                .with_governor(engine_or_global_governor(ctx));
         Ok(Arc::new(provider))
     }
 }
@@ -464,7 +475,8 @@ impl SynthesisProviderFactory for ElevenLabsTtsFactory {
             ..RemotePolicy::default()
         };
         let provider =
-            ElevenLabsTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+            ElevenLabsTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?
+                .with_governor(engine_or_global_governor(ctx));
         Ok(Arc::new(provider))
     }
 }
@@ -524,7 +536,8 @@ impl TranscriptionProviderFactory for XaiSttFactory {
             ..RemotePolicy::default()
         };
         let provider =
-            XaiSttProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+            XaiSttProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?
+                .with_governor(engine_or_global_governor(ctx));
         Ok(Arc::new(provider))
     }
 }
@@ -586,7 +599,8 @@ impl SynthesisProviderFactory for XaiTtsFactory {
             ..RemotePolicy::default()
         };
         let provider =
-            XaiTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+            XaiTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?
+                .with_governor(engine_or_global_governor(ctx));
         Ok(Arc::new(provider))
     }
 }

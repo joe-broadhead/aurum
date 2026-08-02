@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- Full public docs sweep: retarget production-assurance language from “1.0” to
+  **v0.0.21** continuous **0.0.x** policy; refresh README/index status to
+  **0.0.20**; document multi-provider STT/TTS (OpenRouter, OpenAI, ElevenLabs,
+  xAI) on CLI/quickstart/TTS guides; fix xAI official `/v1/stt` + `/v1/tts`
+  paths; expand operator handbook, troubleshooting, and mkdocs nav for freeze
+  evidence + ADR-002.
+
+### Agent skills
+
+- **`skills/aurum-speech/`** — primary agent pack for all STT and TTS tooling
+  (local + remote providers, models/voices, batch, cleanup, doctor/cache, embed
+  boundaries, hard do-not rules). Existing `aurum-cli` / `batch` / `embed` /
+  `support` skills retargeted to 0.0.20 and cross-linked. `AGENTS.md` lists
+  aurum-speech first.
+
 ## [0.0.20] - 2026-08-02
 
 Post–security-sign-off product cut: live OpenRouter TTS catalogue refresh and

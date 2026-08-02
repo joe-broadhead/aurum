@@ -22,9 +22,9 @@ use std::path::PathBuf;
     version,
     about = "Speech both ways. On-device by default.",
     long_about = "Aurum is private speech I/O on your machine:\n\
-  • STT — audio → text (whisper.cpp local by default; optional OpenRouter)\n\
-  • cleanup — post-transcript flow styles\n\
-  • TTS — text → mono WAV (local ONNX; no cloud)\n\
+  • STT — audio → text (whisper.cpp local by default; opt-in openrouter|openai|xai)\n\
+  • cleanup — post-transcript flow styles (rules or OpenRouter)\n\
+  • TTS — text → mono WAV (local ONNX by default; opt-in openrouter|openai|elevenlabs|xai)\n\
   • batch — resumable multi-file transcription\n\n\
  Quick start:\n \
  aurum meeting.m4a\n \
@@ -210,7 +210,7 @@ pub struct TranscribeArgs {
     #[arg(long, value_name = "PROVIDER")]
     pub provider: Option<String>,
 
-    /// Local model name (tiny-q5_1, base, …) or OpenRouter model id.
+    /// Local model name (tiny-q5_1, base, …) or reviewed remote model id.
     /// Overrides --profile when both are set.
     #[arg(long, value_name = "NAME")]
     pub model: Option<String>,
@@ -235,7 +235,7 @@ pub struct TranscribeArgs {
     #[arg(long)]
     pub timestamps: bool,
 
-    /// Allow SRT/timestamp output from OpenRouter despite unreliable timings.
+    /// Allow SRT/timestamp output when the route does not guarantee reliable timings.
     #[arg(long = "allow-unreliable-timestamps")]
     pub allow_unreliable_timestamps: bool,
 
@@ -294,7 +294,7 @@ pub struct TtsArgs {
     #[arg(long, value_name = "CODE")]
     pub language: Option<String>,
 
-    /// Output container (only `wav` in MVP).
+    /// Output container (WAV only).
     #[arg(short = 'o', long = "output", value_name = "wav", value_parser = ["wav"])]
     pub output: Option<String>,
 
@@ -674,7 +674,7 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
             other => {
                 return Err(UserError::Other {
                     message: format!(
-                        "TTS --cleanup only supports raw|clean in MVP (got '{}')",
+                        "TTS --cleanup only supports raw|clean (got '{}')",
                         other.as_str()
                     ),
                 }

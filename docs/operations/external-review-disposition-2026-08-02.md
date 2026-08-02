@@ -5,9 +5,11 @@
 **Post-provider candidate (mutable tip until freeze):** `master` after JOE-1975–1980 remediation merges  
 **Owner:** Joseph Broadhead  
 
-This table reconciles the automated post-v0.0.18 review (NO for 1.0 on `dee9fcc…`) with
-code landings. It does **not** replace [JOE-1920](https://linear.app/joe-broadhead/issue/JOE-1920)
-qualified human sign-off on an immutable post-provider tag.
+This table reconciles the automated post-v0.0.18 review (NO for production-assurance /
+former “1.0” bar on `dee9fcc…`) with code landings. It does **not** replace
+[JOE-1920](https://linear.app/joe-broadhead/issue/JOE-1920) qualified human sign-off on
+an immutable post-provider tag. Product versioning policy (2026-08-02): continue **0.0.x**;
+assurance cut is **v0.0.21**, not `1.0.0`.
 
 ## Finding summary
 

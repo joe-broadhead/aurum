@@ -7,24 +7,31 @@ Quick map of production docs (read this first):
 | Install / quickstart | [Getting started](../getting-started/installation.md) |
 | CLI | [CLI](../getting-started/cli.md) |
 | Config | [Configuration](../guide/configuration.md) |
+| Providers / matrix | [Providers](../guide/providers.md) · [Matrix](../guide/provider-matrix.md) |
 | TTS / BYOM | [TTS](../guide/tts.md) |
+| Remote audio formats | [Remote audio](../guide/remote-audio.md) |
 | FFI / jobs | [FFI](../library/ffi.md) |
 | Doctor | `aurum doctor` / `aurum doctor --json` |
+| Troubleshooting | [Troubleshooting](troubleshooting.md) |
 | Threat model | [Threat model](threat-model.md) |
 | Hardening | [Hardening](hardening.md) |
+| Provider qualification | [Provider qualification](provider-qualification.md) |
 | Release gate | [Release gate](release-gate.md) |
 | RC freeze inventory | [RC freeze](rc-freeze.md) |
 | RC dogfood | [RC dogfood](rc-dogfood.md) |
 | RC rollback | [RC rollback](rc-rollback.md) |
 | Support / security-fix policy | [Support policy](support-policy.md) |
-| RC exit report | [RC exit](rc-exit.md) |
+| RC exit report (v0.0.21) | [RC exit](rc-exit.md) |
 | External security review brief | [External review brief](external-review-brief.md) |
+| Post-provider freeze checklist | [Post-provider freeze](post-provider-security-freeze.md) |
 | Supply chain | [Supply chain](../development/supply-chain.md) |
 | Compatibility | [Compatibility](../development/compatibility.md) |
 | Migration 0.0.3 | [Migration](../development/migration-0.0.3.md) |
 | Architecture | [Architecture](../development/architecture.md) |
-| ADRs | [Kokoro ADR-001](../development/adr-001-kokoro-tts-adapter.md) |
+| ADRs | [Kokoro ADR-001](../development/adr-001-kokoro-tts-adapter.md) · [Provider registry ADR-002](../development/adr-002-provider-registry.md) |
 | Security reporting | [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md) |
+
+**Versioning:** continuous **0.0.x**. Production-assurance cut is **v0.0.21** (not 1.0).
 
 ## Diagnose
 

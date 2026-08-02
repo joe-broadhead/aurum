@@ -5,7 +5,7 @@ license: MIT
 metadata:
   owner: "aurum"
   persona: "batch"
-  version: "0.0.21"
+  version: "0.0.22"
 ---
 
 # Aurum batch skill

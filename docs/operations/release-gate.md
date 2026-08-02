@@ -2,7 +2,7 @@
 
 Aurum ships on a continuous **0.0.x** line. This gate defines what must be true
 before tagging any release, and what additional freezes apply for the
-**v0.0.21 production-assurance cut** (the programme formerly labelled “1.0”).
+**v0.0.22 product-outcomes cut** (JOE-2215 / JOE-2226); prior programme v0.0.21.
 
 ## Automated gate (every tag)
 
@@ -45,9 +45,13 @@ Enforced in CI:
 | Support / security-fix policy | [support-policy.md](support-policy.md) (JOE-1898) |
 | Downstream consumer gate | `ci.yml` rc-exit-pack / `scripts/rc_downstream_check.sh` (JOE-1903) |
 | Native inventory freeze | `native-components.md` via `generate_sbom.sh` (JOE-1902) |
-| RC exit report | `scripts/generate_rc_exit_report.sh` (JOE-1904) |
+| RC exit report | `scripts/generate_rc_exit_report.sh` (JOE-1904 / JOE-2226) |
+| Product acceptance index | [v0022-product-acceptance.md](v0022-product-acceptance.md) (JOE-2226) |
+| Product contracts drift | `scripts/check_product_contracts.sh` (JOE-2224) |
+| Provider evidence freshness | `scripts/check_provider_evidence.sh` (JOE-2223) |
+| Native SDK package + qualify | `release.yml` sdk-build / `package_native_sdk.sh` (JOE-2225) |
 | External review brief | [external-review-brief.md](external-review-brief.md) (JOE-1901) |
-| Provider platform qualification | [provider-qualification.md](provider-qualification.md) (JOE-1943) |
+| Provider platform qualification | [provider-qualification.md](provider-qualification.md) (JOE-1943 / JOE-2223) |
 | Provider matrix / support tiers | [provider-matrix.md](../guide/provider-matrix.md) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
@@ -63,11 +67,11 @@ Before tagging when remote providers changed:
 
 See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md), [rc-freeze.md](rc-freeze.md), [rc-dogfood.md](rc-dogfood.md), [rc-rollback.md](rc-rollback.md), [rc-exit.md](rc-exit.md).
 
-## Compatibility freeze (toward v0.0.21)
+## Compatibility freeze (toward v0.0.22)
 
 Full inventory: **[rc-freeze.md](rc-freeze.md)** (JOE-1896).
 
-Before declaring the **v0.0.21** assurance cut, freeze and test:
+Before declaring the **v0.0.22** product cut, freeze and test:
 
 - Supported CLI commands/flags/exit categories
 - Config schema + precedence
@@ -80,7 +84,7 @@ Documented provisional surfaces remain experimental until listed in
 [compatibility.md](../development/compatibility.md). Breaking a frozen surface
 during RC **resets the freeze**.
 
-## RC dogfood (v0.0.21)
+## RC dogfood (v0.0.22)
 
 Full checklist: **[rc-dogfood.md](rc-dogfood.md)** (JOE-1897).
 
@@ -97,7 +101,7 @@ Full rehearsal: **[rc-rollback.md](rc-rollback.md)** (JOE-1895).
 1. Yank crates.io versions only if safety-critical (prefer yank + advisory).
 2. GitHub Release: publish a fixed tag `vX.Y.Z+1` — do not rewrite tags.
 3. Document migration in `docs/development/migration-*.md`.
-4. Human sign-off required for the **v0.0.21** assurance cut (automation cannot self-declare).
+4. Human sign-off required for the **v0.0.22** product cut (automation cannot self-declare).
 
 ## Support matrix (tiers)
 

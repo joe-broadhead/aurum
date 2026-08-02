@@ -25,8 +25,8 @@ Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 | TTS | local Kitten/Kokoro + remote OpenRouter / OpenAI / ElevenLabs / xAI (feature `tts`, default on) |
 
 ```toml
-aurum-core = "0.0.21"
-# or git tag = "v0.0.21"
+aurum-core = "0.0.22"
+# or git tag = "v0.0.22"
 ```
 
 See [Integration](integration.md) and [AurumEngine](engine.md).
@@ -36,7 +36,7 @@ See [Integration](integration.md) and [AurumEngine](engine.md).
 !!! warning "Provisional Rust API (0.0.x)"
     On the continuous **0.0.x** line, expect breaking changes between patches when
     necessary. Pin a crates.io version, git **tag**, or **rev**. A stable major
-    (`1.0.0`) is not planned for the current programme; next assurance cut is **0.0.21**.
+    (`1.0.0`) is not planned for the current programme; next assurance cut is **0.0.22**.
 
 The **C ABI** (`AURUM_ABI_VERSION`) is versioned separately and is intended to stay
 narrow; remote providers are **not** exposed on the FFI. See [Native embeds](ffi.md).
@@ -45,6 +45,6 @@ narrow; remote providers are **not** exposed on the FFI. See [Native embeds](ffi
 
 | Package | Install / depend |
 |---------|------------------|
-| `aurum-core` | `aurum-core = "0.0.21"` (default features include TTS; use `default-features = false` for STT-only) |
+| `aurum-core` | `aurum-core = "0.0.22"` (default features include TTS; use `default-features = false` for STT-only) |
 | `aurum-stt` | `cargo install aurum-stt` → runs `aurum` |
-| `aurum-ffi` | `aurum-ffi = "0.0.21"` or build from source (`libaurum_ffi` + `aurum.h`) |
+| `aurum-ffi` | `aurum-ffi = "0.0.22"` or build from source (`libaurum_ffi` + `aurum.h`) |

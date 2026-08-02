@@ -137,7 +137,8 @@ nav:
       - RC dogfood: operations/rc-dogfood.md
       - RC rollback: operations/rc-rollback.md
       - Support policy: operations/support-policy.md
-      - RC exit (v0.0.21): operations/rc-exit.md
+      - RC exit: operations/rc-exit.md
+      - v0.0.22 product acceptance: operations/v0022-product-acceptance.md
       - v0.0.21 residual closeout: operations/v0021-residual-closeout.md
       - External review brief: operations/external-review-brief.md
       - Post-provider security freeze: operations/post-provider-security-freeze.md

@@ -5,7 +5,7 @@ license: MIT
 metadata:
   owner: "aurum"
   persona: "support"
-  version: "0.0.21"
+  version: "0.0.22"
 ---
 
 # Aurum support skill

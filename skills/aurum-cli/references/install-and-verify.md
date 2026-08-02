@@ -6,7 +6,7 @@
 # From a clone:
 ./scripts/install.sh --from-release
 # Or pin:
-AURUM_VERSION=v0.0.21 ./scripts/install.sh --from-release
+AURUM_VERSION=v0.0.22 ./scripts/install.sh --from-release
 ```
 
 The installer downloads the platform asset, verifies `SHA256SUMS`, and installs to

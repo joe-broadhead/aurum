@@ -76,8 +76,8 @@ flowchart LR
 
 ## Status
 
-**v0.0.21** (current published tip) — production-assurance cut: multi-provider speech platform, long-form remote STT (JOE-2212), catalogue probe (JOE-2213), greenfield residual closeout, agent skills.
+**v0.0.22** (candidate tip) — product outcomes & SDK coherence (JOE-2215): quality observatory, TTS listening, named-hardware perf, long-form fidelity, batch v2, SDK contracts, observability, provider evidence, product contracts, native SDK packages.
 
-**Next programme cut: v0.0.21** — production-assurance package (formerly labelled “1.0”). Aurum stays on the **0.0.x** iteration line; a major `1.0.0` is **not** planned for this programme.
+**Prior published tip: v0.0.21** — production-assurance cut. Aurum stays on the **0.0.x** iteration line; a major `1.0.0` is **not** planned. Tag/publication of v0.0.22 requires human GO (JOE-2226).
 
 APIs may still change on `0.0.x`; pin a release **tag** (or crates.io version) in dependents.

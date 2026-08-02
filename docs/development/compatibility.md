@@ -1,7 +1,7 @@
 # Public surface classification (JOE-1612 / JOE-1780 / JOE-1896)
 
 **Boundary:** contracts for the continuous **0.0.x** line. Change stays
-**predictable and honest**. For the **v0.0.21 RC freeze inventory** (frozen
+**predictable and honest**. For the **v0.0.22 RC freeze inventory** (frozen
 surfaces, break-reset policy, automated checks), see
 [rc-freeze.md](../operations/rc-freeze.md).
 
@@ -33,7 +33,7 @@ migration shims for pre-canonical layouts. Prefer delete over leave-for-compat.
 ## SemVer (0.0.x continuous)
 
 Aurum iterates as **0.0.x** patch steps. A major `1.0.0` is **not** planned for
-the current programme; production-assurance work targets **v0.0.21**.
+the current programme; production-assurance work targets **v0.0.22**.
 
 - **PATCH (0.0.x):** bugfixes, docs, additive diagnostics, non-breaking DTO fields with defaults, evidence packs, provider catalogue refresh
 - **Breaking 0.0.x:** removed public items require a CHANGELOG note (no multi-release deprecation lag)

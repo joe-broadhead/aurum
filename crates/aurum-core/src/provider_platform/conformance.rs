@@ -260,7 +260,8 @@ fn sample_model_for(id: &ProviderId, op: CapabilityOperation) -> &'static str {
     match (id.as_str(), op) {
         ("local", CapabilityOperation::Stt) => "tiny-q5_1",
         ("local", CapabilityOperation::Tts) => "kitten-nano-int8",
-        ("openrouter", _) => "openai/whisper-large-v3",
+        ("openrouter", CapabilityOperation::Stt) => "openai/whisper-large-v3",
+        ("openrouter", CapabilityOperation::Tts) => "openai/gpt-4o-mini-tts",
         _ => "default",
     }
 }

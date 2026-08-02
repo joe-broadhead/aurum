@@ -152,7 +152,8 @@ mod tests {
             .find(|p| p.id == "openrouter")
             .unwrap();
         assert!(or.stt);
-        assert!(!or.tts);
+        #[cfg(feature = "tts")]
+        assert!(or.tts, "openrouter registers TTS factory (JOE-1939)");
         assert_eq!(or.network, NetworkRequirement::RequiresNetwork);
     }
 }

@@ -7,9 +7,7 @@ use super::descriptor::{
 use super::factory::TranscriptionProviderFactory;
 use super::id::ProviderId;
 use super::registry::{ProviderRegistry, ProviderRegistryBuilder};
-use crate::capabilities::{
-    local_whisper_capabilities, ProviderCapabilities,
-};
+use crate::capabilities::{local_whisper_capabilities, ProviderCapabilities};
 use crate::error::{Result, UserError};
 use crate::providers::local::LocalWhisperProvider;
 use crate::providers::openrouter::OpenRouterProvider;

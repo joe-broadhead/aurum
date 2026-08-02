@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.19] - 2026-08-02
+
+v0.0.19 is the **post-provider security freeze**: provider platform (JOE-1932
+/ #59) plus remediations JOE-1975–1980, F-005 verified-snap staging (JOE-1918),
+F-006 residual honesty (JOE-1919), and freeze checklist for JOE-1981 → JOE-1920
+qualified human retest. Pre-provider `v0.0.18` remains historical only.
+
 ### Fixed
 
 - **JOE-1918 (F-005 re-open):** digested TTS pack/catalogue artifacts stage into

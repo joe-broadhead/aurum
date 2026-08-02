@@ -14,6 +14,8 @@ remediation (JOE-1975–1980, F-005 snap staging), then hand to JOE-1920 human r
 
 ## Freeze prep (maintainer)
 
+**Candidate VERSION:** `0.0.19` (branch `release/0.0.19`; tag `v0.0.19` on merge via release-tag workflow).
+
 1. Ensure `master` is clean and contains the remediation merges (1975–1980 + F-005 snap).
 2. Record exact `git rev-parse HEAD` (full 40 hex).
 3. Align `VERSION`, workspace crate versions, and CHANGELOG Unreleased notes for the cut.

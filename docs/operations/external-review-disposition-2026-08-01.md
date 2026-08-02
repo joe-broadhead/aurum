@@ -41,21 +41,33 @@ It does **not** replace the qualified human assessment required by JOE-1920.
 
 **Finding:** time-of-check/time-of-use and symlink gaps on artifact/BYOM paths.
 
-**Fix:** reverify-before-load, exclusive partials, durable publish paths as implemented in PR #56.
+**Fix:** reverify-before-load, exclusive partials, durable publish (PR #56); plus
+**verified-snap staging** (`stage_verified_for_load`) so digested artifacts are
+copied into process-owned `tts/verified-snaps/<sha>/` before ORT/NPZ open
+(post-provider re-open of F-005).
 
-**Residual acceptance:** BYOM remains explicit-trust; hostile admin on the same machine is out of Tier A local threat model.
+**Residual acceptance:** `local_unverified` without digests still opens pack paths
+after symlink checks only; hostile writer of the cache root remains out of Tier A.
+See also [external-review-disposition-2026-08-02.md](external-review-disposition-2026-08-02.md).
 
 ### F-006 — SBOM / provenance identity (JOE-1919)
 
 **Finding:** provenance/commit binding too loose for 1.0 evidence claims.
 
-**Fix:** require full 40-char commit in generate/verify; richer PROVENANCE metadata.
+**Fix:** require full 40-char commit in generate/verify; richer PROVENANCE metadata
+(PR #57). Prefix/short-SHA matching is rejected in `verify_release_assets.sh`.
 
 **Residual acceptance (explicit):**
 
 - Not claiming full SLSA level for every crate tarball on crates.io.
 - GitHub Release path: checksums + cosign keyless + PROVENANCE full-SHA binding required.
 - Optional future: OIDC trusted publishing for crates.io (does not reopen F-002 High).
+- Dual-builder bit-for-bit equality not claimed where variance is documented.
+
+### Post-provider programme
+
+Provider-platform remediation (JOE-1975–1980) and freeze checklist:
+[post-provider-security-freeze.md](post-provider-security-freeze.md) / disposition 2026-08-02.
 
 ## High findings (reference only)
 

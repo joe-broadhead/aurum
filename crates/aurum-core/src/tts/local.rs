@@ -15,7 +15,7 @@ use super::catalogue::{
 use super::chunk::{prepare_tts_chunks_with, PhonemeCodec, TtsChunk, CHUNK_PAUSE_MS};
 use super::conformance::synthesize_fake_sine_ms;
 use super::npz::load_voices_npz;
-use super::pack::{load_pack_dir, reverify_artifact_before_load};
+use super::pack::{load_pack_dir, stage_verified_for_load};
 use super::pcm_post::{
     duration_ms_from_pcm, trim_trailing_silence, validate_raw_pcm, TailTrimPolicy, PEAK_LIMIT,
 };
@@ -270,12 +270,33 @@ impl LocalTtsProvider {
         let weight = TtsSessionPool::weight_for(&onnx);
         let pool = Arc::clone(&self.pool);
         let gov = Arc::clone(&self.governor);
+        let cache_root = self.cache_dir.clone();
+        let onnx_sha = Some(info.onnx.sha256.to_string());
+        let voices_sha = Some(info.voices.sha256.to_string());
+        let onnx_leaf = onnx
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("model.onnx")
+            .to_string();
+        let voices_leaf = voices_file
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("voices.npz")
+            .to_string();
 
         let pin = tokio::task::spawn_blocking(move || {
             pool.get_or_load_pin(key_for_load, weight, &gov, || {
-                load_pack(
-                    &onnx,
+                let onnx_load =
+                    stage_verified_for_load(&onnx, onnx_sha.as_deref(), &cache_root, &onnx_leaf)?;
+                let voices_load = stage_verified_for_load(
                     &voices_file,
+                    voices_sha.as_deref(),
+                    &cache_root,
+                    &voices_leaf,
+                )?;
+                load_pack(
+                    &onnx_load,
+                    &voices_load,
                     sample_rate,
                     speed_priors,
                     catalogue_max,
@@ -312,18 +333,22 @@ impl LocalTtsProvider {
         }
         let onnx_name = manifest
             .artifact("onnx")
-            .map(|a| a.filename.as_str())
+            .map(|a| a.filename.clone())
             .ok_or_else(|| UserError::InvalidConfig {
                 reason: "pack missing onnx artifact".into(),
             })?;
         let voices_name = manifest
             .artifact("voices")
-            .map(|a| a.filename.as_str())
+            .map(|a| a.filename.clone())
             .ok_or_else(|| UserError::InvalidConfig {
                 reason: "pack missing voices artifact".into(),
             })?;
-        let onnx = root.join(onnx_name);
-        let voices_file = root.join(voices_name);
+        let config_name = manifest
+            .artifact("config")
+            .map(|a| a.filename.clone())
+            .unwrap_or_else(|| "config.json".into());
+        let onnx = root.join(&onnx_name);
+        let voices_file = root.join(&voices_name);
         let onnx_sha = manifest.artifact("onnx").and_then(|a| a.sha256.clone());
         let voices_sha = manifest.artifact("voices").and_then(|a| a.sha256.clone());
         let sample_rate = manifest.sample_rate_hz;
@@ -338,27 +363,27 @@ impl LocalTtsProvider {
             return Ok((pin, manifest));
         }
         let key_for_load = key.clone();
-        let speed_priors = load_speed_priors_from_path(
-            &root.join(
-                manifest
-                    .artifact("config")
-                    .map(|a| a.filename.as_str())
-                    .unwrap_or("config.json"),
-            ),
-        );
+        let speed_priors = load_speed_priors_from_path(&root.join(&config_name));
         let weight = TtsSessionPool::weight_for(&onnx);
         let pool = Arc::clone(&self.pool);
         let gov = Arc::clone(&self.governor);
+        let cache_root = self.cache_dir.clone();
 
         let pin = tokio::task::spawn_blocking(move || {
             pool.get_or_load_pin(key_for_load, weight, &gov, || {
-                // JOE-1918: re-hash immediately before native open to close
-                // verify-then-swap TOCTOU window for pack-backed loads.
-                reverify_artifact_before_load(&onnx, onnx_sha.as_deref())?;
-                reverify_artifact_before_load(&voices_file, voices_sha.as_deref())?;
-                load_pack(
-                    &onnx,
+                // JOE-1918 re-open: stage verified digests into private snap paths
+                // so ORT/NPZ open process-owned bytes, not the mutable pack path.
+                let onnx_load =
+                    stage_verified_for_load(&onnx, onnx_sha.as_deref(), &cache_root, &onnx_name)?;
+                let voices_load = stage_verified_for_load(
                     &voices_file,
+                    voices_sha.as_deref(),
+                    &cache_root,
+                    &voices_name,
+                )?;
+                load_pack(
+                    &onnx_load,
+                    &voices_load,
                     sample_rate,
                     speed_priors,
                     catalogue_max,

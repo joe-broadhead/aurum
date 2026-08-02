@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JOE-1918 (F-005 re-open):** digested TTS pack/catalogue artifacts stage into
+  process-owned `tts/verified-snaps/<sha256>/` before ORT/NPZ open so pack-path
+  swaps after verify cannot change native load bytes.
+- **JOE-1919 / JOE-1981:** formal residual + post-provider freeze checklist docs
+  (`external-review-disposition-2026-08-02.md`, `post-provider-security-freeze.md`).
 - **JOE-1978:** OpenRouter TTS default is exact dated id
   `openai/gpt-4o-mini-tts-2025-12-15`; undated bare id removed; registry records carry
   tier/evidence metadata; TTS remains **experimental** until protected smoke.

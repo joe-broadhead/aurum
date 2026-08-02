@@ -1,8 +1,20 @@
-# Release provenance and verification (JOE-1860 / JOE-1882)
+# Release provenance and verification (JOE-1860 / JOE-1882 / JOE-1919)
 
 Aurum release assets ship with **byte digests**, **formal SBOMs**, a
 **structured provenance record**, and a **required cosign keyless** signature
 bundle over `SHA256SUMS` (JOE-1882).
+
+## Honest residual (F-006 / JOE-1919)
+
+| Claim | Status |
+|-------|--------|
+| GitHub Release digests + cosign keyless over `SHA256SUMS` | **Required** |
+| `PROVENANCE.json` full 40-hex `source_commit` + exact expect match | **Required** |
+| Interoperable SLSA build attestation per binary | **Not claimed** |
+| crates.io crate tarballs in the same cosign evidence set | **Not claimed** |
+| Bit-for-bit dual-builder equality for all Tier A binaries | **Not claimed** where variance is documented |
+
+Operators must not infer crates.io or SLSA L3 guarantees from GitHub Release evidence alone.
 
 ## Artifacts in a GitHub Release
 

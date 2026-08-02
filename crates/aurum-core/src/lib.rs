@@ -192,8 +192,9 @@ pub use providers::{
     TranscriptionProvider, TranscriptionResult,
 };
 pub use remote::{
-    HardenedHttpClient, OpenAiSpeechRequest, OpenRouterHttpPolicy, ProviderHttpPolicy,
-    RemotePolicy, SpeechResponseFormat,
+    HardenedHttpClient, LongFormPolicy, OpenAiSpeechRequest, OpenRouterHttpPolicy,
+    ProviderHttpPolicy, RemotePolicy, SpeechResponseFormat, TimestampSource,
+    DEFAULT_REMOTE_STT_CHUNK_SECS,
 };
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,

@@ -1107,7 +1107,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
 
     // SRT requires reliable timings unless explicitly overridden.
     if matches!(format, OutputFormat::Srt)
-        && !result.timestamps_reliable()
+        && (!result.timestamps_reliable() || result.has_approximate_timestamps())
         && !cli.allow_unreliable_timestamps
     {
         return Err(UserError::Other {

@@ -60,6 +60,9 @@ pub struct Segment {
     /// End time in seconds.
     end: f64,
     text: String,
+    /// How timing was obtained (JOE-2219). Defaults to unavailable when absent.
+    #[serde(default)]
+    timestamp_source: crate::remote::TimestampSource,
 }
 
 impl Segment {
@@ -69,6 +72,7 @@ impl Segment {
             start,
             end,
             text: text.into(),
+            timestamp_source: crate::remote::TimestampSource::Unavailable,
         };
         s.validate()?;
         Ok(s)
@@ -83,6 +87,22 @@ impl Segment {
             start,
             end,
             text: text.into(),
+            timestamp_source: crate::remote::TimestampSource::Unavailable,
+        }
+    }
+
+    /// Unchecked construct with explicit provenance (JOE-2219).
+    pub fn from_parts_with_source(
+        start: f64,
+        end: f64,
+        text: impl Into<String>,
+        timestamp_source: crate::remote::TimestampSource,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            text: text.into(),
+            timestamp_source,
         }
     }
 
@@ -96,6 +116,14 @@ impl Segment {
 
     pub fn text(&self) -> &str {
         &self.text
+    }
+
+    pub fn timestamp_source(&self) -> crate::remote::TimestampSource {
+        self.timestamp_source
+    }
+
+    pub fn set_timestamp_source(&mut self, source: crate::remote::TimestampSource) {
+        self.timestamp_source = source;
     }
 
     pub fn set_start(&mut self, start: f64) {
@@ -256,6 +284,18 @@ impl TranscriptionResult {
         self.timestamps_reliable = reliable;
     }
 
+    /// True when any segment uses approximate/non-native timing (JOE-2219).
+    pub fn has_approximate_timestamps(&self) -> bool {
+        self.segments
+            .iter()
+            .any(|s| s.timestamp_source().is_approximate())
+    }
+
+    /// Collect segment provenance sources (JOE-2219).
+    pub fn timestamp_sources(&self) -> Vec<crate::remote::TimestampSource> {
+        self.segments.iter().map(|s| s.timestamp_source()).collect()
+    }
+
     pub fn cleanup_style(&self) -> crate::cleanup::CleanupStyle {
         self.cleanup_style
     }
@@ -326,10 +366,13 @@ impl TranscriptionResult {
     /// Deserializing JSON into [`crate::dto::SttResultDto`] alone does not create
     /// a trusted domain object — this path re-validates every segment and duration.
     pub fn try_from_dto(dto: &crate::dto::SttResultDto) -> Result<Self> {
-        if dto.schema_version != crate::dto::STT_RESULT_SCHEMA_VERSION {
+        // Accept v1 (pre-provenance) and current v2 (JOE-2219).
+        if dto.schema_version != crate::dto::STT_RESULT_SCHEMA_VERSION
+            && dto.schema_version != 1
+        {
             return Err(crate::error::UserError::Other {
                 message: format!(
-                    "unsupported STT DTO schema_version {} (expected {})",
+                    "unsupported STT DTO schema_version {} (expected 1 or {})",
                     dto.schema_version,
                     crate::dto::STT_RESULT_SCHEMA_VERSION
                 ),

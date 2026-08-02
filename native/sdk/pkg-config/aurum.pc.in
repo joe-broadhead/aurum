@@ -1,0 +1,12 @@
+# Aurum native SDK pkg-config (JOE-2225).
+prefix=@PREFIX@
+exec_prefix=${prefix}
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: aurum
+Description: Aurum on-device speech I/O C ABI (local STT/cleanup; remote not exposed)
+Version: @AURUM_VERSION@
+Cflags: -I${includedir}
+Libs: -L${libdir} -laurum_ffi
+Libs.private: @LIBS_PRIVATE@

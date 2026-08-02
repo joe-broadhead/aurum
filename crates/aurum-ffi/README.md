@@ -41,8 +41,21 @@ cargo build -p aurum-ffi --release
 cargo build -p aurum-ffi --release --no-default-features
 ```
 
+### Official SDK archives (JOE-2225)
+
+Prefer a **versioned release SDK bundle** over linking a workspace `target/`:
+
+```bash
+./scripts/package_native_sdk.sh --features none
+./scripts/qualify_native_sdk_bundle.sh --archive dist/native-sdk/aurum-sdk-*.tar.gz
+```
+
+Layout: `include/`, `lib/`, `cmake/`, `pkg-config/`, `examples/`, `SDK_MANIFEST.json`.
+Remote providers remain unsupported through the C ABI. See
+[Native SDK](https://joe-broadhead.github.io/aurum/library/native-sdk/).
+
 ```toml
-aurum-ffi = "0.0.12"
+aurum-ffi = "0.0.21"
 ```
 
 See [Native embeds](https://joe-broadhead.github.io/aurum/library/ffi/).

@@ -1,0 +1,40 @@
+# Exported aurum_* symbols expected in the STT-only (no default features) staticlib.
+# Unexpected additions/removals should be reviewed with an ABI policy decision.
+# Generated baseline — JOE-2225.
+aurum_abi_version
+aurum_audio_free
+aurum_audio_pcm_i16
+aurum_audio_sample_rate
+aurum_capabilities
+aurum_cleanup_rules
+aurum_doctor_json
+aurum_engine_cancel
+aurum_engine_close
+aurum_engine_create
+aurum_engine_destroy
+aurum_engine_is_model_ready
+aurum_engine_last_error
+aurum_engine_preload
+aurum_engine_shutdown
+aurum_engine_transcribe_pcm
+aurum_free_string
+aurum_job_cancel
+aurum_job_free
+aurum_job_poll
+aurum_job_start_cleanup
+aurum_job_start_preload
+aurum_job_start_transcribe
+aurum_job_state
+aurum_job_take_string
+aurum_job_take_transcript
+aurum_job_wait
+aurum_sample_rate
+aurum_shutdown
+aurum_shutdown_ex
+aurum_transcript_free
+aurum_transcript_language
+aurum_transcript_model
+aurum_transcript_segment
+aurum_transcript_segment_count
+aurum_transcript_text
+aurum_transcript_timestamps_reliable

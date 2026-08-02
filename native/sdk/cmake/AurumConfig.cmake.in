@@ -1,0 +1,29 @@
+# Aurum native SDK CMake package (JOE-2225).
+# Generated into each platform SDK archive as cmake/AurumConfig.cmake.
+
+@PACKAGE_INIT@
+
+set(AURUM_VERSION "@AURUM_VERSION@")
+set(AURUM_ABI_VERSION "@AURUM_ABI_VERSION@")
+set(AURUM_ABI_MIN_VERSION "@AURUM_ABI_MIN_VERSION@")
+
+set_and_check(AURUM_INCLUDE_DIR "${PACKAGE_PREFIX_DIR}/include")
+set_and_check(AURUM_LIB_DIR "${PACKAGE_PREFIX_DIR}/lib")
+
+if(NOT TARGET Aurum::aurum_ffi)
+  add_library(Aurum::aurum_ffi STATIC IMPORTED)
+  set_target_properties(Aurum::aurum_ffi PROPERTIES
+    IMPORTED_LOCATION "${AURUM_LIB_DIR}/@AURUM_STATIC_LIB@"
+    INTERFACE_INCLUDE_DIRECTORIES "${AURUM_INCLUDE_DIR}"
+  )
+  if(APPLE)
+    target_link_libraries(Aurum::aurum_ffi INTERFACE
+      "-framework Security" "-framework CoreFoundation"
+      "-framework Metal" "-framework Foundation" "-framework Accelerate"
+      pthread dl m c++)
+  elseif(UNIX)
+    target_link_libraries(Aurum::aurum_ffi INTERFACE pthread dl m stdc++)
+  endif()
+endif()
+
+check_required_components(Aurum)

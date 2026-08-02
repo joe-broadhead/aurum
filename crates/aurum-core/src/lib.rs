@@ -165,10 +165,13 @@ pub use profile::{
     PROFILE_EVIDENCE_VERSION,
 };
 pub use provider_platform::{
-    capabilities_for, check_builtin_conformance, list_provider_summaries,
-    preflight_stt_with_registry, preflight_tts_with_registry, provider_list, ProviderBuildContext,
-    ProviderId, ProviderList, ProviderRegistry, ProviderResolveOptions, ProviderSummary,
-    PROVIDER_LIST_SCHEMA_VERSION,
+    capabilities_for, check_builtin_conformance, detect_catalogue_drift,
+    evaluate_supported_evidence_gate, list_provider_summaries, load_evidence_dir,
+    preflight_stt_with_registry, preflight_tts_with_registry, provider_list, CatalogueDriftReport,
+    EvidenceGateReport, EvidenceOperation, ProviderBuildContext, ProviderEvidenceIndex,
+    ProviderEvidenceRecord, ProviderId, ProviderList, ProviderRegistry, ProviderResolveOptions,
+    ProviderSummary, SupportTier, SupportedRouteClaim, PROVIDER_EVIDENCE_SCHEMA_VERSION,
+    PROVIDER_LIST_SCHEMA_VERSION, SUPPORTED_EVIDENCE_MAX_AGE_SECS,
 };
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
 #[cfg(feature = "tts")]

@@ -11,9 +11,12 @@ use crate::error::{Result, UserError};
 use crate::model::{lookup_model, model_support_tier, ModelSupportTier};
 use serde::{Deserialize, Serialize};
 
-/// Evidence pack version tied to published eval methodology.
-/// Bump when mappings change; requires changelog entry.
-pub const PROFILE_EVIDENCE_VERSION: &str = "0.0.4-provisional-smoke";
+/// Evidence pack version tied to published eval methodology (JOE-2216).
+///
+/// Tracks the STT quality observatory evidence pack. Bump when mappings or
+/// the reviewed baseline change; requires a changelog entry and budget review.
+/// See `evals/observatory/` and [`crate::eval::STT_OBSERVATORY_EVIDENCE_VERSION`].
+pub const PROFILE_EVIDENCE_VERSION: &str = "0.0.22-observatory-v1";
 
 /// User-facing quality intent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,7 +115,7 @@ pub fn resolve_profile(profile: QualityProfile, language: &str) -> Result<Profil
                     "base",
                     vec![
                         "balance profile tracks the product default model `base`".into(),
-                        format!("evidence_version={PROFILE_EVIDENCE_VERSION} (provisional smoke)"),
+                        format!("evidence_version={PROFILE_EVIDENCE_VERSION} (STT observatory)"),
                     ],
                 )
             }

@@ -11,6 +11,18 @@ aurum tts voices
 
 TTS is a **subcommand only** — it does not change STT defaults (`aurum <file>`, `aurum models`, `aurum cleanup`).
 
+## Quality evidence (JOE-2217)
+
+* Objective pack + evaluator: `aurum_core::eval` (`tts_production_pack`, `score_tts_pcm`)
+* Fixture JSON: `evals/observatory/tts_eval_pack.v1.json` (≥60 utterances)
+* Listening protocol: `docs/operations/tts-listening-protocol.md`
+* Default decision (retain Kitten): `evals/observatory/tts-default-decision.md`
+* Evidence version: `0.0.22-tts-listening-v1`
+
+Support-tier promotion requires objective pass **and** ≥3 blinded listeners
+(medians: intelligibility ≥4, pronunciation/joins ≥3.5). Changing the default
+is a separate product decision, not an automatic score flip.
+
 ## Result contract
 
 Local and remote TTS share one in-memory result: **mono `i16` PCM**, accurate

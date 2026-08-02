@@ -1,7 +1,35 @@
-//! Versioned quality evaluation helpers (JOE-1607).
+//! Versioned quality evaluation helpers (JOE-1607 / JOE-2216).
 //!
 //! Offline, deterministic metrics for STT (WER/CER) and simple TTS objective
 //! checks. Fixture corpora live under `evals/` at the repo root.
+//!
+//! The production STT quality observatory (schemas, budgets, scorecards) lives
+//! in [`observatory`].
+
+pub mod observatory;
+pub mod perf;
+pub mod tts_listening;
+
+pub use observatory::{
+    allowed_mean_wer, budget_exit_code, compare_stt_budget, observatory_core_budget_tiny,
+    observatory_core_corpus, score_observatory_fixture, AssetResolution, BudgetComparison,
+    BudgetFinding, BudgetSeverity, CorpusCoverage, ObservatoryCorpus, ObservatoryFixture,
+    ObservatoryFixtureScore, ObservatoryReport, ObservatoryScoreExtras, RunIdentity, SttBudget,
+    NORMALIZATION_POLICY_VERSION, OBSERVATORY_SCHEMA_VERSION, STT_OBSERVATORY_EVIDENCE_VERSION,
+};
+pub use perf::{
+    compare_perf_budget, percentile_sorted, perf_budget_exit_code, perf_scenario_catalogue,
+    tier_a_profile_templates, HardwareTier, NamedHardwareProfile, PerfBudget, PerfComparison,
+    PerfFinding, PerfReport, PerfScenario, PerfScenarioBudget, PerfScenarioResult, PerfSeverity,
+    PERF_EVIDENCE_VERSION, PERF_SCHEMA_VERSION,
+};
+pub use tts_listening::{
+    aggregate_listening, evaluate_support_tier, join_discontinuity_score, score_tts_pcm,
+    tts_local_matrix, tts_production_pack, ListeningAggregate, ListeningRating, ListeningReport,
+    SupportTierDecision, TtsEvalFixture, TtsEvalPack, TtsEvalParticipation, TtsObjectiveReport,
+    TtsObjectiveScore, TtsObjectiveThresholds, TtsRunIdentity, TTS_EVAL_SCHEMA_VERSION,
+    TTS_EVIDENCE_VERSION,
+};
 
 use serde::{Deserialize, Serialize};
 

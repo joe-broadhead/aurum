@@ -1,0 +1,722 @@
+{
+  "schema_version": 1,
+  "name": "aurum-tts-eval-v1",
+  "pack_version": "tts-eval-v1",
+  "description": "Production TTS evaluation pack: pronunciation, prosody, joins, and controls (JOE-2217). Synthetic CC0 text; no private synthesis payloads.",
+  "fixtures": [
+    {
+      "id": "tts_s01",
+      "text": "Hello from Aurum.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s02",
+      "text": "Thanks for calling.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s03",
+      "text": "See you tomorrow.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s04",
+      "text": "Please hold on a moment.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s05",
+      "text": "I can help with that.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s06",
+      "text": "Good morning, everyone.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s07",
+      "text": "Let's get started.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s08",
+      "text": "That sounds good to me.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s09",
+      "text": "I'll send the notes shortly.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_s10",
+      "text": "Talk soon.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "conversational"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_p01",
+      "text": "First, we plan. Second, we build. Third, we ship.",
+      "language": "en-US",
+      "tags": [
+        "punctuation",
+        "cadence",
+        "short"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_p02",
+      "text": "Wait — did you mean the blue one, or the green one?",
+      "language": "en-US",
+      "tags": [
+        "punctuation",
+        "question"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_p03",
+      "text": "Yes! Absolutely. We should do that.",
+      "language": "en-US",
+      "tags": [
+        "punctuation",
+        "exclamation"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_p04",
+      "text": "She said, \"Meet me at noon,\" and left.",
+      "language": "en-US",
+      "tags": [
+        "quote",
+        "punctuation"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_p05",
+      "text": "Email me at support at example dot com, please.",
+      "language": "en-US",
+      "tags": [
+        "punctuation",
+        "abbrev"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n01",
+      "text": "Call me at extension 42.",
+      "language": "en-US",
+      "tags": [
+        "numbers",
+        "abbrev"
+      ],
+      "pronunciation_notes": "extension forty-two",
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n02",
+      "text": "The total is $1,234.56.",
+      "language": "en-US",
+      "tags": [
+        "currency",
+        "numbers"
+      ],
+      "pronunciation_notes": "one thousand two hundred thirty-four dollars and fifty-six cents",
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n03",
+      "text": "The meeting is on January 12, 2026 at 3:30 p.m.",
+      "language": "en-US",
+      "tags": [
+        "dates",
+        "times",
+        "numbers"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n04",
+      "text": "Drive 15.5 kilometres north on Route 66.",
+      "language": "en-US",
+      "tags": [
+        "measurements",
+        "numbers"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n05",
+      "text": "Version 0.0.22 ships next week.",
+      "language": "en-US",
+      "tags": [
+        "numbers",
+        "abbrev"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n06",
+      "text": "The temperature was -4 degrees Celsius.",
+      "language": "en-US",
+      "tags": [
+        "numbers",
+        "measurements"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n07",
+      "text": "Order number A-90421 was fulfilled.",
+      "language": "en-US",
+      "tags": [
+        "numbers",
+        "abbrev"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n08",
+      "text": "We need 3 GB of RAM and 512 MB of cache.",
+      "language": "en-US",
+      "tags": [
+        "numbers",
+        "abbrev",
+        "measurements"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n09",
+      "text": "Arrive by 09:05 or take the 17:45 train.",
+      "language": "en-US",
+      "tags": [
+        "times",
+        "numbers"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_n10",
+      "text": "Pi is approximately 3.14159.",
+      "language": "en-US",
+      "tags": [
+        "numbers"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_a01",
+      "text": "The CPU and GPU metrics for the API gateway.",
+      "language": "en-US",
+      "tags": [
+        "abbrev",
+        "acronym"
+      ],
+      "pronunciation_notes": "C-P-U, G-P-U, A-P-I",
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_a02",
+      "text": "Please CC the CEO and the CTO.",
+      "language": "en-US",
+      "tags": [
+        "abbrev"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_a03",
+      "text": "HTTPS is required for STT and TTS endpoints.",
+      "language": "en-US",
+      "tags": [
+        "abbrev",
+        "acronym"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_a04",
+      "text": "The FAQ covers RTF and WER definitions.",
+      "language": "en-US",
+      "tags": [
+        "abbrev",
+        "acronym"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_a05",
+      "text": "Use SHA-256 digests, not MD5.",
+      "language": "en-US",
+      "tags": [
+        "abbrev",
+        "acronym"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_pn01",
+      "text": "Aurum transcribes speech on-device by default.",
+      "language": "en-US",
+      "tags": [
+        "proper_noun"
+      ],
+      "pronunciation_notes": "Aurum as product name",
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_pn02",
+      "text": "Dr. Nguyen met Mr. O'Brien in Edinburgh.",
+      "language": "en-US",
+      "tags": [
+        "proper_noun"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_pn03",
+      "text": "Worcestershire sauce is hard to spell.",
+      "language": "en-US",
+      "tags": [
+        "proper_noun",
+        "difficult"
+      ],
+      "pronunciation_notes": "WUSS-ter-sheer",
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_pn04",
+      "text": "The queue at the boutique was irregular.",
+      "language": "en-US",
+      "tags": [
+        "difficult"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_pn05",
+      "text": "Pho and banh mi were on the menu.",
+      "language": "en-US",
+      "tags": [
+        "proper_noun",
+        "difficult"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_h01",
+      "text": "I will record the record after the meeting.",
+      "language": "en-US",
+      "tags": [
+        "homograph"
+      ],
+      "pronunciation_notes": "re-CORD vs REC-ord",
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_h02",
+      "text": "Please present the present to the guest.",
+      "language": "en-US",
+      "tags": [
+        "homograph"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_h03",
+      "text": "The wind will wind around the tower.",
+      "language": "en-US",
+      "tags": [
+        "homograph"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_h04",
+      "text": "They live near the live venue.",
+      "language": "en-US",
+      "tags": [
+        "homograph"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_q01",
+      "text": "What time does the train leave?",
+      "language": "en-US",
+      "tags": [
+        "question"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_q02",
+      "text": "Could you repeat that, please?",
+      "language": "en-US",
+      "tags": [
+        "question"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_e01",
+      "text": "Watch out for the ice!",
+      "language": "en-US",
+      "tags": [
+        "exclamation"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_e02",
+      "text": "Congratulations on the release!",
+      "language": "en-US",
+      "tags": [
+        "exclamation"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_uk01",
+      "text": "Please organise the colour catalogue for the theatre.",
+      "language": "en-GB",
+      "tags": [
+        "en_gb",
+        "short"
+      ],
+      "pronunciation_notes": "UK spelling preferences",
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_uk02",
+      "text": "The lift is opposite the flat near the queue.",
+      "language": "en-GB",
+      "tags": [
+        "en_gb",
+        "short"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_us01",
+      "text": "Please organize the color catalog for the theater.",
+      "language": "en-US",
+      "tags": [
+        "en_us",
+        "short"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_us02",
+      "text": "The elevator is across from the apartment near the line.",
+      "language": "en-US",
+      "tags": [
+        "en_us",
+        "short"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_j01",
+      "text": "First sentence ends here. Second sentence starts now and continues a little longer.",
+      "language": "en-US",
+      "tags": [
+        "join",
+        "chunk_boundary"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_j02",
+      "text": "Alpha. Bravo. Charlie. Delta. Echo. Foxtrot.",
+      "language": "en-US",
+      "tags": [
+        "join",
+        "chunk_boundary"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_j03",
+      "text": "One two three four five six seven eight nine ten eleven twelve.",
+      "language": "en-US",
+      "tags": [
+        "join",
+        "numbers"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_j04",
+      "text": "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.",
+      "language": "en-US",
+      "tags": [
+        "join",
+        "chunk_boundary"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_lf01",
+      "text": "Welcome to the weekly product update. Today we cover shipping, quality, and support. First, shipping: the release candidate is green on all Tier A platforms. Second, quality: the observatory budgets are checked in and fail closed. Third, support: please file issues with redacted diagnostics only.",
+      "language": "en-US",
+      "tags": [
+        "long_form",
+        "join"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_lf02",
+      "text": "Chapter one begins with a quiet morning. Birds called from the trees, and the river moved slowly past the mill. In the village square, merchants opened their stalls. A child asked for a story, and an old traveller began to speak.",
+      "language": "en-US",
+      "tags": [
+        "long_form",
+        "join"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_lf03",
+      "text": "Operator checklist: verify model digests, confirm local-only policy, run doctor, execute the smoke corpus, compare budgets, and only then publish. Do not skip integrity checks. Do not paste API keys into tickets. Prefer relative paths in public support bundles.",
+      "language": "en-US",
+      "tags": [
+        "long_form"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_v01",
+      "text": "Hi.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "very_short"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_v02",
+      "text": "OK.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "very_short"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_v03",
+      "text": "Yes.",
+      "language": "en-US",
+      "tags": [
+        "short",
+        "very_short"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_c01",
+      "text": "",
+      "language": "en-US",
+      "tags": [
+        "control",
+        "invalid_input"
+      ],
+      "pronunciation_notes": "empty text control",
+      "license": "synthetic CC0",
+      "participation": "objective_only"
+    },
+    {
+      "id": "tts_c02",
+      "text": "   ",
+      "language": "en-US",
+      "tags": [
+        "control",
+        "invalid_input"
+      ],
+      "pronunciation_notes": "whitespace-only control",
+      "license": "synthetic CC0",
+      "participation": "objective_only"
+    },
+    {
+      "id": "tts_c03",
+      "text": "Silence after this period. ",
+      "language": "en-US",
+      "tags": [
+        "control",
+        "trailing"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_x01",
+      "text": "The FAQ, README, and CHANGELOG must stay aligned.",
+      "language": "en-US",
+      "tags": [
+        "abbrev",
+        "proper_noun"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_x02",
+      "text": "Is the p95 under 200 milliseconds?",
+      "language": "en-US",
+      "tags": [
+        "question",
+        "numbers",
+        "measurements"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_x03",
+      "text": "Stop! Do not overwrite the baseline without review.",
+      "language": "en-US",
+      "tags": [
+        "exclamation"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_x04",
+      "text": "He read the red book by the reed bed.",
+      "language": "en-US",
+      "tags": [
+        "homograph",
+        "difficult"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    },
+    {
+      "id": "tts_x05",
+      "text": "Schedule a call for 2nd February at half past four.",
+      "language": "en-GB",
+      "tags": [
+        "dates",
+        "times",
+        "en_gb"
+      ],
+      "license": "synthetic CC0",
+      "participation": "both"
+    }
+  ]
+}

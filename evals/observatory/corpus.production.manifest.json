@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "name": "aurum-observatory-production-v1",
+  "corpus_version": "observatory-production-v1",
+  "description": "Production STT quality pack metadata. Audio is not vendored; operators run the prepare script against licensed open sources. This file documents required coverage and fetch slots so the pack is reproducible without private Plaud material.",
+  "coverage_targets": {
+    "min_duration_secs": 3600,
+    "min_speakers": 20,
+    "min_english_accents": 4,
+    "min_long_form_over_10min": 3,
+    "required_scenarios": [
+      "conversational",
+      "lecture",
+      "noisy",
+      "silence",
+      "non_speech",
+      "numbers",
+      "dates",
+      "acronyms",
+      "proper_nouns",
+      "low_volume",
+      "pause",
+      "multilingual"
+    ]
+  },
+  "asset_slots": [
+    {
+      "slot_id": "librispeech_clean_subset",
+      "role": "clean conversational / read speech",
+      "license_family": "CC BY 4.0 (LibriSpeech)",
+      "fetch": "scripts/eval/prepare_stt_observatory_corpus.sh --slot librispeech_clean_subset",
+      "redistributable_in_repo": false,
+      "min_duration_secs": 900,
+      "notes": "Download only the listed chapter IDs; verify SHA-256 from the slot lockfile after first prepare."
+    },
+    {
+      "slot_id": "common_voice_accents",
+      "role": "multi-accent English (≥4 accents)",
+      "license_family": "CC0-1.0 (Mozilla Common Voice)",
+      "fetch": "scripts/eval/prepare_stt_observatory_corpus.sh --slot common_voice_accents",
+      "redistributable_in_repo": false,
+      "min_duration_secs": 600,
+      "notes": "Filter by accent metadata; retain speaker counts in the generated fixture manifest only."
+    },
+    {
+      "slot_id": "tedlium_lecture",
+      "role": "lecture / presentation speech",
+      "license_family": "CC BY-NC-ND 3.0 (TED-LIUM)",
+      "fetch": "scripts/eval/prepare_stt_observatory_corpus.sh --slot tedlium_lecture",
+      "redistributable_in_repo": false,
+      "min_duration_secs": 900,
+      "use_restrictions": "Non-commercial; do not re-upload as public CI artifacts."
+    },
+    {
+      "slot_id": "musan_noise_mix",
+      "role": "noisy / reverberant overlays on clean speech",
+      "license_family": "CC BY / public domain components (MUSAN)",
+      "fetch": "scripts/eval/prepare_stt_observatory_corpus.sh --slot musan_noise_mix",
+      "redistributable_in_repo": false,
+      "min_duration_secs": 300
+    },
+    {
+      "slot_id": "long_form_assemblies",
+      "role": "≥3 long-form fixtures exceeding ten minutes",
+      "license_family": "composed from licensed slots above",
+      "fetch": "scripts/eval/prepare_stt_observatory_corpus.sh --slot long_form_assemblies",
+      "redistributable_in_repo": false,
+      "min_duration_secs": 1800
+    },
+    {
+      "slot_id": "multilingual_codeswitch",
+      "role": "multilingual or code-switching subset",
+      "license_family": "dataset-specific (documented in lockfile)",
+      "fetch": "scripts/eval/prepare_stt_observatory_corpus.sh --slot multilingual_codeswitch",
+      "redistributable_in_repo": false,
+      "min_duration_secs": 180
+    },
+    {
+      "slot_id": "controls_silence_nonspeech",
+      "role": "silence and non-speech controls",
+      "license_family": "synthetic CC0 (in-repo audio/)",
+      "fetch": "in-repo evals/audio/",
+      "redistributable_in_repo": true,
+      "min_duration_secs": 10
+    }
+  ],
+  "fixture_fields_required": [
+    "id",
+    "language",
+    "reference",
+    "normalization_policy",
+    "license",
+    "provenance",
+    "asset_resolution",
+    "redistributable"
+  ],
+  "privacy": {
+    "no_private_plaud": true,
+    "no_user_recordings": true,
+    "ci_depends_on": "corpus.core.json only"
+  }
+}

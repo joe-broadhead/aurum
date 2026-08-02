@@ -94,6 +94,12 @@ impl OpContext {
         self
     }
 
+    /// Override the auto-assigned request id (JOE-2221 host-stable ids).
+    pub fn with_request_id(mut self, id: u64) -> Self {
+        self.request_id = id;
+        self
+    }
+
     pub fn deadline(&self) -> Option<Instant> {
         self.deadline
     }

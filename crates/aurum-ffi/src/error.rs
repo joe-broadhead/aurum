@@ -98,6 +98,7 @@ impl From<TranscriptionError> for FfiError {
                 | UserError::InvalidOutputFormat { .. }
                 | UserError::InvalidProvider { .. }
                 | UserError::MissingApiKey
+                | UserError::MissingProviderCredential { .. }
                 | UserError::UnsupportedCapability { .. }
                 | UserError::Other { .. } => FfiStatus::InvalidArg,
             },

@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "evidence_version": "0.0.22-observatory-v1",
+  "description": "Local model/profile matrix required by JOE-2216. Remote providers are scheduled/protected and never block deterministic local release budgets.",
+  "local_models": [
+    "tiny-q5_1",
+    "base",
+    "base.en",
+    "small",
+    "small.en",
+    "large-v3-turbo"
+  ],
+  "profile_models": {
+    "speed": ["tiny-q5_1"],
+    "balance": ["base", "base.en"],
+    "quality": ["small", "small.en"]
+  },
+  "english_only_subset_models": ["base.en", "small.en"],
+  "remote_lanes": [
+    {
+      "provider": "openrouter",
+      "mode": "protected_scheduled",
+      "blocks_local_release": false
+    }
+  ],
+  "budget_policy": {
+    "aggregate_relative_wer": 0.10,
+    "aggregate_absolute_wer_points": 1.0,
+    "scenario_relative_wer": 0.15,
+    "silence_fp": "no new silence false positives without product review",
+    "baseline_updates": "require report diff, rationale, and changelog entry"
+  }
+}

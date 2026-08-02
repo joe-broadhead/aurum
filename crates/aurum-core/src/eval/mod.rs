@@ -1,7 +1,21 @@
-//! Versioned quality evaluation helpers (JOE-1607).
+//! Versioned quality evaluation helpers (JOE-1607 / JOE-2216).
 //!
 //! Offline, deterministic metrics for STT (WER/CER) and simple TTS objective
 //! checks. Fixture corpora live under `evals/` at the repo root.
+//!
+//! The production STT quality observatory (schemas, budgets, scorecards) lives
+//! in [`observatory`].
+
+pub mod observatory;
+
+pub use observatory::{
+    allowed_mean_wer, budget_exit_code, compare_stt_budget, observatory_core_budget_tiny,
+    observatory_core_corpus, score_observatory_fixture, AssetResolution, BudgetComparison,
+    BudgetFinding, BudgetSeverity, CorpusCoverage, NORMALIZATION_POLICY_VERSION,
+    OBSERVATORY_SCHEMA_VERSION, ObservatoryCorpus, ObservatoryFixture, ObservatoryFixtureScore,
+    ObservatoryReport, ObservatoryScoreExtras, RunIdentity, STT_OBSERVATORY_EVIDENCE_VERSION,
+    SttBudget,
+};
 
 use serde::{Deserialize, Serialize};
 

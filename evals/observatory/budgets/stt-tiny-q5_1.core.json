@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "evidence_version": "0.0.22-observatory-v1",
+  "model": "tiny-q5_1",
+  "backend_kind": "asr",
+  "baseline_mean_wer": 0.0,
+  "max_absolute_wer_points": 1.0,
+  "max_relative_wer": 0.1,
+  "scenario_baseline_wer": {
+    "silence": 0.0,
+    "clean": 0.0
+  },
+  "max_scenario_relative_wer": 0.15,
+  "max_silence_false_positives": 0,
+  "max_mean_repetition_ratio": 0.35,
+  "notes": "CI core budget for perfect-match synthetic scoring of tiny-q5_1. Real-model baselines live under evals/reports/stt/ and are updated only with reviewed report diffs + changelog."
+}

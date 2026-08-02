@@ -18,19 +18,32 @@ trusted entry has a reviewed SHA-256 pin and exact size (JOE-1645).
 
 **Default remains `base`** unless you opt into a larger model.
 
-### Evidence caveats (not a formal WER programme)
+### Quality evidence (JOE-2216 observatory)
 
-Internal single-clip dogfood compared Aurum local STT to an external consumer
-reference on one English lecture (~11 minutes). Findings used for guidance only:
+The versioned STT quality observatory is the product evidence programme:
 
-- English-only (`.en`) variants often beat multilingual twins on that clip.
+- Methodology: `docs/operations/stt-observatory.md`
+- Core corpus + budgets: `evals/observatory/`
+- Evidence version: `0.0.22-observatory-v1` (`PROFILE_EVIDENCE_VERSION`)
+- Retained reports: `evals/reports/stt/`
+
+The redistributable **core** exercises schema, silence controls, and budget
+comparison in CI. The **production pack** (≥60 minutes licensed speech, multi
+speaker/accent/noise/long-form) is prepared on operator machines from open
+licensed sources — never private Plaud material. Profile mappings cite the
+reviewed evidence version; explicit `--model` always wins. The global default
+remains `base` until a separate reviewed decision changes it.
+
+Corpus evidence is not a claim of universal field quality. Scenario-level
+errors matter more than a single aggregate WER.
+
+Historical single-clip dogfood (pre-observatory) still informs guidance only:
+
+- English-only (`.en`) variants often beat multilingual twins on EN lectures.
 - `small.en` and `large-v3-turbo` were sweet spots; full `large-v3` was not
   automatically better.
-- `large-v3-q5_0` is **experimental / not recommended** after a severe
-  repetition degeneration on that clip (see below).
-
-This is **not** multi-accent, noisy, or multi-speaker coverage. Do not treat it
-as a production WER budget.
+- `large-v3-q5_0` is **experimental / not recommended** after severe repetition
+  degeneration on that clip (see below).
 
 ## Support tiers
 

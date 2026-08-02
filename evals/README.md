@@ -1,13 +1,18 @@
-# Aurum evaluation corpus (JOE-1607 / JOE-1731)
+# Aurum evaluation corpus (JOE-1607 / JOE-1731 / JOE-2216)
 
 Offline, versioned fixtures for **quality** gates (WER/CER, silence FP, repetition,
 TTS objective checks). Performance budgets: `docs/operations/benchmarks.md` and
 `docs/operations/performance-reports.md` (JOE-1739).
 
+**Production STT quality observatory (JOE-2216):** see `evals/observatory/` and
+`docs/operations/stt-observatory.md`. Evidence version: `0.0.22-observatory-v1`.
+
 ## Corpora
 
 | File | Role |
 |------|------|
+| `observatory/corpus.core.json` | Redistributable observatory core (schema + CI budgets) |
+| `observatory/corpus.production.manifest.json` | Production pack recipe (external licensed speech) |
 | `corpus.smoke.json` | Text-only smoke (PR unit tests) |
 | `corpus.public-v1.json` | Offline public matrix with synthetic multi-accent speech + silence/noise |
 

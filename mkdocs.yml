@@ -104,6 +104,7 @@ nav:
       - CLI reference: getting-started/cli.md
   - Guide:
       - Providers: guide/providers.md
+      - Provider matrix: guide/provider-matrix.md
       - Models: guide/models.md
       - Text-to-speech: guide/tts.md
       - Remote audio formats: guide/remote-audio.md
@@ -124,6 +125,7 @@ nav:
       - Threat model: operations/threat-model.md
       - Hardening: operations/hardening.md
       - Release gate: operations/release-gate.md
+      - Provider qualification: operations/provider-qualification.md
       - Provenance: operations/provenance.md
       - Platform support: operations/platform-support.md
       - Fuzzing: operations/fuzzing.md

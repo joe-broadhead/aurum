@@ -48,7 +48,10 @@ Aurum is an on-device **speech CLI** and **Rust library**:
 3. Emit **`txt`**, **`srt`**, or **`json`**
 4. **TTS** — `aurum tts "…"` → mono **WAV** on-device (KittenTTS ONNX; no API key)
 
-OpenRouter is an **optional** remote path for ASR or cleanup — never the default. TTS has no cloud path in this release.
+Remote STT/TTS (`openrouter`, `openai`, `elevenlabs`, `xai`) is **optional and
+explicit** — never the default. Local whisper + Kitten remain zero-key defaults.
+See [provider matrix](docs/guide/provider-matrix.md) and
+[qualification](docs/operations/provider-qualification.md).
 
 > **v0.0.12** — Group G: formal SBOM (CycloneDX/SPDX), PROVENANCE.json verify, cargo-fuzz smoke, platform support matrix. Library API remains provisional on the 0.0.x line.
 
@@ -62,7 +65,7 @@ OpenRouter is an **optional** remote path for ASR or cleanup — never the defau
 | **Embeddable** | PCM STT API · `aurum-ffi` (STT + local TTS jobs) · library TTS |
 | **Cleanup / flow** | On-device rules or OpenRouter LLM (`aurum cleanup`) |
 | **Local TTS** | `aurum tts` · 8 English voices · pinned SHA-256 pack |
-| **Honest remote** | LLM-assisted OpenRouter ASR; unreliable SRT blocked by default |
+| **Honest remote** | Opt-in OpenRouter / OpenAI / ElevenLabs / xAI; SRT fail-closed when timestamps unreliable |
 | **Scriptable** | Exit codes · JSON · completions · man · support bundles |
 
 ## 30-second install

@@ -46,8 +46,19 @@ Enforced in CI:
 | Native inventory freeze | `native-components.md` via `generate_sbom.sh` (JOE-1902) |
 | RC exit report | `scripts/generate_rc_exit_report.sh` (JOE-1904) |
 | External review brief | [external-review-brief.md](external-review-brief.md) (JOE-1901) |
+| Provider platform qualification | [provider-qualification.md](provider-qualification.md) (JOE-1943) |
+| Provider matrix / support tiers | [provider-matrix.md](../guide/provider-matrix.md) |
 
 A release **cannot** publish if validate/test/security steps fail (fail-closed).
+
+### Provider-platform extras (JOE-1943)
+
+Before tagging when remote providers changed:
+
+1. Local-only smoke with **no** real cloud keys (STT + TTS).
+2. `check_builtin_conformance` + qualification isolation tests green.
+3. Support tiers and privacy wording reviewed (see provider-qualification).
+4. Optional protected credentialed smokes for tiers marked **supported**.
 
 See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md), [rc-freeze.md](rc-freeze.md), [rc-dogfood.md](rc-dogfood.md), [rc-rollback.md](rc-rollback.md), [rc-exit.md](rc-exit.md).
 

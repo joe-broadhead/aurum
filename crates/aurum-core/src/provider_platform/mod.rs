@@ -16,6 +16,7 @@ mod factory;
 mod id;
 mod listing;
 mod lookup;
+mod qualification;
 mod registry;
 
 pub use builtin::{LocalSttFactory, OpenRouterSttFactory};

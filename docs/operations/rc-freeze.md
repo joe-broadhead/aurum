@@ -33,7 +33,7 @@ See also [compatibility.md](../development/compatibility.md) for 0.0.x classes.
 
 | DTO | `schema_version` | Freeze rule |
 |-----|------------------|-------------|
-| `SttResultDto` | **1** | Library + CLI STT JSON (`-o json`); unsupported version → error |
+| `SttResultDto` | **2** | Library + CLI STT JSON (`-o json`); v1 still accepted on import (JOE-2219 provenance); unsupported other versions → error |
 | `TtsMetaDto` | **1** | Library honesty JSON; CLI `--emit-json` should use this DTO (includes `schema_version`) |
 | `ErrorDto` | **1** | Library + CLI structured errors: when `-o json` / `--json` / `--emit-json` (or `AURUM_JSON_ERRORS=1`) process exit still uses `ErrorCategory::exit_code` **and** stderr carries a full `ErrorDto` JSON envelope |
 

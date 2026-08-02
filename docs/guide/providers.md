@@ -24,9 +24,23 @@ aurum talk.m4a --model base
 | | |
 |--|--|
 | Auth | `OPENROUTER_API_KEY` (preferred) or config |
-| Paths | Dedicated `/audio/transcriptions` **or** multimodal chat (`input_audio`) |
+| STT paths | Dedicated `/audio/transcriptions` **or** multimodal chat (`input_audio`) |
+| TTS path | Dedicated `/audio/speech` (OpenAI-compatible; JOE-1939) |
 | Mode | `--openrouter-stt-mode auto\|chat\|transcriptions` (default `auto`) |
 | SRT | Only when the route reports reliable timestamps (dedicated ASR) |
+
+### Remote TTS (opt-in)
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+aurum tts "Hello from OpenRouter" --provider openrouter \
+  --model openai/gpt-4o-mini-tts --voice alloy -O /tmp/or.wav --emit-json
+```
+
+- Only **reviewed** OpenRouter TTS models are accepted (fail closed).
+- Voices are provider voice ids (e.g. `alloy`); local Kitten aliases are **not** remapped.
+- Prefer PCM wire format; Aurum normalizes to mono `i16` via the shared remote-audio pipeline.
+- **Privacy:** synthesis text is sent to OpenRouter (and potentially an upstream model).
 
 ### Capability-authoritative `auto` routing
 

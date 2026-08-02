@@ -478,6 +478,13 @@ pub trait TranscriptionProvider: Send + Sync {
 
 pub use local::LocalWhisperProvider;
 pub use openrouter::{OpenRouterProvider, OpenRouterSttMode, SttPath};
+#[cfg(feature = "tts")]
+pub mod openrouter_tts;
+#[cfg(feature = "tts")]
+pub use openrouter_tts::{
+    lookup_openrouter_tts, OpenRouterTtsProvider, OpenRouterTtsRecord,
+    DEFAULT_OPENROUTER_TTS_MODEL, DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_REGISTRY,
+};
 
 #[cfg(test)]
 mod tests {

@@ -21,6 +21,17 @@ Local and remote TTS share one in-memory result: **mono `i16` PCM**, accurate
 Remote providers convert wire formats (PCM / WAV / MP3) through a bounded
 pipeline — see [Remote audio formats](remote-audio.md).
 
+### OpenRouter TTS (JOE-1939)
+
+```bash
+export OPENROUTER_API_KEY=sk-or-...
+aurum tts "Hello" --provider openrouter \
+  --model openai/gpt-4o-mini-tts --voice alloy -O /tmp/or.wav --emit-json
+```
+
+`--emit-json` reports `backend_kind: "remote"` and `provider: "openrouter"`.
+Defaults remain local; remote requires deliberate `--provider openrouter` and a key.
+
 ## Quick start
 
 1. Build the CLI (`cargo build -p aurum-stt --release` or install from source).

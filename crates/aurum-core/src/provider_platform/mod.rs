@@ -18,9 +18,9 @@ mod listing;
 mod lookup;
 mod registry;
 
-#[cfg(feature = "tts")]
-pub use builtin::LocalTtsFactory;
 pub use builtin::{LocalSttFactory, OpenRouterSttFactory};
+#[cfg(feature = "tts")]
+pub use builtin::{LocalTtsFactory, OpenRouterTtsFactory};
 pub use conformance::{
     check_builtin_conformance, check_descriptor_capabilities, check_network_claim,
     check_unique_descriptor_identities, ConformanceFailure,
@@ -148,11 +148,14 @@ mod tests {
 
     #[test]
     #[cfg(feature = "tts")]
-    fn builtin_registers_local_tts() {
+    fn builtin_registers_local_and_openrouter_tts() {
         let reg = ProviderRegistry::builtin().unwrap();
         let local = ProviderId::local();
         assert!(reg.tts_factory(&local).is_ok());
-        assert!(reg.tts_factory(&ProviderId::openrouter()).is_err());
+        // OpenRouter remote TTS (JOE-1939).
+        assert!(reg.tts_factory(&ProviderId::openrouter()).is_ok());
+        // Still no first-party OpenAI factory until JOE-1940.
+        assert!(reg.tts_factory(&ProviderId::must("openai")).is_err());
     }
 
     #[test]

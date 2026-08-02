@@ -11,6 +11,16 @@ aurum tts voices
 
 TTS is a **subcommand only** — it does not change STT defaults (`aurum <file>`, `aurum models`, `aurum cleanup`).
 
+## Result contract
+
+Local and remote TTS share one in-memory result: **mono `i16` PCM**, accurate
+`sample_rate_hz`, and `duration_ms` derived from final PCM length. Honesty JSON
+(`--emit-json` / `TtsMetaDto`) never includes PCM and labels execution as
+`backend_kind: "local"` or `"remote"` (JOE-1937). Schema version stays at **1**.
+
+Remote providers convert wire formats (PCM / WAV / MP3) through a bounded
+pipeline — see [Remote audio formats](remote-audio.md).
+
 ## Quick start
 
 1. Build the CLI (`cargo build -p aurum-stt --release` or install from source).

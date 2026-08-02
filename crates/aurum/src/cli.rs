@@ -784,7 +784,7 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
     if cli.emit_json {
         let abs = std::fs::canonicalize(&output_file).unwrap_or(output_file.clone());
         let mut payload = serde_json::json!({
-            "backend_kind": "local",
+            "backend_kind": result.backend_kind.as_str(),
             "provider": result.provider,
             "model": result.model,
             "voice": result.voice,

@@ -10,12 +10,28 @@ use serde::{Deserialize, Serialize};
 /// Default sample rate produced by the KittenTTS nano engine.
 pub const DEFAULT_SAMPLE_RATE_HZ: u32 = 24_000;
 
-/// Backend classification for honesty JSON.
+/// Backend classification for honesty JSON (JOE-1937).
+///
+/// Wire form in [`crate::dto::TtsMetaDto`] is the snake_case string
+/// (`"local"` / `"remote"`). Schema version stays at 1: `backend_kind` was
+/// already a free string in the external DTO.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendKind {
     /// On-device ONNX inference.
     Local,
+    /// Remote provider over the network (normalized to mono PCM in-process).
+    Remote,
+}
+
+impl BackendKind {
+    /// Stable honesty / DTO label.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Local => "local",
+            Self::Remote => "remote",
+        }
+    }
 }
 
 /// Options controlling a single synthesis request.

@@ -53,6 +53,9 @@ not share inputs, outputs, timestamp truth, voice semantics, or lifecycle.
 
 - `local` remains the product default; remote requires deliberate selection.
 - `local_only` must reject remote factories before payload preparation.
+- Remote TTS audio is normalized to mono PCM via
+  [`guide/remote-audio.md`](../guide/remote-audio.md) (JOE-1937) before it
+  enters `SynthesisResult`.
 - No silent local→cloud fallback.
 
 ## Alternatives considered

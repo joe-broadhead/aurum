@@ -487,6 +487,53 @@ pub fn local_tts_capabilities(model: &str) -> ProviderCapabilities {
     caps
 }
 
+/// OpenRouter remote TTS capabilities (JOE-1939). Fail closed when model is unknown.
+pub fn openrouter_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
+    #[cfg(feature = "tts")]
+    {
+        use crate::providers::openrouter_tts::lookup_openrouter_tts;
+        let rec = lookup_openrouter_tts(model).ok_or_else(|| UnsupportedCapability {
+            provider: "openrouter".into(),
+            model: model.into(),
+            reason: "model is not in the reviewed OpenRouter TTS registry".into(),
+            hint: "use a reviewed OpenRouter TTS model (see docs/guide/providers.md)".into(),
+        })?;
+        let mut caps =
+            ProviderCapabilities::with_core("openrouter", rec.model, CapabilityOperation::Tts);
+        caps.languages = vec!["en".into(), "auto".into()];
+        caps.max_text_chars = Some(rec.max_text_chars);
+        caps.supports_cancellation = true;
+        caps.requires_network = true;
+        caps.local_only_ok = false;
+        caps.output_formats = vec!["wav".into(), "json".into()];
+        caps.voice_model = Some(VoiceModel::ProviderVoiceIds);
+        caps.supports_voice_ids = true;
+        caps.output_audio_formats = vec!["pcm_s16le".into(), "mp3".into()];
+        caps.direct_pcm = true;
+        caps.sample_rates_hz = vec![rec.default_sample_rate_hz];
+        caps.supports_speaking_rate = true;
+        caps.speaking_rate_min = Some(rec.rate_min);
+        caps.speaking_rate_max = Some(rec.rate_max);
+        caps.streaming_advertised = false;
+        caps.streaming_implemented_by_aurum = false;
+        caps.descriptor_freshness = DescriptorFreshness::Reviewed;
+        caps.notes = vec![
+            "OpenRouter dedicated /audio/speech endpoint (OpenAI-compatible).".into(),
+            "Text is transmitted to OpenRouter / upstream; network privacy applies.".into(),
+            format!("Reviewed voices: {}.", rec.voices.join(", ")),
+        ];
+        Ok(caps)
+    }
+    #[cfg(not(feature = "tts"))]
+    {
+        let _ = model;
+        Err(UserError::Other {
+            message: "TTS support is not compiled into this build (feature `tts`)".into(),
+        }
+        .into())
+    }
+}
+
 /// Preflight STT: reject offline OpenRouter, unreliable SRT, unknown providers.
 pub fn preflight_stt(
     provider: &str,
@@ -588,6 +635,22 @@ pub fn preflight_tts_for(
                 .into());
             }
             Ok(caps)
+        }
+        "openrouter" => {
+            if local_only {
+                return Err(UnsupportedCapability {
+                    provider: provider.as_str().into(),
+                    model: "*".into(),
+                    reason: "OpenRouter TTS requires network access".into(),
+                    hint: "unset local_only or use provider=local".into(),
+                }
+                .into());
+            }
+            // Model-specific preflight uses factory capabilities with the request model.
+            // Here we only gate network; detailed model/voice checks run at synthesize.
+            openrouter_tts_capabilities(
+                crate::providers::openrouter_tts::DEFAULT_OPENROUTER_TTS_MODEL,
+            )
         }
         other => Err(UserError::InvalidProvider {
             provider: other.into(),

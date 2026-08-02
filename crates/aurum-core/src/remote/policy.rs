@@ -151,8 +151,12 @@ impl ProviderHttpPolicy for OpenRouterHttpPolicy {
     }
 
     fn allows_path(&self, path: &str) -> bool {
-        // STT + cleanup surfaces currently used by Aurum.
-        path_allowed(path, &["chat/completions", "audio/transcriptions"], &[])
+        // STT + TTS speech + cleanup surfaces currently used by Aurum (JOE-1939).
+        path_allowed(
+            path,
+            &["chat/completions", "audio/transcriptions", "audio/speech"],
+            &[],
+        )
     }
 
     fn custom_endpoint_hint(&self) -> String {
@@ -372,6 +376,7 @@ mod tests {
     fn path_allowlists_reject_traversal_and_foreign() {
         assert!(OpenRouterHttpPolicy.allows_path("chat/completions"));
         assert!(OpenRouterHttpPolicy.allows_path("/audio/transcriptions"));
+        assert!(OpenRouterHttpPolicy.allows_path("audio/speech"));
         assert!(!OpenRouterHttpPolicy.allows_path("../chat/completions"));
         assert!(!OpenRouterHttpPolicy.allows_path("https://evil.example/x"));
         assert!(!OpenRouterHttpPolicy.allows_path("models"));

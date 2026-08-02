@@ -9,6 +9,7 @@
 mod canary_matrix;
 mod client;
 mod limits;
+mod openai_speech;
 mod policy;
 mod status;
 
@@ -20,6 +21,7 @@ pub use limits::{
     read_body_limited, validate_segments, validate_text_bounds, RemoteBodyLimits, TranscriptLimits,
     DEFAULT_CHAT_BODY_CAP, DEFAULT_CLEANUP_BODY_CAP, DEFAULT_STT_BODY_CAP,
 };
+pub use openai_speech::{parse_pcm_content_type, OpenAiSpeechRequest, SpeechResponseFormat};
 pub use policy::{
     normalize_request_path, AuthScheme, ElevenLabsHttpPolicy, OpenAiHttpPolicy,
     OpenRouterHttpPolicy, ProviderHttpPolicy, XaiHttpPolicy, ELEVENLABS_DEFAULT_BASE,

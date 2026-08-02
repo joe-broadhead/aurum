@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1939:** OpenAI-compatible speech protocol (`OpenAiSpeechRequest`) and
+  OpenRouter remote TTS (`/audio/speech`, reviewed model registry, PCM normalize
+  via JOE-1937). `openrouter` registers for STT **and** TTS factories.
 - **JOE-1938:** `AurumEngine` owns the provider registry and resolves STT/TTS via
   `stt_provider` / `tts_provider` (scoped secrets, engine pools/governor/metrics).
   CLI `aurum` / `aurum tts` / `aurum batch` use the same path (no per-vendor

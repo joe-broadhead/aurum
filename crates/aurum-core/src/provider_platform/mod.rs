@@ -18,9 +18,9 @@ mod listing;
 mod lookup;
 mod registry;
 
-#[cfg(feature = "tts")]
-pub use builtin::LocalTtsFactory;
 pub use builtin::{LocalSttFactory, OpenRouterSttFactory};
+#[cfg(feature = "tts")]
+pub use builtin::{LocalTtsFactory, OpenRouterTtsFactory};
 pub use conformance::{
     check_builtin_conformance, check_descriptor_capabilities, check_network_claim,
     check_unique_descriptor_identities, ConformanceFailure,

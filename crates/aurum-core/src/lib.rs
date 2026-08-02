@@ -145,11 +145,19 @@ pub use provider_platform::{
     PROVIDER_LIST_SCHEMA_VERSION,
 };
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
+#[cfg(feature = "tts")]
+pub use providers::{
+    lookup_openrouter_tts, OpenRouterTtsProvider, DEFAULT_OPENROUTER_TTS_MODEL,
+    DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_REGISTRY,
+};
 pub use providers::{
     LocalWhisperProvider, OpenRouterProvider, OpenRouterSttMode, Segment, TranscriptionOptions,
     TranscriptionProvider, TranscriptionResult,
 };
-pub use remote::{HardenedHttpClient, OpenRouterHttpPolicy, ProviderHttpPolicy, RemotePolicy};
+pub use remote::{
+    HardenedHttpClient, OpenAiSpeechRequest, OpenRouterHttpPolicy, ProviderHttpPolicy,
+    RemotePolicy, SpeechResponseFormat,
+};
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,
 };

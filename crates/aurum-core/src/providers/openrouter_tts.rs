@@ -11,6 +11,7 @@ use crate::remote::{
     SpeechResponseFormat,
 };
 use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
+use crate::secret::SecretString;
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
 use crate::tts::validate::{clamp_speaking_rate, SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
 use async_trait::async_trait;
@@ -19,11 +20,28 @@ use std::time::Duration;
 
 const PROVIDER_NAME: &str = "openrouter";
 
-/// Default reviewed OpenRouter TTS model (OpenAI GPT-4o Mini TTS via OpenRouter).
-pub const DEFAULT_OPENROUTER_TTS_MODEL: &str = "openai/gpt-4o-mini-tts";
+/// Default OpenRouter TTS model: exact dated id from OpenRouter TTS docs (JOE-1978).
+///
+/// Support tier is **experimental** until a protected live smoke is retained.
+/// Bare undated `openai/gpt-4o-mini-tts` is not accepted (no silent alias).
+pub const DEFAULT_OPENROUTER_TTS_MODEL: &str = "openai/gpt-4o-mini-tts-2025-12-15";
 
-/// Default OpenAI-compatible voice for the reviewed model.
+/// Default OpenAI-compatible voice for the reviewed OpenAI-family TTS model.
 pub const DEFAULT_OPENROUTER_TTS_VOICE: &str = "alloy";
+
+/// Static evidence date for the reviewed registry (UTC calendar day).
+pub const OPENROUTER_TTS_EVIDENCE_DATE: &str = "2026-08-02";
+
+/// Support tier for a reviewed OpenRouter TTS record.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OpenRouterTtsTier {
+    /// Protected live smoke retained; ordinary CI may use mocks.
+    Supported,
+    /// Implemented + mocks; no protected live evidence yet.
+    Experimental,
+    /// Requires deliberate model selection; not a default.
+    ExplicitOnly,
+}
 
 /// Reviewed OpenRouter TTS catalogue entry (fail closed for unknown models).
 #[derive(Debug, Clone, Copy)]
@@ -34,22 +52,21 @@ pub struct OpenRouterTtsRecord {
     pub max_text_chars: usize,
     pub rate_min: f32,
     pub rate_max: f32,
+    pub tier: OpenRouterTtsTier,
+    /// UTC YYYY-MM-DD for last human/doc evidence note (not live discovery).
+    pub evidence_date: &'static str,
+    pub evidence_source: &'static str,
 }
 
-/// Static reviewed TTS models for OpenRouter (JOE-1939).
+/// Static reviewed TTS models for OpenRouter (JOE-1939 / JOE-1978).
+///
+/// None of these are promoted to [`OpenRouterTtsTier::Supported`] without a
+/// protected credentialed speech smoke. Discovery via
+/// `GET /api/v1/models?output_modalities=speech` is an explicit refresh workflow
+/// (offline startup never fetches).
 pub static OPENROUTER_TTS_REGISTRY: &[OpenRouterTtsRecord] = &[
     OpenRouterTtsRecord {
-        model: "openai/gpt-4o-mini-tts",
-        voices: &[
-            "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-            "verse",
-        ],
-        default_sample_rate_hz: 24_000,
-        max_text_chars: 4_096,
-        rate_min: 0.25,
-        rate_max: 4.0,
-    },
-    OpenRouterTtsRecord {
+        // Official OpenRouter TTS guide exact model id (2025-12-15 pin).
         model: "openai/gpt-4o-mini-tts-2025-12-15",
         voices: &[
             "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
@@ -59,6 +76,22 @@ pub static OPENROUTER_TTS_REGISTRY: &[OpenRouterTtsRecord] = &[
         max_text_chars: 4_096,
         rate_min: 0.25,
         rate_max: 4.0,
+        tier: OpenRouterTtsTier::Experimental,
+        evidence_date: OPENROUTER_TTS_EVIDENCE_DATE,
+        evidence_source: "openrouter.ai/docs TTS guide exact model id; protected smoke pending",
+    },
+    OpenRouterTtsRecord {
+        // Present in Models API speech modality listing (2026-08-02 probe); explicit-only.
+        model: "mistralai/voxtral-mini-tts-2603",
+        voices: &["alloy"], // conservative; provider may ignore — not advertised as guaranteed
+        default_sample_rate_hz: 24_000,
+        max_text_chars: 4_096,
+        rate_min: 0.25,
+        rate_max: 4.0,
+        tier: OpenRouterTtsTier::ExplicitOnly,
+        evidence_date: OPENROUTER_TTS_EVIDENCE_DATE,
+        evidence_source:
+            "models?output_modalities=speech listing; explicit-only until voice evidence",
     },
 ];
 
@@ -69,9 +102,16 @@ pub fn lookup_openrouter_tts(model: &str) -> Option<&'static OpenRouterTtsRecord
         .find(|r| r.model.eq_ignore_ascii_case(m))
 }
 
+/// Whether `model_id` appears in a Models API speech-modality id list (bounded fixture).
+pub fn openrouter_tts_model_in_discovery(model_id: &str, discovered_ids: &[&str]) -> bool {
+    discovered_ids
+        .iter()
+        .any(|id| id.eq_ignore_ascii_case(model_id.trim()))
+}
+
 /// Remote OpenRouter TTS provider (speech endpoint only).
 pub struct OpenRouterTtsProvider {
-    api_key: String,
+    api_key: SecretString,
     http: HardenedHttpClient,
     governor: Arc<ResourceGovernor>,
 }
@@ -87,13 +127,12 @@ impl std::fmt::Debug for OpenRouterTtsProvider {
 
 impl OpenRouterTtsProvider {
     pub fn with_policy(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         mut policy: RemotePolicy,
     ) -> Result<Self> {
         let api_key = api_key
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.expose().trim().is_empty())
             .ok_or(UserError::MissingApiKey)?;
 
         if base_url
@@ -161,6 +200,16 @@ impl SynthesisProvider for OpenRouterTtsProvider {
     }
 
     async fn synthesize(&self, text: &str, opts: &SynthesisOptions) -> Result<SynthesisResult> {
+        if opts.pack_dir.is_some() || opts.allow_unverified {
+            return Err(UserError::UnsupportedCapability {
+                provider: PROVIDER_NAME.into(),
+                model: opts.model.clone(),
+                reason: "local pack_dir/allow_unverified are not valid for remote TTS".into(),
+                hint: "omit pack_dir; use a local TTS provider for custom packs".into(),
+            }
+            .into());
+        }
+
         if opts.local_only {
             return Err(UserError::UnsupportedCapability {
                 provider: PROVIDER_NAME.into(),
@@ -241,7 +290,7 @@ impl SynthesisProvider for OpenRouterTtsProvider {
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "audio/speech", &self.api_key)?
+                .request(reqwest::Method::POST, "audio/speech", self.api_key.expose())?
                 .header("Content-Type", "application/json")
                 .body(json),
             &op,
@@ -330,6 +379,14 @@ mod tests {
     fn registry_lookup() {
         assert!(lookup_openrouter_tts(DEFAULT_OPENROUTER_TTS_MODEL).is_some());
         assert!(lookup_openrouter_tts("not-a-real-model").is_none());
+        // Undated bare id is not accepted (JOE-1978).
+        assert!(lookup_openrouter_tts("openai/gpt-4o-mini-tts").is_none());
+        let def = lookup_openrouter_tts(DEFAULT_OPENROUTER_TTS_MODEL).unwrap();
+        assert_eq!(def.tier, OpenRouterTtsTier::Experimental);
+        assert!(openrouter_tts_model_in_discovery(
+            "mistralai/voxtral-mini-tts-2603",
+            &["mistralai/voxtral-mini-tts-2603"]
+        ));
     }
 
     #[test]

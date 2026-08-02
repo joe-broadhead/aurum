@@ -10,6 +10,7 @@ use crate::remote::{
     ElevenLabsHttpPolicy, ExpectedWireFormat, HardenedHttpClient, RemoteBodyLimits, RemotePolicy,
 };
 use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
+use crate::secret::SecretString;
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
 use crate::tts::validate::{clamp_speaking_rate, SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
 use async_trait::async_trait;
@@ -109,6 +110,20 @@ pub fn validate_elevenlabs_voice_id(voice: &str) -> Result<String> {
     Ok(v.to_string())
 }
 
+/// Percent-encode a path segment (no `/` unescaped). Does not log the raw value.
+fn urlencoding_path_segment(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for b in raw.as_bytes() {
+        match *b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(*b as char);
+            }
+            _ => out.push_str(&format!("%{b:02X}")),
+        }
+    }
+    out
+}
+
 #[derive(Debug, Serialize)]
 struct ElevenLabsSpeechBody<'a> {
     text: &'a str,
@@ -128,7 +143,7 @@ struct VoiceSettings {
 
 /// ElevenLabs TTS provider (xi-api-key).
 pub struct ElevenLabsTtsProvider {
-    api_key: String,
+    api_key: SecretString,
     http: HardenedHttpClient,
     governor: Arc<ResourceGovernor>,
 }
@@ -144,13 +159,12 @@ impl std::fmt::Debug for ElevenLabsTtsProvider {
 
 impl ElevenLabsTtsProvider {
     pub fn with_policy(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         mut policy: RemotePolicy,
     ) -> Result<Self> {
         let api_key = api_key
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.expose().trim().is_empty())
             .ok_or(UserError::MissingApiKey)?;
 
         if base_url
@@ -182,6 +196,16 @@ impl SynthesisProvider for ElevenLabsTtsProvider {
     }
 
     async fn synthesize(&self, text: &str, opts: &SynthesisOptions) -> Result<SynthesisResult> {
+        if opts.pack_dir.is_some() || opts.allow_unverified {
+            return Err(UserError::UnsupportedCapability {
+                provider: PROVIDER_NAME.into(),
+                model: opts.model.clone(),
+                reason: "local pack_dir/allow_unverified are not valid for remote TTS".into(),
+                hint: "omit pack_dir; use a local TTS provider for custom packs".into(),
+            }
+            .into());
+        }
+
         if opts.local_only {
             return Err(UserError::UnsupportedCapability {
                 provider: PROVIDER_NAME.into(),
@@ -261,8 +285,10 @@ impl SynthesisProvider for ElevenLabsTtsProvider {
         op.check()?;
         op.emit("tts", "request");
 
+        // Encode voice_id as a single path segment (JOE-1979) — never raw interpolate.
+        let voice_seg = urlencoding_path_segment(&voice_id);
         let path = format!(
-            "v1/text-to-speech/{voice_id}?output_format={}",
+            "v1/text-to-speech/{voice_seg}?output_format={}",
             rec.pcm_output_format
         );
         let body = ElevenLabsSpeechBody {
@@ -280,7 +306,7 @@ impl SynthesisProvider for ElevenLabsTtsProvider {
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, &path, &self.api_key)?
+                .request(reqwest::Method::POST, &path, self.api_key.expose())?
                 .header("Content-Type", "application/json")
                 .header("Accept", "audio/pcm")
                 .body(json),

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JOE-1978:** OpenRouter TTS default is exact dated id
+  `openai/gpt-4o-mini-tts-2025-12-15`; undated bare id removed; registry records carry
+  tier/evidence metadata; TTS remains **experimental** until protected smoke.
+- **JOE-1979:** `ProviderId` Serde goes through `parse`; OpenRouter STT factory
+  capabilities are Auto-route-aware; ElevenLabs `voice_id` is path-segment encoded;
+  remote TTS rejects local `pack_dir`/`allow_unverified`.
+- **JOE-1980:** remote providers retain `SecretString` (not plaintext `String`);
+  network errors use `public_network_reason` (no URL/path echo from reqwest Display).
 - **JOE-1976:** xAI STT/TTS use official REST `POST /v1/stt` and `POST /v1/tts`
   (not OpenAI `/audio/*`). Product ids `xai-stt` / `xai-tts`; voices
   `eve|ara|leo|rex|sal`. Stability **Experimental** end-to-end until protected

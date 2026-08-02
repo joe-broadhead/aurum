@@ -15,6 +15,7 @@ use crate::remote::{
     TranscriptLimits,
 };
 use crate::runtime::{PermitKind, ResourceGovernor};
+use crate::secret::SecretString;
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
@@ -63,7 +64,7 @@ pub fn lookup_openai_stt(model: &str) -> Option<&'static OpenAiSttRecord> {
 
 /// First-party OpenAI transcription provider.
 pub struct OpenAiSttProvider {
-    api_key: String,
+    api_key: SecretString,
     http: HardenedHttpClient,
     max_upload_bytes: usize,
     governor: Arc<ResourceGovernor>,
@@ -81,13 +82,12 @@ impl std::fmt::Debug for OpenAiSttProvider {
 
 impl OpenAiSttProvider {
     pub fn with_policy(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         mut policy: RemotePolicy,
     ) -> Result<Self> {
         let api_key = api_key
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.expose().trim().is_empty())
             .ok_or(UserError::MissingApiKey)?;
 
         if base_url
@@ -211,7 +211,11 @@ impl TranscriptionProvider for OpenAiSttProvider {
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
+                .request(
+                    reqwest::Method::POST,
+                    "audio/transcriptions",
+                    self.api_key.expose(),
+                )?
                 .multipart(form),
             &op,
             PROVIDER_NAME,

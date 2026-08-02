@@ -173,16 +173,28 @@ impl ProviderBuildContext {
         self.tts_pool.as_ref()
     }
 
-    /// Expose the scoped API key material for auth construction only.
+    /// Borrow the scoped API key for provider construction (JOE-1980).
     ///
-    /// Returns a fresh `String` clone; does not leak via `Debug` on this context.
-    pub fn api_key_exposed(&self) -> Option<String> {
-        self.api_key.as_ref().map(|s| s.expose().to_string())
+    /// Returns [`SecretString`] — not a plaintext `String`. Providers must retain
+    /// the redacting type until the final Authorization/`xi-api-key` header build.
+    pub fn api_key(&self) -> Option<&SecretString> {
+        self.api_key.as_ref()
+    }
+
+    /// Clone the scoped secret (still redacting) for factory ownership transfer.
+    pub fn api_key_cloned(&self) -> Option<SecretString> {
+        self.api_key.clone()
     }
 
     /// Whether a scoped key is present (without revealing it).
     pub fn has_api_key(&self) -> bool {
         self.api_key.is_some()
+    }
+
+    /// Deprecated alias: prefer [`Self::api_key_cloned`].
+    #[deprecated(note = "use api_key_cloned() — does not return plaintext")]
+    pub fn api_key_exposed(&self) -> Option<SecretString> {
+        self.api_key_cloned()
     }
 }
 
@@ -223,6 +235,7 @@ mod tests {
     fn scoped_key_is_optional() {
         let ctx = ProviderBuildContext::new("/tmp/x");
         assert!(!ctx.has_api_key());
-        assert!(ctx.api_key_exposed().is_none());
+        assert!(ctx.api_key().is_none());
+        assert!(ctx.api_key_cloned().is_none());
     }
 }

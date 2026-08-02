@@ -482,8 +482,9 @@ pub use openrouter::{OpenRouterProvider, OpenRouterSttMode, SttPath};
 pub mod openrouter_tts;
 #[cfg(feature = "tts")]
 pub use openrouter_tts::{
-    lookup_openrouter_tts, OpenRouterTtsProvider, OpenRouterTtsRecord,
-    DEFAULT_OPENROUTER_TTS_MODEL, DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_REGISTRY,
+    lookup_openrouter_tts, openrouter_tts_model_in_discovery, OpenRouterTtsProvider,
+    OpenRouterTtsRecord, OpenRouterTtsTier, DEFAULT_OPENROUTER_TTS_MODEL,
+    DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_EVIDENCE_DATE, OPENROUTER_TTS_REGISTRY,
 };
 
 pub mod openai_stt;

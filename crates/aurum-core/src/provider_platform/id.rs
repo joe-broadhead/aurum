@@ -12,8 +12,10 @@ pub const MAX_PROVIDER_ID_LEN: usize = 32;
 ///
 /// Canonical form is lowercase ASCII `[a-z][a-z0-9_]*` with no leading digit,
 /// no control characters, and no path/URL separators.
-#[derive(Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(transparent)]
+///
+/// Serde deserialization always runs [`ProviderId::parse`] (JOE-1979) — never
+/// transparent `String` construction that could bypass reserved-name / syntax checks.
+#[derive(Clone, PartialEq, Eq, Hash, Serialize)]
 pub struct ProviderId(String);
 
 impl ProviderId {
@@ -118,6 +120,16 @@ impl FromStr for ProviderId {
     }
 }
 
+impl<'de> Deserialize<'de> for ProviderId {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        ProviderId::parse(&s).map_err(serde::de::Error::custom)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -167,5 +179,17 @@ mod tests {
     fn rejects_oversized() {
         let s = "a".repeat(MAX_PROVIDER_ID_LEN + 1);
         assert!(ProviderId::parse(&s).is_err());
+    }
+
+    #[test]
+    fn serde_deserialize_uses_parse() {
+        let id: ProviderId = serde_json::from_str("\"OpenRouter\"").unwrap();
+        assert_eq!(id.as_str(), "openrouter");
+        let id: ProviderId = serde_json::from_str("\"grok\"").unwrap();
+        assert_eq!(id.as_str(), "xai");
+        assert!(serde_json::from_str::<ProviderId>("\"auto\"").is_err());
+        assert!(serde_json::from_str::<ProviderId>("\"a/b\"").is_err());
+        assert!(serde_json::from_str::<ProviderId>("\"1bad\"").is_err());
+        assert!(serde_json::from_str::<ProviderId>("\"loc al\"").is_err());
     }
 }

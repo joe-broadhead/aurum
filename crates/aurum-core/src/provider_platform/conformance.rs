@@ -261,7 +261,7 @@ fn sample_model_for(id: &ProviderId, op: CapabilityOperation) -> &'static str {
         ("local", CapabilityOperation::Stt) => "tiny-q5_1",
         ("local", CapabilityOperation::Tts) => "kitten-nano-int8",
         ("openrouter", CapabilityOperation::Stt) => "openai/whisper-large-v3",
-        ("openrouter", CapabilityOperation::Tts) => "openai/gpt-4o-mini-tts",
+        ("openrouter", CapabilityOperation::Tts) => "openai/gpt-4o-mini-tts-2025-12-15",
         ("openai", CapabilityOperation::Stt) => "whisper-1",
         ("openai", CapabilityOperation::Tts) => "tts-1",
         ("elevenlabs", CapabilityOperation::Tts) => "eleven_multilingual_v2",

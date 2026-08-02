@@ -20,6 +20,7 @@ use crate::remote::{
     validate_text_bounds, HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
 };
 use crate::runtime::{PermitKind, ResourceGovernor};
+use crate::secret::SecretString;
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
@@ -72,7 +73,7 @@ impl OpenRouterSttMode {
 /// Convenience constructors use [`ResourceGovernor::process_global`] only when no
 /// governor is supplied (documented process-global path, not engine isolation).
 pub struct OpenRouterProvider {
-    api_key: String,
+    api_key: SecretString,
     http: HardenedHttpClient,
     max_upload_bytes: usize,
     stt_mode: OpenRouterSttMode,
@@ -93,7 +94,7 @@ impl std::fmt::Debug for OpenRouterProvider {
 impl OpenRouterProvider {
     pub fn new(api_key: Option<String>, base_url: Option<String>) -> Result<Self> {
         Self::with_policy(
-            api_key,
+            api_key.map(SecretString::from),
             base_url,
             RemotePolicy::default(),
             OpenRouterSttMode::Auto,
@@ -101,14 +102,13 @@ impl OpenRouterProvider {
     }
 
     pub fn with_policy(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         mut policy: RemotePolicy,
         stt_mode: OpenRouterSttMode,
     ) -> Result<Self> {
         let api_key = api_key
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.expose().trim().is_empty())
             .ok_or(UserError::MissingApiKey)?;
 
         // Wiremock / local tests use loopback HTTP.
@@ -295,7 +295,11 @@ impl OpenRouterProvider {
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
+                .request(
+                    reqwest::Method::POST,
+                    "audio/transcriptions",
+                    self.api_key.expose(),
+                )?
                 .multipart(form),
             op,
             PROVIDER_NAME,
@@ -467,7 +471,11 @@ impl OpenRouterProvider {
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "chat/completions", &self.api_key)?
+                .request(
+                    reqwest::Method::POST,
+                    "chat/completions",
+                    self.api_key.expose(),
+                )?
                 .header("Content-Type", "application/json")
                 .json(&body),
             op,

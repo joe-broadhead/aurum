@@ -16,6 +16,7 @@ use crate::remote::{
     XaiHttpPolicy,
 };
 use crate::runtime::{PermitKind, ResourceGovernor};
+use crate::secret::SecretString;
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
@@ -55,7 +56,7 @@ pub fn lookup_xai_stt(model: &str) -> Option<&'static XaiSttRecord> {
 
 /// xAI file transcription provider.
 pub struct XaiSttProvider {
-    api_key: String,
+    api_key: SecretString,
     http: HardenedHttpClient,
     max_upload_bytes: usize,
     governor: Arc<ResourceGovernor>,
@@ -73,13 +74,12 @@ impl std::fmt::Debug for XaiSttProvider {
 
 impl XaiSttProvider {
     pub fn with_policy(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         mut policy: RemotePolicy,
     ) -> Result<Self> {
         let api_key = api_key
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.expose().trim().is_empty())
             .ok_or(UserError::MissingApiKey)?;
 
         if base_url
@@ -192,7 +192,7 @@ impl TranscriptionProvider for XaiSttProvider {
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "stt", &self.api_key)?
+                .request(reqwest::Method::POST, "stt", self.api_key.expose())?
                 .multipart(form),
             &op,
             PROVIDER_NAME,

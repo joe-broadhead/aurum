@@ -50,7 +50,7 @@ pub async fn send_with_op(req: RequestBuilder, op: &OpContext, provider: &str) -
             res.map_err(|e| {
                 ProviderError::Network {
                     provider: provider.into(),
-                    reason: e.to_string(),
+                    reason: super::status::public_network_reason(&e),
                 }
                 .into()
             })
@@ -102,7 +102,7 @@ pub async fn read_body_limited_with_op(
             Some(Err(e)) => {
                 return Err(ProviderError::Network {
                     provider: provider.into(),
-                    reason: e.to_string(),
+                    reason: super::status::public_network_reason(&e),
                 }
                 .into());
             }

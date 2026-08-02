@@ -8,7 +8,7 @@ use super::factory::TranscriptionProviderFactory;
 use super::id::ProviderId;
 use super::registry::{ProviderRegistry, ProviderRegistryBuilder};
 use crate::capabilities::{
-    local_whisper_capabilities, openrouter_stt_capabilities, ProviderCapabilities,
+    local_whisper_capabilities, ProviderCapabilities,
 };
 use crate::error::{Result, UserError};
 use crate::providers::local::LocalWhisperProvider;
@@ -130,12 +130,12 @@ impl TranscriptionProviderFactory for OpenRouterSttFactory {
     }
 
     fn capabilities(&self, model: &str) -> Result<ProviderCapabilities> {
-        // Default to transcriptions-class declaration; resolve_path may refine at request time.
-        use crate::capabilities::OpenRouterSttPath;
-        Ok(openrouter_stt_capabilities(
-            model,
-            OpenRouterSttPath::Transcriptions,
-        ))
+        // Route-aware capability (JOE-1979): Auto resolves reviewed models to the
+        // same path as execution. Unknown models fail closed (no false ASR claim).
+        use crate::capabilities::{openrouter_stt_capabilities, resolve_openrouter_stt_path};
+        use crate::providers::OpenRouterSttMode;
+        let path = resolve_openrouter_stt_path(OpenRouterSttMode::Auto, model)?;
+        Ok(openrouter_stt_capabilities(model, path))
     }
 
     fn build(&self, ctx: &ProviderBuildContext) -> Result<Arc<dyn TranscriptionProvider>> {
@@ -148,7 +148,7 @@ impl TranscriptionProviderFactory for OpenRouterSttFactory {
             }
             .into());
         }
-        let key = ctx.api_key_exposed();
+        let key = ctx.api_key_cloned();
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),
@@ -274,7 +274,7 @@ impl SynthesisProviderFactory for OpenRouterTtsFactory {
             }
             .into());
         }
-        let key = ctx.api_key_exposed();
+        let key = ctx.api_key_cloned();
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),
@@ -335,7 +335,7 @@ impl TranscriptionProviderFactory for OpenAiSttFactory {
             }
             .into());
         }
-        let key = ctx.api_key_exposed();
+        let key = ctx.api_key_cloned();
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),
@@ -400,7 +400,7 @@ impl SynthesisProviderFactory for OpenAiTtsFactory {
             }
             .into());
         }
-        let key = ctx.api_key_exposed();
+        let key = ctx.api_key_cloned();
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),
@@ -465,7 +465,7 @@ impl SynthesisProviderFactory for ElevenLabsTtsFactory {
             }
             .into());
         }
-        let key = ctx.api_key_exposed();
+        let key = ctx.api_key_cloned();
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),
@@ -526,7 +526,7 @@ impl TranscriptionProviderFactory for XaiSttFactory {
             }
             .into());
         }
-        let key = ctx.api_key_exposed();
+        let key = ctx.api_key_cloned();
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),
@@ -589,7 +589,7 @@ impl SynthesisProviderFactory for XaiTtsFactory {
             }
             .into());
         }
-        let key = ctx.api_key_exposed();
+        let key = ctx.api_key_cloned();
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),

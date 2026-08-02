@@ -28,7 +28,7 @@ are **opt-in** only.
 | Provider | STT | TTS | Tier | Evidence notes |
 |----------|-----|-----|------|----------------|
 | `local` | yes | yes | **supported** | Full CI; no network |
-| `openrouter` | yes | yes | **supported** (reviewed models) | Mocks + prior STT prod path; TTS mock CI |
+| `openrouter` | yes | yes | **STT supported** (reviewed); **TTS experimental** | TTS default exact id `openai/gpt-4o-mini-tts-2025-12-15`; protected speech smoke pending (JOE-1978) |
 | `openai` | yes | yes | **supported** (reviewed models) | Mocks; credentialed smoke optional |
 | `elevenlabs` | — | yes | **supported** (reviewed models) | Mocks; voice_id explicit |
 | `xai` | yes | yes | **experimental** | Official `/v1/stt` + `/v1/tts` (JOE-1976); mocks; protected smoke pending |

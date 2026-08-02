@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1941:** ElevenLabs production TTS (`elevenlabs`) via `ELEVENLABS_API_KEY` /
+  `xi-api-key`, reviewed models, explicit `voice_id` (no local alias remap),
+  `pcm_24000` + shared normalize.
 - **JOE-1940:** first-party OpenAI STT (`whisper-1` / gpt-4o-*-transcribe) and
   TTS (`tts-1` / `tts-1-hd` / `gpt-4o-mini-tts`) via `OPENAI_API_KEY` and
   `OpenAiHttpPolicy` (no OpenRouter headers). Reviewed model registries; PCM

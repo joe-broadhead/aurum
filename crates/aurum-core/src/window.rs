@@ -4,10 +4,8 @@
 //! can push PCM into a [`crate::pcm::PcmBuffer`], then use these policies to decide
 //! when to call [`crate::LocalWhisperProvider::transcribe_pcm`] on a slice.
 //!
-//! **Migration (JOE-1605):** prefer [`crate::partial::PartialSession`] for
-//! production partial UX (stable/unstable text, revision IDs, supersession
-//! cancel). [`PartialWindowPolicy`] and [`PartialClock`] remain supported for
-//! simple loops and as the energy/interval engine inside `PartialSession`.
+//! Used as the energy/interval engine inside [`crate::partial::PartialSession`]
+//! and for simple host-driven partial loops.
 
 use crate::audio::WHISPER_SAMPLE_RATE;
 

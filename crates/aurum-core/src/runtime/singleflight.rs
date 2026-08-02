@@ -126,8 +126,7 @@ impl<T> Singleflight<T> {
             }
             match guard.get_mut(key) {
                 Some(SlotState::Ready(_)) => {
-                    // Legacy Ready path: treat as completed, clear and let caller
-                    // re-query registry.
+                    // Treat completed slot as done; clear and let caller re-query.
                     guard.remove(key);
                     self.cv.notify_all();
                     return BeginLoad::WaitDone;

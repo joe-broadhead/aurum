@@ -44,11 +44,11 @@ fn config_env_key_overrides_file() {
     fs::write(
         &path,
         r#"
-[default]
+[stt]
 provider = "local"
 model = "base"
 
-[openrouter]
+[providers.openrouter]
 api_key = "from-file"
 "#,
     )

@@ -68,15 +68,14 @@ let b = AurumEngine::load()?;
 a.shutdown(); // does not clear b's models
 ```
 
-Default `LocalWhisperProvider::new` / `LocalTtsProvider::new` still use
-**process-global** pools for CLI compatibility. Prefer:
+Default `LocalWhisperProvider::new` / `LocalTtsProvider::new` use
+**process-global** pools (CLI path). Library hosts should prefer:
 
 * `engine.stt_provider(&ProviderId::local())` / `engine.tts_provider(...)`
 * `engine.local_whisper()` / `engine.local_tts()` (local convenience)
 * `engine.clear_model_caches()` or `engine.shutdown()`
 
-Process-global cleanup (legacy CLI/Metal exit):
-`aurum_core::clear_context_cache()`.
+Process-global cleanup for CLI/Metal exit: `aurum_core::clear_context_cache()`.
 
 ## ValidatedConfig
 

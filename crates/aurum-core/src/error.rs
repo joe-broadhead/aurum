@@ -130,7 +130,7 @@ pub enum UserError {
 
     #[error(
         "OpenRouter API key is missing.\n  \
-         Set OPENROUTER_API_KEY in your environment, or add api_key under [openrouter] in the config file.\n  \
+         Set OPENROUTER_API_KEY in your environment, or add api_key under [providers.openrouter] in the config file.\n  \
          Get a key at https://openrouter.ai/keys"
     )]
     MissingApiKey,

@@ -25,6 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **OpenRouterCleanup SecretString:** cleanup retains `SecretString` (not
   plaintext `String`); CLI/batch stop calling `openrouter_api_key_exposed`
   (removed).
+- **No legacy dual-paths:** drop config `[default]` / top-level `[openrouter]`
+  migration (canonical `[stt]` + `[providers.*]` only; unknown top-level
+  sections fail closed); drop OpenRouter `X-Title` header alias; rename cache
+  cheap-status `Legacy` → `Present`; sweep only `.aurum.partial` leftovers.
 
 ### Added
 

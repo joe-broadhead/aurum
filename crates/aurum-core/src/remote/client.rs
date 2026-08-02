@@ -488,10 +488,7 @@ mod tests {
                 .unwrap(),
             "Aurum"
         );
-        assert_eq!(
-            req.headers().get("X-Title").unwrap().to_str().unwrap(),
-            "Aurum"
-        );
+        assert!(req.headers().get("X-Title").is_none());
         assert!(req.headers().get("X-OpenRouter-Categories").is_some());
         assert!(req.headers().get("X-Request-Id").is_some());
         assert!(req.headers().get("xi-api-key").is_none());

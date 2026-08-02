@@ -113,7 +113,7 @@ Platform config path (via the `directories` crate), e.g. on macOS:
 `~/Library/Application Support/aurum/config.toml`
 
 ```toml
-[default]
+[stt]
 provider = "local"
 model = "base"
 language = "auto"
@@ -123,8 +123,8 @@ output = "txt"
 style = "raw"
 provider = "rules"
 
-[openrouter]
-# api_key — prefer OPENROUTER_API_KEY env var
+# [providers.openrouter]
+# # prefer OPENROUTER_API_KEY env var for api_key
 # model = "openai/whisper-large-v3"
 ```
 

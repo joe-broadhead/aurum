@@ -21,7 +21,7 @@
  *     exclusive blocking ops, export-boundary calls (including last_error writes),
  *     and jobs. On AURUM_OK the pointer is freed; on AURUM_ERR_BUSY the pointer
  *     remains valid and the host must retry (do not free on BUSY).
- *   - aurum_engine_destroy is the void legacy API: same drain, frees only after
+ *   - aurum_engine_destroy is the void teardown API: same drain, frees only after
  *     a successful drain; if still BUSY the allocation is left intact for retry.
  *     Concurrent use of the handle after a successful free is unsupported.
  *   - aurum_engine_shutdown drains jobs without holding ExportGuard (avoids
@@ -194,8 +194,8 @@ AurumStatus aurum_engine_create(const AurumEngineConfig *cfg, AurumEngine **out)
  */
 AurumStatus aurum_engine_close(AurumEngine *engine, uint32_t timeout_ms);
 /**
- * Free an engine (void legacy API). Closes admission, cancels work, and waits
- * up to 30s for exclusive blocking ops, export-boundary calls, and jobs.
+ * Free an engine (void teardown for RAII hosts). Closes admission, cancels work,
+ * and waits up to 30s for exclusive blocking ops, export-boundary calls, and jobs.
  * Frees only after a successful drain. If still BUSY the pointer remains valid
  * for retry via aurum_engine_close (or process shutdown) — destroy does not free
  * on BUSY. Concurrent use after a successful free is unsupported.

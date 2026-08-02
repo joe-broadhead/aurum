@@ -686,8 +686,7 @@ fn sweep_stale_partials(dir: &Path) {
         let name = ent.file_name();
         let name = name.to_string_lossy();
         // Only stale leftovers — never touch another live download's unique partial.
-        // Matches both legacy `.bin.partial.PID-ms` and exclusive `.name.PID-ns.aurum.partial`.
-        if !name.contains(".bin.partial.") && !name.ends_with(".aurum.partial") {
+        if !name.ends_with(".aurum.partial") {
             continue;
         }
         let Ok(meta) = ent.metadata() else {

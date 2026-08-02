@@ -1454,7 +1454,9 @@ pub fn report_error(err: &TranscriptionError) {
     if matches!(err, TranscriptionError::User(UserError::MissingApiKey)) {
         if let Some(path) = Config::default_config_path() {
             eprintln!(" Config file location: {}", path.display());
-            eprintln!(" Create it with a [openrouter] api_key, or export OPENROUTER_API_KEY.");
+            eprintln!(
+                " Create it with a [providers.openrouter] api_key, or export OPENROUTER_API_KEY."
+            );
         }
     }
 }

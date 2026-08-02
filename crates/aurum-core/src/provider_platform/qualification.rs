@@ -95,13 +95,12 @@ mod tests {
             .unwrap();
         assert!(oai.headers().get("Authorization").is_some());
         // OpenAI must not get OpenRouter-only title headers from its policy.
-        assert!(OpenAiHttpPolicy
+        let oai_extra = OpenAiHttpPolicy
             .apply_extra_headers(client.get("https://api.openai.com/v1/x"))
             .build()
-            .unwrap()
-            .headers()
-            .get("X-Title")
-            .is_none());
+            .unwrap();
+        assert!(oai_extra.headers().get("X-Title").is_none());
+        assert!(oai_extra.headers().get("X-OpenRouter-Title").is_none());
 
         let el = ElevenLabsHttpPolicy
             .apply_auth(client.get("https://api.elevenlabs.io/v1/x"), key)

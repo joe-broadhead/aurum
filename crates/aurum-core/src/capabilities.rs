@@ -854,7 +854,7 @@ pub fn preflight_stt_for(
     preflight_stt(provider.as_str(), model, want_srt, local_only, stt_mode)
 }
 
-/// Preflight local TTS language support (legacy string API; assumes `local`).
+/// Preflight local TTS language support (assumes provider `local`).
 pub fn preflight_tts(language: &str, local_only: bool) -> Result<ProviderCapabilities> {
     preflight_tts_for(&ProviderId::local(), language, local_only)
 }
@@ -1204,7 +1204,7 @@ mod tests {
         assert_eq!(back.schema_version, CAPABILITY_SCHEMA_VERSION);
         assert_eq!(back.sample_rates_hz, vec![16_000]);
 
-        let legacy = r#"{
+        let minimal = r#"{
             "schema_version": 1,
             "provider": "local",
             "model": "base",
@@ -1220,11 +1220,11 @@ mod tests {
             "output_formats": ["txt"],
             "notes": []
         }"#;
-        let legacy_caps: ProviderCapabilities = serde_json::from_str(legacy).unwrap();
-        assert!(!legacy_caps.supports_voice_ids);
-        assert!(legacy_caps.accepted_audio_formats.is_empty());
+        let minimal_caps: ProviderCapabilities = serde_json::from_str(minimal).unwrap();
+        assert!(!minimal_caps.supports_voice_ids);
+        assert!(minimal_caps.accepted_audio_formats.is_empty());
         assert_eq!(
-            legacy_caps.descriptor_freshness,
+            minimal_caps.descriptor_freshness,
             DescriptorFreshness::Static
         );
     }

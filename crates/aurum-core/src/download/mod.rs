@@ -596,7 +596,7 @@ pub fn sweep_stale_partials(dir: &Path, stale_after: Duration) {
     for ent in entries.flatten() {
         let name = ent.file_name();
         let name = name.to_string_lossy();
-        if !name.contains(".aurum.partial") && !name.contains(".bin.partial.") {
+        if !name.contains(".aurum.partial") {
             continue;
         }
         let Ok(meta) = ent.metadata() else {

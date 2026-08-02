@@ -487,7 +487,19 @@ mod tests {
         assert!(
             req.headers().get("HTTP-Referer").is_some() || req.headers().get("Referer").is_some()
         );
-        assert!(req.headers().get("X-Title").is_some());
+        assert_eq!(
+            req.headers()
+                .get("X-OpenRouter-Title")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "Aurum"
+        );
+        assert_eq!(
+            req.headers().get("X-Title").unwrap().to_str().unwrap(),
+            "Aurum"
+        );
+        assert!(req.headers().get("X-OpenRouter-Categories").is_some());
         assert!(req.headers().get("X-Request-Id").is_some());
         assert!(req.headers().get("xi-api-key").is_none());
     }
@@ -504,6 +516,8 @@ mod tests {
         assert!(req.headers().get("Authorization").is_some());
         assert!(req.headers().get("HTTP-Referer").is_none());
         assert!(req.headers().get("X-Title").is_none());
+        assert!(req.headers().get("X-OpenRouter-Title").is_none());
+        assert!(req.headers().get("X-OpenRouter-Categories").is_none());
         assert!(req.headers().get("xi-api-key").is_none());
     }
 
@@ -523,6 +537,8 @@ mod tests {
         assert!(req.headers().get("Authorization").is_none());
         assert!(req.headers().get("HTTP-Referer").is_none());
         assert!(req.headers().get("X-Title").is_none());
+        assert!(req.headers().get("X-OpenRouter-Title").is_none());
+        assert!(req.headers().get("X-OpenRouter-Categories").is_none());
     }
 
     #[test]

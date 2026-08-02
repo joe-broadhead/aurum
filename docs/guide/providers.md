@@ -81,6 +81,7 @@ explicit `provider=openai`.
 | TTS path | Dedicated `/audio/speech` (OpenAI-compatible; JOE-1939) |
 | Mode | `--openrouter-stt-mode auto\|chat\|transcriptions` (default `auto`) |
 | SRT | Only when the route reports reliable timestamps (dedicated ASR) |
+| App attribution | Every OpenRouter request sends [OpenRouter app headers](https://openrouter.ai/docs/app-attribution): `HTTP-Referer` = `https://github.com/joe-broadhead/aurum`, `X-OpenRouter-Title` / `X-Title` = `Aurum`, `X-OpenRouter-Categories` = `audio-gen,cli-agent`. Other providers never receive these headers. |
 
 ### Remote TTS (opt-in)
 

@@ -25,7 +25,8 @@ pub use openai_speech::{parse_pcm_content_type, OpenAiSpeechRequest, SpeechRespo
 pub use policy::{
     normalize_request_path, AuthScheme, ElevenLabsHttpPolicy, OpenAiHttpPolicy,
     OpenRouterHttpPolicy, ProviderHttpPolicy, XaiHttpPolicy, ELEVENLABS_DEFAULT_BASE,
-    ELEVENLABS_ORIGIN, OPENAI_DEFAULT_BASE, OPENAI_ORIGIN, OPENROUTER_DEFAULT_BASE,
-    OPENROUTER_ORIGIN, XAI_DEFAULT_BASE, XAI_ORIGIN,
+    ELEVENLABS_ORIGIN, OPENAI_DEFAULT_BASE, OPENAI_ORIGIN, OPENROUTER_APP_CATEGORIES,
+    OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE, OPENROUTER_DEFAULT_BASE, OPENROUTER_ORIGIN,
+    XAI_DEFAULT_BASE, XAI_ORIGIN,
 };
 pub use status::{redact_secret, redact_secret_with};

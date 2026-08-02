@@ -54,9 +54,13 @@ mod tests {
                 assert!(err.is_err(), "TTS {id} should fail under local_only");
             }
             // Local still builds.
-            assert!(engine.tts_provider_with(&ProviderId::local(), opts).is_ok());
+            assert!(engine
+                .tts_provider_with(&ProviderId::local(), opts.clone())
+                .is_ok());
         }
-        assert!(engine.stt_provider_with(&ProviderId::local(), opts).is_ok());
+        assert!(engine
+            .stt_provider_with(&ProviderId::local(), opts.clone())
+            .is_ok());
         let _ = reg;
     }
 

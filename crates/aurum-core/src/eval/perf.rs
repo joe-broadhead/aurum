@@ -128,10 +128,7 @@ pub fn perf_scenario_catalogue() -> Vec<PerfScenario> {
             });
         }
     }
-    for (model, voice) in [
-        ("kitten-nano-int8", "Luna"),
-        ("kokoro-82m-int8", "default"),
-    ] {
+    for (model, voice) in [("kitten-nano-int8", "Luna"), ("kokoro-82m-int8", "default")] {
         for phrase in ["short", "paragraph", "multi_chunk"] {
             v.push(PerfScenario {
                 id: format!("tts_local/{model}/{voice}/{phrase}"),
@@ -262,13 +259,7 @@ impl PerfScenarioResult {
         let p50 = percentile_sorted(&samples_ms, 0.50);
         let p95 = percentile_sorted(&samples_ms, 0.95);
         let mean = samples_ms.iter().sum::<f64>() / samples_ms.len() as f64;
-        let rtf_p50 = audio_or_synth_duration_ms.map(|d| {
-            if d <= 0.0 {
-                0.0
-            } else {
-                p50 / d
-            }
-        });
+        let rtf_p50 = audio_or_synth_duration_ms.map(|d| if d <= 0.0 { 0.0 } else { p50 / d });
         Ok(Self {
             scenario_id: scenario_id.into(),
             samples_ms,
@@ -822,12 +813,12 @@ mod tests {
     #[test]
     fn markdown_deterministic_order() {
         let mut report = PerfReport::new(sample_hardware());
-        report.scenarios.push(
-            PerfScenarioResult::from_samples("b", vec![2.0], None, 1, true, false).unwrap(),
-        );
-        report.scenarios.push(
-            PerfScenarioResult::from_samples("a", vec![1.0], None, 1, true, false).unwrap(),
-        );
+        report
+            .scenarios
+            .push(PerfScenarioResult::from_samples("b", vec![2.0], None, 1, true, false).unwrap());
+        report
+            .scenarios
+            .push(PerfScenarioResult::from_samples("a", vec![1.0], None, 1, true, false).unwrap());
         let md = report.to_markdown();
         let ia = md.find("| a |").unwrap();
         let ib = md.find("| b |").unwrap();

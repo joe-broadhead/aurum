@@ -314,8 +314,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
             Err(e) => {
                 manifest.items[idx].status = BatchItemStatus::Failed;
                 manifest.items[idx].error = Some(truncate_error(&e.to_string()));
-                manifest.items[idx].attempts =
-                    manifest.items[idx].attempts.saturating_add(1);
+                manifest.items[idx].attempts = manifest.items[idx].attempts.saturating_add(1);
                 manifest.touch();
                 manifest.save(&man_path)?;
                 continue;

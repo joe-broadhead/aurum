@@ -352,6 +352,7 @@ impl Default for TtsObjectiveThresholds {
 /// Compute objective metrics from mono f32 PCM in [-1, 1].
 ///
 /// `join_indices` are sample indices of chunk boundaries (may be empty).
+#[allow(clippy::too_many_arguments)] // runner-facing metric surface; args are independent dimensions
 pub fn score_tts_pcm(
     fixture: &TtsEvalFixture,
     samples: &[f32],
@@ -628,12 +629,16 @@ pub fn evaluate_support_tier(
     match listening {
         None => {
             supported = false;
-            reasons.push("missing listening aggregate (≥3 listeners required for promotion)".into());
+            reasons
+                .push("missing listening aggregate (≥3 listeners required for promotion)".into());
         }
         Some(a) => {
             if a.critical_failures > 0 {
                 supported = false;
-                reasons.push(format!("{} critical listening failures", a.critical_failures));
+                reasons.push(format!(
+                    "{} critical listening failures",
+                    a.critical_failures
+                ));
             }
             if a.median_intelligibility < 4.0 {
                 supported = false;
@@ -677,13 +682,7 @@ pub fn evaluate_support_tier(
 // Built-in production fixture pack (≥60)
 // ---------------------------------------------------------------------------
 
-fn fix(
-    id: &str,
-    text: &str,
-    language: &str,
-    tags: &[&str],
-    notes: Option<&str>,
-) -> TtsEvalFixture {
+fn fix(id: &str, text: &str, language: &str, tags: &[&str], notes: Option<&str>) -> TtsEvalFixture {
     TtsEvalFixture {
         id: id.into(),
         text: text.into(),
@@ -1045,8 +1044,20 @@ pub fn tts_production_pack() -> TtsEvalPack {
     ));
 
     // Very short + near chunk-size edge (3)
-    fixtures.push(fix("tts_v01", "Hi.", "en-US", &["short", "very_short"], None));
-    fixtures.push(fix("tts_v02", "OK.", "en-US", &["short", "very_short"], None));
+    fixtures.push(fix(
+        "tts_v01",
+        "Hi.",
+        "en-US",
+        &["short", "very_short"],
+        None,
+    ));
+    fixtures.push(fix(
+        "tts_v02",
+        "OK.",
+        "en-US",
+        &["short", "very_short"],
+        None,
+    ));
     fixtures.push(fix(
         "tts_v03",
         "Yes.",
@@ -1172,13 +1183,11 @@ mod tests {
         assert!(c.clipped_samples > 0);
         // discontinuous join
         let mut pcm = vec![0.1f32; 12_000];
-        pcm.extend(std::iter::repeat(-0.9f32).take(12_000));
+        pcm.extend(std::iter::repeat_n(-0.9f32, 12_000));
         let j = score_tts_pcm(&f, &pcm, 24_000, 1, 2, &[12_000], None, &thr, false);
         assert!(j.join_discontinuity > 0.5);
         // truncated flag
-        let ok_pcm: Vec<f32> = (0..24_000)
-            .map(|i| 0.2 * (i as f32 * 0.01).sin())
-            .collect();
+        let ok_pcm: Vec<f32> = (0..24_000).map(|i| 0.2 * (i as f32 * 0.01).sin()).collect();
         let t = score_tts_pcm(&f, &ok_pcm, 24_000, 1, 1, &[], Some(100), &thr, true);
         assert!(!t.passed);
         assert!(t.failures.iter().any(|x| x == "truncated"));
@@ -1216,13 +1225,7 @@ mod tests {
         let a = agg.get("kitten-nano-int8").unwrap();
         assert_eq!(a.n_ratings, 20);
         assert!(a.median_intelligibility >= 4.0);
-        let d = evaluate_support_tier(
-            "kitten-nano-int8",
-            "Luna",
-            true,
-            Some(a),
-            true,
-        );
+        let d = evaluate_support_tier("kitten-nano-int8", "Luna", true, Some(a), true);
         assert!(d.supported, "{:?}", d.reasons);
 
         let bad = evaluate_support_tier("x", "y", true, None, true);

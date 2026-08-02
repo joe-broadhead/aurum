@@ -194,8 +194,12 @@ impl ObservatoryCorpus {
             accent_tag_count: accents.len(),
             long_form_count: long_form,
             has_silence: tags_seen.iter().any(|t| t == "silence"),
-            has_noisy: tags_seen.iter().any(|t| t == "noisy" || t == "noise" || t == "reverberant"),
-            has_lecture: tags_seen.iter().any(|t| t == "lecture" || t == "presentation"),
+            has_noisy: tags_seen
+                .iter()
+                .any(|t| t == "noisy" || t == "noise" || t == "reverberant"),
+            has_lecture: tags_seen
+                .iter()
+                .any(|t| t == "lecture" || t == "presentation"),
             has_conversational: tags_seen
                 .iter()
                 .any(|t| t == "conversational" || t == "clean" || t == "conversation"),
@@ -512,7 +516,9 @@ impl ObservatoryReport {
             self.mean_repetition_ratio,
             self.mean_length_ratio
         ));
-        out.push_str("\n## Scenario mean WER\n\n| Scenario | mean WER |\n|----------|----------|\n");
+        out.push_str(
+            "\n## Scenario mean WER\n\n| Scenario | mean WER |\n|----------|----------|\n",
+        );
         for (k, v) in &self.scenario_mean_wer {
             out.push_str(&format!("| {k} | {v:.4} |\n"));
         }
@@ -946,10 +952,7 @@ pub fn observatory_core_budget_tiny() -> SttBudget {
         baseline_mean_wer: 0.0,
         max_absolute_wer_points: 1.0,
         max_relative_wer: 0.10,
-        scenario_baseline_wer: BTreeMap::from([
-            ("silence".into(), 0.0),
-            ("clean".into(), 0.0),
-        ]),
+        scenario_baseline_wer: BTreeMap::from([("silence".into(), 0.0), ("clean".into(), 0.0)]),
         max_scenario_relative_wer: 0.15,
         max_silence_false_positives: 0,
         max_mean_repetition_ratio: 0.35,

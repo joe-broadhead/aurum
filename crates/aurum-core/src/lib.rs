@@ -102,9 +102,9 @@ pub use batch::{
     acquire_batch_lock, build_items, discover_inputs, discovery_preflight_id, lock_path,
     manifest_path, merge_for_resume, operation_fingerprint, prepare_resume, sha256_file_full,
     truncate_error, validate_batch_stt_provider, verify_item_for_resume, work_indices, BatchItem,
-    BatchItemStatus, BatchLock, BatchLockGuard, BatchManifest, BatchSummary, OperationFingerprintInput,
-    ResumeDecision, AUDIO_EXTENSIONS, BATCH_LOCK_NAME, BATCH_MANIFEST_NAME, BATCH_MANIFEST_VERSION,
-    BATCH_MANIFEST_VERSION_V1, MAX_BATCH_ERROR_CHARS,
+    BatchItemStatus, BatchLock, BatchLockGuard, BatchManifest, BatchSummary,
+    OperationFingerprintInput, ResumeDecision, AUDIO_EXTENSIONS, BATCH_LOCK_NAME,
+    BATCH_MANIFEST_NAME, BATCH_MANIFEST_VERSION, BATCH_MANIFEST_VERSION_V1, MAX_BATCH_ERROR_CHARS,
 };
 pub use cancel::CancelFlag;
 pub use capabilities::{
@@ -124,28 +124,22 @@ pub use domain::{FiniteDurationSecs, ModelId, SampleRateHz};
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
 pub use engine::AurumEngine;
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
-pub use sdk::{
-    AurumConfig, CleanupConfig, OperationOptions, ProviderProfiles, RuntimeConfig, SttConfig,
-    TranscriptionRequest,
-};
-#[cfg(feature = "tts")]
-pub use sdk::{SynthesisRequest, TtsConfig};
 pub use eval::{
     aggregate_listening, allowed_mean_wer, budget_exit_code, build_report, char_error_rate,
     compare_perf_budget, compare_stt_budget, evaluate_support_tier, join_discontinuity_score,
-    observatory_core_budget_tiny, observatory_core_corpus, percentile_sorted, perf_budget_exit_code,
-    perf_scenario_catalogue, repetition_ratio, score_observatory_fixture, score_stt, score_tts_pcm,
-    silence_false_positive, smoke_corpus, tier_a_profile_templates, tts_local_matrix,
-    tts_production_pack, word_error_rate, AssetResolution, BudgetComparison, BudgetFinding,
-    BudgetSeverity, CorpusCoverage, EvalCorpus, EvalReport, HardwareTier, ListeningAggregate,
-    ListeningRating, ListeningReport, NamedHardwareProfile, NORMALIZATION_POLICY_VERSION,
-    OBSERVATORY_SCHEMA_VERSION, ObservatoryCorpus, ObservatoryFixture, ObservatoryFixtureScore,
-    ObservatoryReport, ObservatoryScoreExtras, PERF_EVIDENCE_VERSION, PERF_SCHEMA_VERSION,
+    observatory_core_budget_tiny, observatory_core_corpus, percentile_sorted,
+    perf_budget_exit_code, perf_scenario_catalogue, repetition_ratio, score_observatory_fixture,
+    score_stt, score_tts_pcm, silence_false_positive, smoke_corpus, tier_a_profile_templates,
+    tts_local_matrix, tts_production_pack, word_error_rate, AssetResolution, BudgetComparison,
+    BudgetFinding, BudgetSeverity, CorpusCoverage, EvalCorpus, EvalReport, HardwareTier,
+    ListeningAggregate, ListeningRating, ListeningReport, NamedHardwareProfile, ObservatoryCorpus,
+    ObservatoryFixture, ObservatoryFixtureScore, ObservatoryReport, ObservatoryScoreExtras,
     PerfBudget, PerfComparison, PerfFinding, PerfReport, PerfScenario, PerfScenarioBudget,
-    PerfScenarioResult, PerfSeverity, RunIdentity, STT_OBSERVATORY_EVIDENCE_VERSION, SttBudget,
-    SttFixture, SttScore, SupportTierDecision, TtsEvalFixture, TtsEvalPack, TtsEvalParticipation,
-    TtsObjectiveReport, TtsObjectiveScore, TtsObjectiveThresholds, TtsRunIdentity,
-    TTS_EVAL_SCHEMA_VERSION, TTS_EVIDENCE_VERSION,
+    PerfScenarioResult, PerfSeverity, RunIdentity, SttBudget, SttFixture, SttScore,
+    SupportTierDecision, TtsEvalFixture, TtsEvalPack, TtsEvalParticipation, TtsObjectiveReport,
+    TtsObjectiveScore, TtsObjectiveThresholds, TtsRunIdentity, NORMALIZATION_POLICY_VERSION,
+    OBSERVATORY_SCHEMA_VERSION, PERF_EVIDENCE_VERSION, PERF_SCHEMA_VERSION,
+    STT_OBSERVATORY_EVIDENCE_VERSION, TTS_EVAL_SCHEMA_VERSION, TTS_EVIDENCE_VERSION,
 };
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
 pub use observability::{
@@ -204,6 +198,12 @@ pub use remote::{
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,
 };
+pub use sdk::{
+    AurumConfig, CleanupConfig, OperationOptions, ProviderProfiles, RuntimeConfig, SttConfig,
+    TranscriptionRequest,
+};
+#[cfg(feature = "tts")]
+pub use sdk::{SynthesisRequest, TtsConfig};
 pub use secret::SecretString;
 pub use support::{
     build_support_bundle, default_bundle_path, SupportBundle, SUPPORT_BUNDLE_VERSION,

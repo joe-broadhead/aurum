@@ -198,7 +198,8 @@ impl SynthesisRequest {
             }
             .into());
         }
-        if !self.speaking_rate.is_finite() || self.speaking_rate <= 0.0 || self.speaking_rate > 4.0 {
+        if !self.speaking_rate.is_finite() || self.speaking_rate <= 0.0 || self.speaking_rate > 4.0
+        {
             return Err(UserError::InvalidConfig {
                 reason: format!(
                     "speaking_rate {} is out of range (0, 4]",
@@ -302,7 +303,10 @@ impl AurumConfig {
             },
             stt: SttConfig {
                 provider: c.provider.clone(),
-                model: c.model.clone().unwrap_or_else(|| c.resolve_model_or_default()),
+                model: c
+                    .model
+                    .clone()
+                    .unwrap_or_else(|| c.resolve_model_or_default()),
                 language: c.language.clone(),
                 timestamps: c.timestamps,
             },

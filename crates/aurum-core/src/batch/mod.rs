@@ -365,10 +365,7 @@ impl BatchManifest {
         }
         if m.items.len() > 10_000 {
             return Err(UserError::Other {
-                message: format!(
-                    "batch manifest has {} items (max 10000)",
-                    m.items.len()
-                ),
+                message: format!("batch manifest has {} items (max 10000)", m.items.len()),
             }
             .into());
         }
@@ -596,7 +593,9 @@ pub fn verify_item_for_resume(
                 (ResumeDecision::FailConfiguration, None)
             }
         }
-        BatchItemStatus::Succeeded => verify_succeeded(item, output_dir, current_fingerprint, reprocess_changed),
+        BatchItemStatus::Succeeded => {
+            verify_succeeded(item, output_dir, current_fingerprint, reprocess_changed)
+        }
     }
 }
 
@@ -616,7 +615,10 @@ fn verify_succeeded(
                 return if reprocess_changed {
                     (ResumeDecision::Work, Some(BatchItemStatus::StaleSource))
                 } else {
-                    (ResumeDecision::FailConfiguration, Some(BatchItemStatus::StaleSource))
+                    (
+                        ResumeDecision::FailConfiguration,
+                        Some(BatchItemStatus::StaleSource),
+                    )
                 };
             }
         }
@@ -624,7 +626,10 @@ fn verify_succeeded(
             return if reprocess_changed {
                 (ResumeDecision::Work, Some(BatchItemStatus::StaleSource))
             } else {
-                (ResumeDecision::FailConfiguration, Some(BatchItemStatus::StaleSource))
+                (
+                    ResumeDecision::FailConfiguration,
+                    Some(BatchItemStatus::StaleSource),
+                )
             };
         }
     }
@@ -654,7 +659,10 @@ fn verify_succeeded(
         return if reprocess_changed {
             (ResumeDecision::Work, Some(BatchItemStatus::StaleOutput))
         } else {
-            (ResumeDecision::FailConfiguration, Some(BatchItemStatus::StaleOutput))
+            (
+                ResumeDecision::FailConfiguration,
+                Some(BatchItemStatus::StaleOutput),
+            )
         };
     }
     match sha256_file_full(&out_path) {
@@ -665,7 +673,10 @@ fn verify_succeeded(
                 return if reprocess_changed {
                     (ResumeDecision::Work, Some(BatchItemStatus::StaleOutput))
                 } else {
-                    (ResumeDecision::FailConfiguration, Some(BatchItemStatus::StaleOutput))
+                    (
+                        ResumeDecision::FailConfiguration,
+                        Some(BatchItemStatus::StaleOutput),
+                    )
                 };
             }
         }
@@ -673,7 +684,10 @@ fn verify_succeeded(
             return if reprocess_changed {
                 (ResumeDecision::Work, Some(BatchItemStatus::StaleOutput))
             } else {
-                (ResumeDecision::FailConfiguration, Some(BatchItemStatus::StaleOutput))
+                (
+                    ResumeDecision::FailConfiguration,
+                    Some(BatchItemStatus::StaleOutput),
+                )
             };
         }
     }
@@ -724,25 +738,24 @@ pub fn prepare_resume(
                 };
                 if should {
                     // Reset to pending for reprocess paths.
-                    if matches!(
+                    let resettable = matches!(
                         item.status,
                         BatchItemStatus::StaleSource
                             | BatchItemStatus::StaleConfiguration
                             | BatchItemStatus::StaleOutput
                             | BatchItemStatus::Interrupted
                             | BatchItemStatus::Failed
-                    ) {
-                        if reprocess_changed
-                            || matches!(
-                                item.status,
-                                BatchItemStatus::Interrupted | BatchItemStatus::Failed
-                            )
-                        {
-                            item.status = BatchItemStatus::Pending;
-                            item.error = None;
-                            item.output_sha256 = None;
-                            item.output_size = None;
-                        }
+                    );
+                    let may_reset = reprocess_changed
+                        || matches!(
+                            item.status,
+                            BatchItemStatus::Interrupted | BatchItemStatus::Failed
+                        );
+                    if resettable && may_reset {
+                        item.status = BatchItemStatus::Pending;
+                        item.error = None;
+                        item.output_sha256 = None;
+                        item.output_size = None;
                     }
                     work.push(idx);
                 }
@@ -782,9 +795,9 @@ pub fn work_indices(manifest: &BatchManifest, retry_failed: bool) -> Vec<usize> 
         .iter()
         .enumerate()
         .filter(|(_, i)| match i.status {
-            BatchItemStatus::Pending
-            | BatchItemStatus::Running
-            | BatchItemStatus::Interrupted => true,
+            BatchItemStatus::Pending | BatchItemStatus::Running | BatchItemStatus::Interrupted => {
+                true
+            }
             BatchItemStatus::Failed if retry_failed => true,
             BatchItemStatus::StaleSource
             | BatchItemStatus::StaleConfiguration
@@ -966,10 +979,7 @@ pub fn acquire_batch_lock(output_dir: &Path, run_id: &str) -> Result<BatchLockGu
         message: format!("write batch lock: {e}"),
     })?;
     f.sync_all().ok();
-    Ok(BatchLockGuard {
-        path,
-        lock,
-    })
+    Ok(BatchLockGuard { path, lock })
 }
 
 /// RAII guard that removes the lock file on drop.

@@ -628,12 +628,7 @@ impl TerminalGuard {
     pub fn start(metrics: Arc<Metrics>, request_id: u64, operation: OpKind) -> Self {
         metrics.record_start();
         let scope = metrics.scope();
-        metrics.emit(OpEvent::stage(
-            request_id,
-            operation,
-            OpStage::Start,
-            scope,
-        ));
+        metrics.emit(OpEvent::stage(request_id, operation, OpStage::Start, scope));
         Self {
             metrics,
             request_id,
@@ -656,9 +651,14 @@ impl TerminalGuard {
             other => self.metrics.record_terminal(other),
         }
         self.metrics.emit(
-            OpEvent::stage(self.request_id, self.operation, OpStage::Terminal, self.scope)
-                .with_elapsed_ms(self.start.elapsed().as_millis() as u64)
-                .with_terminal(cat, retryable),
+            OpEvent::stage(
+                self.request_id,
+                self.operation,
+                OpStage::Terminal,
+                self.scope,
+            )
+            .with_elapsed_ms(self.start.elapsed().as_millis() as u64)
+            .with_terminal(cat, retryable),
         );
     }
 
@@ -764,13 +764,7 @@ mod tests {
         assert_eq!(m.snapshot().ops_failed, 0);
         let events = sink.drain();
         assert!(events.iter().any(|e| e.stage == OpStage::Start));
-        assert_eq!(
-            events
-                .iter()
-                .filter(|e| e.terminal.is_some())
-                .count(),
-            1
-        );
+        assert_eq!(events.iter().filter(|e| e.terminal.is_some()).count(), 1);
         assert!(events.iter().all(|e| e.request_id == 42));
     }
 
@@ -829,9 +823,14 @@ mod tests {
     fn privacy_canary_on_event_and_snapshot() {
         let m = Metrics::new();
         m.record_start();
-        let event = OpEvent::stage(7, OpKind::Stt, OpStage::Inference, MetricsScope::EngineLocal)
-            .with_provider("local")
-            .with_model("base");
+        let event = OpEvent::stage(
+            7,
+            OpKind::Stt,
+            OpStage::Inference,
+            MetricsScope::EngineLocal,
+        )
+        .with_provider("local")
+        .with_model("base");
         let json = event.to_json().unwrap();
         privacy_scan(&json).unwrap();
         privacy_scan(&serde_json::to_string(&m.snapshot()).unwrap()).unwrap();
@@ -843,7 +842,12 @@ mod tests {
 
     #[test]
     fn event_schema_stable() {
-        let e = OpEvent::stage(1, OpKind::Cleanup, OpStage::Normalize, MetricsScope::ProcessGlobal);
+        let e = OpEvent::stage(
+            1,
+            OpKind::Cleanup,
+            OpStage::Normalize,
+            MetricsScope::ProcessGlobal,
+        );
         let j1 = e.to_json().unwrap();
         let j2 = e.to_json().unwrap();
         assert_eq!(j1, j2);

@@ -1,6 +1,18 @@
 # Provider matrix
 
-Snapshot of compiled builtin registry capabilities (JOE-1943). Defaults are
+**Authoritative generated snapshot (JOE-2224):**
+[`docs/generated/provider-matrix.generated.md`](../generated/provider-matrix.generated.md)
+and `docs/generated/product-contracts.json`.
+
+```bash
+cargo run -p aurum-core --example generate_product_contracts -- --write
+./scripts/check_product_contracts.sh
+```
+
+Narrative rows below expand generated defaults with reviewed model lists. When
+IDs/auth env names disagree, the **generated registry snapshot** wins.
+
+Snapshot of compiled builtin registry capabilities (JOE-1943 / JOE-2224). Defaults are
 **local** for STT and TTS. Remote rows require deliberate selection and a key.
 
 | Provider | STT | TTS | Auth env | STT models (reviewed) | TTS models (reviewed) | Streaming (Aurum) | Local-only OK |
@@ -32,5 +44,7 @@ not required for basic operation.
 FFI: remote execution is **not** exposed on the C ABI until a separate design;
 capability claims must not over-advertise FFI remote support.
 
-Update process: when adding a provider/model, edit factories + this matrix +
-`docs/operations/provider-qualification.md` in the same PR.
+Update process: when adding a provider/model, edit factories, run
+`generate_product_contracts --write`, update narrative notes here and
+`docs/operations/provider-qualification.md` in the same PR. CI fails on stale
+generated fragments (`scripts/check_product_contracts.sh`).

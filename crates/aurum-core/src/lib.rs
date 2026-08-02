@@ -81,6 +81,7 @@ pub mod partial;
 pub mod pcm;
 pub mod postprocess;
 pub mod prelude;
+pub mod product_contracts;
 pub mod profile;
 pub mod provider_platform;
 pub mod providers;
@@ -155,6 +156,10 @@ pub use output::{
 pub use partial::{PartialSession, PartialSessionConfig, PartialUpdate};
 pub use pcm::PcmBuffer;
 pub use postprocess::{normalize_result_with_report, NormalizationReport};
+pub use product_contracts::{
+    registered_stt_provider_ids, registered_tts_provider_ids, ProductContractsSnapshot,
+    ProductProviderRecord, PRODUCT_CONTRACTS_SCHEMA_VERSION,
+};
 pub use profile::{
     format_recommendation, resolve_profile, ProfileResolution, QualityProfile,
     PROFILE_EVIDENCE_VERSION,

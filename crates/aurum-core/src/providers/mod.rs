@@ -367,9 +367,7 @@ impl TranscriptionResult {
     /// a trusted domain object — this path re-validates every segment and duration.
     pub fn try_from_dto(dto: &crate::dto::SttResultDto) -> Result<Self> {
         // Accept v1 (pre-provenance) and current v2 (JOE-2219).
-        if dto.schema_version != crate::dto::STT_RESULT_SCHEMA_VERSION
-            && dto.schema_version != 1
-        {
+        if dto.schema_version != crate::dto::STT_RESULT_SCHEMA_VERSION && dto.schema_version != 1 {
             return Err(crate::error::UserError::Other {
                 message: format!(
                     "unsupported STT DTO schema_version {} (expected 1 or {})",

@@ -13,8 +13,8 @@ use crate::error::{ProviderError, Result};
 use crate::providers::{Segment, TranscriptionOptions, TranscriptionResult};
 use crate::remote::limits::{validate_segments, validate_text_bounds, TranscriptLimits};
 use crate::remote::long_form::{
-    dedupe_segments_overlap, derive_timestamps_reliable, plan_boundary_windows, stitch_text_with_overlap,
-    LongFormPolicy, TimestampSource,
+    dedupe_segments_overlap, derive_timestamps_reliable, plan_boundary_windows,
+    stitch_text_with_overlap, LongFormPolicy, TimestampSource,
 };
 use std::future::Future;
 use std::path::PathBuf;
@@ -250,8 +250,8 @@ pub fn stitch_chunk_results(
     validate_segments(&segments, full_duration_secs, limits, provider)?;
 
     let sources: Vec<_> = segments.iter().map(|s| s.timestamp_source()).collect();
-    let timestamps_reliable = derive_timestamps_reliable(&sources)
-        && parts.iter().all(|(_, r)| r.timestamps_reliable());
+    let timestamps_reliable =
+        derive_timestamps_reliable(&sources) && parts.iter().all(|(_, r)| r.timestamps_reliable());
 
     let mut result = TranscriptionResult::openrouter(
         text,
@@ -301,7 +301,8 @@ pub fn stitch_chunk_results_with_overlaps(
         let mut chunk_segs = normalize_chunk_segments(r.segments(), *offset, limits);
         if i > 0 && *overlap_secs > 0.0 {
             let earlier = segments.as_slice();
-            let (deduped, _) = dedupe_segments_overlap(earlier, &chunk_segs, *overlap_secs, *offset);
+            let (deduped, _) =
+                dedupe_segments_overlap(earlier, &chunk_segs, *overlap_secs, *offset);
             chunk_segs = deduped;
         }
         let t = r.text().trim();
@@ -408,8 +409,9 @@ where
             boundary = ?planned_w.kind,
             "remote STT chunk"
         );
-        let result = one_shot(chunk_input, options.clone()).await.map_err(|e| {
-            match e {
+        let result = one_shot(chunk_input, options.clone())
+            .await
+            .map_err(|e| match e {
                 crate::error::TranscriptionError::Provider(
                     ProviderError::TranscriptionFailed { reason },
                 ) => ProviderError::TranscriptionFailed {
@@ -422,8 +424,7 @@ where
                 }
                 .into(),
                 other => other,
-            }
-        })?;
+            })?;
         parts.push((window.offset_secs, planned_w.overlap_secs, result));
     }
 

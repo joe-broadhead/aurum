@@ -112,7 +112,10 @@ pub enum UserError {
     #[error("unsupported output format: {format}\n  Hint: use one of: txt, srt, json.")]
     InvalidOutputFormat { format: String },
 
-    #[error("unknown provider: {provider}\n  Hint: use one of: local, openrouter.")]
+    #[error(
+        "unknown provider: {provider}\n  \
+         Hint: use a registered provider id (see `aurum` help / product contracts; local is always available)."
+    )]
     InvalidProvider { provider: String },
 
     #[error("unknown local model: {model}\n  Hint: available models: {available}")]

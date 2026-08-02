@@ -405,9 +405,7 @@ pub fn dedupe_overlap_text(earlier: &str, later: &str) -> DedupeOutcome {
         };
     }
 
-    let max_n = MAX_DEDUPE_TOKENS
-        .min(earlier_t.len())
-        .min(later_t.len());
+    let max_n = MAX_DEDUPE_TOKENS.min(earlier_t.len()).min(later_t.len());
     let mut best = 0usize;
     for n in (MIN_DEDUPE_TOKENS..=max_n).rev() {
         let suffix = &earlier_t[earlier_t.len() - n..];
@@ -570,9 +568,11 @@ mod tests {
 
     #[test]
     fn policy_rejects_inverted_bounds() {
-        let mut p = LongFormPolicy::default();
-        p.min_secs = 250.0;
-        p.target_secs = 210.0;
+        let p = LongFormPolicy {
+            min_secs: 250.0,
+            target_secs: 210.0,
+            ..Default::default()
+        };
         assert!(p.validate().is_err());
     }
 
@@ -595,21 +595,14 @@ mod tests {
         let mut samples = vec![0.3f32; n];
         let silence_at = (205.0 * f64::from(sr)) as usize;
         let silence_len = (sr as usize) * 2; // 2s silence
-        for s in samples
-            .iter_mut()
-            .skip(silence_at)
-            .take(silence_len)
-        {
+        for s in samples.iter_mut().skip(silence_at).take(silence_len) {
             *s = 0.0;
         }
         let plan = plan_boundary_windows(&samples, sr, &LongFormPolicy::default()).unwrap();
         assert!(plan.len() >= 2);
         // First cut should land near silence, not exactly 210 if silence found.
         let first_end = plan[0].window.end_sample as f64 / f64::from(sr);
-        assert!(
-            (200.0..220.0).contains(&first_end),
-            "first end {first_end}"
-        );
+        assert!((200.0..220.0).contains(&first_end), "first end {first_end}");
         assert_eq!(plan[0].kind, BoundaryKind::Silence);
         assert_eq!(plan.last().unwrap().window.end_sample, n);
     }
@@ -667,7 +660,9 @@ mod tests {
         assert!(!derive_timestamps_reliable(&[
             TimestampSource::Interpolated
         ]));
-        assert!(derive_timestamps_reliable(&[TimestampSource::ProviderSegment]));
+        assert!(derive_timestamps_reliable(&[
+            TimestampSource::ProviderSegment
+        ]));
     }
 
     #[test]

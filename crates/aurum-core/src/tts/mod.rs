@@ -1,7 +1,9 @@
 //! Local text-to-speech (TTS) — ONNX KittenTTS + MIT G2P.
 //!
 //! Enabled by the `tts` cargo feature (default on). Produces mono PCM that the
-//! CLI writes as WAV. No remote TTS, no ffmpeg, no GPL-linked phonemizer.
+//! CLI writes as WAV. Remote TTS verticals (JOE-1939+) share the same
+//! [`SynthesisResult`] contract via [`crate::audio::normalize_remote_audio`];
+//! local ONNX paths never call FFmpeg. No GPL-linked phonemizer.
 //!
 //! Correctness contract (v0.0.3 / JOE-1571):
 //! - complete-or-error input (no silent truncation)

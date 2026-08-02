@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-1937:** bounded remote-audio normalization (`normalize_remote_audio`) for
+  remote TTS wire formats (PCM s16le / WAV in-process, MP3 via supervised FFmpeg)
+  producing mono `i16` PCM under encoded/decoded caps; TTS `BackendKind::Remote`
+  and honesty JSON (`local` \| `remote`); guide
+  [remote-audio.md](docs/guide/remote-audio.md).
+
 ## [0.0.18] - 2026-08-01
 
 v0.0.18 is the **external-review security remediation freeze**: High F-001/F-002

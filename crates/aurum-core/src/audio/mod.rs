@@ -5,6 +5,17 @@
 //! - Fail fast with install instructions if ffmpeg is missing
 //! - WAV files that are already 16 kHz mono PCM can be read directly via `hound`
 //! - Enforce duration / decoded-size bounds *during* decode so we fail before OOM
+//!
+//! Remote TTS wire formats use [`remote_normalize`] (JOE-1937): bounded PCM/WAV
+//! in-process, supervised FFmpeg for MP3 only.
+
+mod remote_normalize;
+
+pub use remote_normalize::{
+    normalize_remote_audio, BoundedAudioBody, ChannelPolicy, EncodedAudioFormat, NormalizedAudio,
+    RemoteAudioLimits, ALLOWED_SAMPLE_RATES_HZ, DEFAULT_MAX_DURATION, DEFAULT_MAX_ENCODED_BYTES,
+    DEFAULT_MAX_PCM_SAMPLES,
+};
 
 use crate::error::{EnvironmentError, Result, UserError};
 use std::path::{Path, PathBuf};

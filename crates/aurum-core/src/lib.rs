@@ -91,7 +91,11 @@ pub mod support;
 pub mod tts;
 pub mod window;
 
-pub use audio::{load_audio, try_load_wav_file, AudioInput, WHISPER_SAMPLE_RATE};
+pub use audio::{
+    load_audio, normalize_remote_audio, try_load_wav_file, AudioInput, BoundedAudioBody,
+    ChannelPolicy, EncodedAudioFormat, NormalizedAudio, RemoteAudioLimits, ALLOWED_SAMPLE_RATES_HZ,
+    DEFAULT_MAX_DURATION, DEFAULT_MAX_ENCODED_BYTES, DEFAULT_MAX_PCM_SAMPLES, WHISPER_SAMPLE_RATE,
+};
 pub use batch::{
     build_items, discover_inputs, fingerprint_file, manifest_path, merge_for_resume, work_indices,
     BatchItem, BatchItemStatus, BatchManifest, BatchSummary, AUDIO_EXTENSIONS, BATCH_MANIFEST_NAME,

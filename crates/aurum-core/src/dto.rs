@@ -125,9 +125,7 @@ impl TtsMetaDto {
             schema_version: TTS_META_SCHEMA_VERSION,
             sample_rate_hz: r.sample_rate_hz,
             channels: r.channels,
-            backend_kind: match r.backend_kind {
-                crate::tts::BackendKind::Local => "local".into(),
-            },
+            backend_kind: r.backend_kind.as_str().into(),
             provider: r.provider.clone(),
             model: r.model.clone(),
             voice: r.voice.clone(),
@@ -205,5 +203,45 @@ mod tests {
         r.set_duration_secs(f64::NAN);
         let dto = SttResultDto::from_result(&r);
         assert_eq!(dto.duration_secs, 0.0);
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn tts_meta_local_and_remote_backend_kind() {
+        use crate::tts::{BackendKind, SynthesisResult};
+
+        let local = SynthesisResult {
+            pcm_i16_mono: vec![1, 2, 3],
+            sample_rate_hz: 24_000,
+            channels: 1,
+            backend_kind: BackendKind::Local,
+            provider: "local".into(),
+            model: "kitten-nano-int8".into(),
+            voice: "Luna".into(),
+            language: "en".into(),
+            duration_ms: 1,
+            text_chars: 1,
+            text_truncated: false,
+            chunk_count: 1,
+            synthesized_chars: 1,
+            adapter: None,
+            trust: None,
+            provenance: None,
+        };
+        let dto = TtsMetaDto::from_result(&local);
+        assert_eq!(dto.schema_version, TTS_META_SCHEMA_VERSION);
+        assert_eq!(dto.backend_kind, "local");
+        // PCM never in DTO JSON.
+        let json = serde_json::to_string(&dto).unwrap();
+        assert!(!json.contains("pcm"));
+        assert_eq!(dto.schema_version, 1);
+
+        let mut remote = local.clone();
+        remote.backend_kind = BackendKind::Remote;
+        remote.provider = "openai".into();
+        let dto_r = TtsMetaDto::from_result(&remote);
+        assert_eq!(dto_r.backend_kind, "remote");
+        // Adding Remote does not bump schema_version (backend_kind was already a string).
+        assert_eq!(dto_r.schema_version, 1);
     }
 }

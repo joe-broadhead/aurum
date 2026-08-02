@@ -106,6 +106,7 @@ nav:
       - Providers: guide/providers.md
       - Models: guide/models.md
       - Text-to-speech: guide/tts.md
+      - Remote audio formats: guide/remote-audio.md
       - Cleanup: guide/cleanup.md
       - Configuration: guide/configuration.md
       - Output formats: guide/output.md

@@ -270,7 +270,12 @@ impl ProviderHttpPolicy for XaiHttpPolicy {
     }
 
     fn allows_path(&self, path: &str) -> bool {
-        path_allowed(path, &["chat/completions"], &[])
+        // REST chat + speech I/O (JOE-1942). Realtime/WebSocket paths remain denied.
+        path_allowed(
+            path,
+            &["chat/completions", "audio/transcriptions", "audio/speech"],
+            &[],
+        )
     }
 }
 
@@ -388,7 +393,9 @@ mod tests {
         assert!(!ElevenLabsHttpPolicy.allows_path("chat/completions"));
 
         assert!(XaiHttpPolicy.allows_path("chat/completions"));
-        assert!(!XaiHttpPolicy.allows_path("audio/transcriptions"));
+        assert!(XaiHttpPolicy.allows_path("audio/transcriptions"));
+        assert!(XaiHttpPolicy.allows_path("audio/speech"));
+        assert!(!XaiHttpPolicy.allows_path("realtime"));
     }
 
     #[test]

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1942:** xAI REST STT/TTS (`xai`, config alias `grok`) via `XAI_API_KEY` and
+  `XaiHttpPolicy`; OpenAI-compatible speech request shape; reviewed `grok-asr*` /
+  `grok-tts*` catalogues; realtime streaming not implemented (fail closed).
 - **JOE-1941:** ElevenLabs production TTS (`elevenlabs`) via `ELEVENLABS_API_KEY` /
   `xi-api-key`, reviewed models, explicit `voice_id` (no local alias remap),
   `pcm_24000` + shared normalize.

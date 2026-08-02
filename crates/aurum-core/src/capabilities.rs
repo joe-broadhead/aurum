@@ -566,6 +566,83 @@ pub fn openai_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
     }
 }
 
+/// xAI REST STT capabilities (JOE-1942).
+pub fn xai_stt_capabilities(model: &str) -> Result<ProviderCapabilities> {
+    use crate::providers::xai_stt::lookup_xai_stt;
+    let rec = lookup_xai_stt(model).ok_or_else(|| UnsupportedCapability {
+        provider: "xai".into(),
+        model: model.into(),
+        reason: "model is not in the reviewed xAI STT registry".into(),
+        hint: "use grok-asr or grok-asr-v2".into(),
+    })?;
+    let mut caps = ProviderCapabilities::with_core("xai", rec.model, CapabilityOperation::Stt);
+    caps.stt_backend = Some(SttBackendClass::Asr);
+    caps.timestamps_reliable = rec.timestamps_supported;
+    caps.languages = vec!["auto".into(), "en".into()];
+    caps.max_upload_bytes = Some(rec.max_upload_bytes as u64);
+    caps.supports_cancellation = true;
+    caps.requires_network = true;
+    caps.local_only_ok = false;
+    caps.output_formats = vec!["txt".into(), "json".into(), "srt".into()];
+    caps.accepted_audio_formats = vec!["wav".into(), "mp3".into(), "m4a".into()];
+    caps.streaming_advertised = false;
+    caps.streaming_implemented_by_aurum = false;
+    caps.descriptor_freshness = DescriptorFreshness::Reviewed;
+    caps.notes = vec![
+        "xAI REST multipart /audio/transcriptions (OpenAI-compatible request shape).".into(),
+        "Realtime/WebSocket speech is not implemented; preflight fails closed for streaming claims."
+            .into(),
+        "Audio leaves the machine only when provider=xai (or alias grok) is selected.".into(),
+    ];
+    Ok(caps)
+}
+
+/// xAI REST TTS capabilities (JOE-1942).
+pub fn xai_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
+    #[cfg(feature = "tts")]
+    {
+        use crate::providers::xai_tts::lookup_xai_tts;
+        let rec = lookup_xai_tts(model).ok_or_else(|| UnsupportedCapability {
+            provider: "xai".into(),
+            model: model.into(),
+            reason: "model is not in the reviewed xAI TTS registry".into(),
+            hint: "use grok-tts, grok-tts-hd, or grok-tts-mini".into(),
+        })?;
+        let mut caps = ProviderCapabilities::with_core("xai", rec.model, CapabilityOperation::Tts);
+        caps.languages = vec!["en".into(), "auto".into()];
+        caps.max_text_chars = Some(rec.max_text_chars);
+        caps.supports_cancellation = true;
+        caps.requires_network = true;
+        caps.local_only_ok = false;
+        caps.output_formats = vec!["wav".into(), "json".into()];
+        caps.voice_model = Some(VoiceModel::ProviderVoiceIds);
+        caps.supports_voice_ids = true;
+        caps.output_audio_formats = vec!["pcm_s16le".into(), "mp3".into()];
+        caps.direct_pcm = true;
+        caps.sample_rates_hz = vec![rec.default_sample_rate_hz];
+        caps.supports_speaking_rate = true;
+        caps.speaking_rate_min = Some(rec.rate_min);
+        caps.speaking_rate_max = Some(rec.rate_max);
+        caps.streaming_advertised = false;
+        caps.streaming_implemented_by_aurum = false;
+        caps.descriptor_freshness = DescriptorFreshness::Reviewed;
+        caps.notes = vec![
+            "xAI REST /audio/speech (OpenAI-compatible request body).".into(),
+            "Streaming/realtime voice is not implemented in this vertical.".into(),
+            format!("Reviewed voices: {}.", rec.voices.join(", ")),
+        ];
+        Ok(caps)
+    }
+    #[cfg(not(feature = "tts"))]
+    {
+        let _ = model;
+        Err(UserError::Other {
+            message: "TTS support is not compiled into this build (feature `tts`)".into(),
+        }
+        .into())
+    }
+}
+
 /// ElevenLabs TTS capabilities (JOE-1941). Fail closed for unknown models.
 pub fn elevenlabs_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
     #[cfg(feature = "tts")]
@@ -733,6 +810,29 @@ pub fn preflight_stt(
             }
             Ok(caps)
         }
+        "xai" => {
+            if local_only {
+                return Err(UnsupportedCapability {
+                    provider: provider.into(),
+                    model: model.into(),
+                    reason: "xAI requires network access".into(),
+                    hint: "unset local_only or use provider=local with a cached model".into(),
+                }
+                .into());
+            }
+            let caps = xai_stt_capabilities(model)?;
+            if want_srt && !caps.timestamps_reliable {
+                return Err(UnsupportedCapability {
+                    provider: provider.into(),
+                    model: model.into(),
+                    reason: "SRT requires reliable timestamps; this xAI model is text-only JSON"
+                        .into(),
+                    hint: "use grok-asr with timestamps, or output txt/json".into(),
+                }
+                .into());
+            }
+            Ok(caps)
+        }
         other => Err(UserError::InvalidProvider {
             provider: other.into(),
         }
@@ -850,6 +950,29 @@ pub fn preflight_tts_for(
                 elevenlabs_tts_capabilities(
                     crate::providers::elevenlabs_tts::DEFAULT_ELEVENLABS_TTS_MODEL,
                 )
+            }
+            #[cfg(not(feature = "tts"))]
+            {
+                let _ = (provider, language, local_only);
+                Err(UserError::Other {
+                    message: "TTS support is not compiled into this build (feature `tts`)".into(),
+                }
+                .into())
+            }
+        }
+        "xai" => {
+            #[cfg(feature = "tts")]
+            {
+                if local_only {
+                    return Err(UnsupportedCapability {
+                        provider: provider.as_str().into(),
+                        model: "*".into(),
+                        reason: "xAI TTS requires network access".into(),
+                        hint: "unset local_only or use provider=local".into(),
+                    }
+                    .into());
+                }
+                xai_tts_capabilities(crate::providers::xai_tts::DEFAULT_XAI_TTS_MODEL)
             }
             #[cfg(not(feature = "tts"))]
             {

@@ -9,8 +9,8 @@ use super::registry::ProviderRegistry;
 #[cfg(feature = "tts")]
 use crate::capabilities::preflight_tts_for;
 use crate::capabilities::{
-    apply_stt_request_gates, openrouter_stt_capabilities, preflight_stt_for,
-    resolve_openrouter_stt_path, CapabilityOperation, ProviderCapabilities, UnsupportedCapability,
+    apply_stt_request_gates, preflight_stt_for, CapabilityOperation, ProviderCapabilities,
+    UnsupportedCapability,
 };
 use crate::error::{Result, UserError};
 use crate::providers::OpenRouterSttMode;
@@ -164,16 +164,6 @@ pub fn preflight_tts_with_registry(
         }
         .into())
     }
-}
-
-/// Resolve OpenRouter caps through path registry then factory-shaped output.
-#[allow(dead_code)]
-pub(crate) fn openrouter_caps_resolved(
-    model: &str,
-    stt_mode: OpenRouterSttMode,
-) -> Result<ProviderCapabilities> {
-    let path = resolve_openrouter_stt_path(stt_mode, model)?;
-    Ok(openrouter_stt_capabilities(model, path))
 }
 
 #[cfg(test)]

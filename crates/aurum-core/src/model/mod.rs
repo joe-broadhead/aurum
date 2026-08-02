@@ -495,20 +495,6 @@ pub async fn ensure_model_with_options(
     Ok(path)
 }
 
-/// Sidecar checksum is operator metadata only — it never authenticates an
-/// unpinned download (JOE-1645). Returns true only when a sidecar exists and matches.
-#[allow(dead_code)]
-fn verify_cached_checksum(path: &Path) -> bool {
-    let checksum_path = path.with_extension("bin.sha256");
-    let Ok(contents) = fs::read_to_string(&checksum_path) else {
-        return false;
-    };
-    let Some(expected) = contents.split_whitespace().next() else {
-        return false;
-    };
-    verify_against_expected(path, expected)
-}
-
 async fn download_model(
     info: &ModelInfo,
     dest: &Path,

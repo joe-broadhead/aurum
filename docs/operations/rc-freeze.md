@@ -33,9 +33,9 @@ See also [compatibility.md](../development/compatibility.md) for 0.0.x classes.
 
 | DTO | `schema_version` | Freeze rule |
 |-----|------------------|-------------|
-| `SttResultDto` | **1** | Unsupported version → error; unknown fields ignored on read |
-| `TtsMetaDto` | **1** | Same |
-| `ErrorDto` | **1** | Category string ids stable (`ErrorCategory::as_str`) |
+| `SttResultDto` | **1** | Library + CLI STT JSON (`-o json`); unsupported version → error |
+| `TtsMetaDto` | **1** | Library honesty JSON; CLI `--emit-json` should use this DTO (includes `schema_version`) |
+| `ErrorDto` | **1** | **Library DTO** for structured errors; CLI process exit still uses `ErrorCategory::exit_code` (not a full ErrorDto wire envelope) |
 
 Constants: `STT_RESULT_SCHEMA_VERSION`, `TTS_META_SCHEMA_VERSION`, `ERROR_SCHEMA_VERSION` in `aurum-core` dto module.
 

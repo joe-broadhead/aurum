@@ -118,7 +118,7 @@ Full schema: `docs/guide/configuration.md`.
 | first run slow | expected download; try `--model tiny-q5_1` |
 | OpenRouter privacy/guardrail | user fixes OpenRouter privacy settings |
 | SRT refused | use txt/json or dedicated ASR; or `--allow-unreliable-timestamps` |
-| remote segment too long | local STT or shorter chunks |
+| long remote lecture | auto chunk~210s (JOE-2212); or local whisper offline; override `AURUM_REMOTE_STT_CHUNK_SECS` |
 | TTS overwrite refused | add `--force` |
 | TTS pack missing offline | drop `--local-only` once online, or pre-cache |
 | Metal exit abort (lib) | `clear_context_cache` / `aurum_shutdown` before process exit |

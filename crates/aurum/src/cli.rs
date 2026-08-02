@@ -795,37 +795,16 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
 
     if cli.emit_json {
         let abs = std::fs::canonicalize(&output_file).unwrap_or(output_file.clone());
-        let mut payload = serde_json::json!({
-            "backend_kind": result.backend_kind.as_str(),
-            "provider": result.provider,
-            "model": result.model,
-            "voice": result.voice,
-            "language": result.language,
-            "output_path": abs.display().to_string(),
-            "format": "wav",
-            "sample_rate_hz": result.sample_rate_hz,
-            "channels": result.channels,
-            "duration_ms": result.duration_ms,
-            "text_chars": result.text_chars,
-            "text_truncated": result.text_truncated,
-            "chunk_count": result.chunk_count,
-            "synthesized_chars": result.synthesized_chars,
-        });
+        // Freeze surface: versioned TtsMetaDto (JOE-1896) plus CLI path fields.
+        let mut meta = aurum_core::dto::TtsMetaDto::from_result(&result);
+        if custom_provenance {
+            meta.provenance = Some("custom".to_string());
+        }
+        let mut payload = serde_json::to_value(&meta)
+            .map_err(|e| TranscriptionError::internal(format!("json: {e}")))?;
         if let Some(obj) = payload.as_object_mut() {
-            if let Some(a) = &result.adapter {
-                obj.insert("adapter".into(), serde_json::json!(a));
-            }
-            if let Some(t) = &result.trust {
-                obj.insert("trust".into(), serde_json::json!(t));
-            }
-            let provenance = if custom_provenance {
-                Some("custom".to_string())
-            } else {
-                result.provenance.clone()
-            };
-            if let Some(p) = provenance {
-                obj.insert("provenance".into(), serde_json::json!(p));
-            }
+            obj.insert("output_path".into(), serde_json::json!(abs.display().to_string()));
+            obj.insert("format".into(), serde_json::json!("wav"));
         }
         let mut stdout = io::stdout().lock();
         writeln!(

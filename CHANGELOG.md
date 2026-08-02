@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dead-code / docs honesty sweep:** remove unused helpers
+  (`verify_cached_checksum`, `openrouter_caps_resolved`,
+  `ProviderBuildContext::api_key_exposed`, `DEFAULT_OPENROUTER_ORIGIN` alias,
+  unused partial helpers); CLI TTS `--emit-json` uses versioned `TtsMetaDto`;
+  download module docs no longer claim full catalogue unification; refresh
+  stale version pins and skill long-form STT (JOE-2212) claims.
+
 ### Added
 
 - **JOE-2212 — Remote STT chunk-and-stitch:** OpenAI, OpenRouter, and xAI STT
@@ -682,13 +691,21 @@ backlog (JOE-1652–1655).
 
 ### Notes
 
-- `aurum-core` API is experimental until `0.1.0`
+- `aurum-core` API is provisional on continuous **0.0.x** (not a 1.0 / 0.1.0 freeze claim)
 - ffmpeg is a required system dependency (not bundled)
-- OpenRouter path is LLM-assisted, not dedicated ASR
+- OpenRouter path is LLM-assisted or dedicated ASR depending on reviewed model route
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.12...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.20...HEAD
+[0.0.20]: https://github.com/joe-broadhead/aurum/compare/v0.0.19...v0.0.20
+[0.0.19]: https://github.com/joe-broadhead/aurum/compare/v0.0.18...v0.0.19
+[0.0.18]: https://github.com/joe-broadhead/aurum/compare/v0.0.17...v0.0.18
+[0.0.17]: https://github.com/joe-broadhead/aurum/compare/v0.0.16...v0.0.17
+[0.0.16]: https://github.com/joe-broadhead/aurum/compare/v0.0.15...v0.0.16
+[0.0.15]: https://github.com/joe-broadhead/aurum/compare/v0.0.14...v0.0.15
+[0.0.14]: https://github.com/joe-broadhead/aurum/compare/v0.0.13...v0.0.14
+[0.0.13]: https://github.com/joe-broadhead/aurum/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/joe-broadhead/aurum/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/joe-broadhead/aurum/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/joe-broadhead/aurum/compare/v0.0.9...v0.0.10

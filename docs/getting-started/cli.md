@@ -1,6 +1,7 @@
 # CLI reference
 
 Authoritative help snapshots (generated): [cli-help.md](../reference/cli-help.md).
+When this page and the binary disagree, trust `aurum --help` / the snapshot.
 
 ```text
 aurum <AUDIO_FILE> [OPTIONS]
@@ -10,9 +11,9 @@ aurum transcribe <AUDIO_FILE> [OPTIONS]
 aurum batch <INPUT> --output-dir <DIR> [OPTIONS]
 aurum cleanup [TEXT_FILE] [OPTIONS]     # alias: aurum flow
 aurum tts "Hello" --output-file out.wav
-aurum tts models
-aurum tts voices
-aurum doctor
+aurum tts models | voices | adapters | inspect | verify | add
+aurum doctor [--json]
+aurum cache status | verify | repair
 aurum support-bundle
 aurum completions zsh
 aurum man
@@ -32,6 +33,7 @@ aurum --version
 | `--output-file <PATH>` | stdout | Write to file |
 | `--timestamps` | off | Request segments (implied by `srt`) |
 | `--allow-unreliable-timestamps` | off | Force SRT when the route does not guarantee timestamps |
+| `--openrouter-stt-mode auto\|chat\|transcriptions` | `auto` | OpenRouter route only; unknown models fail closed in `auto` |
 | `--cleanup <style>` | config / `raw` | `raw` \| `clean` \| `bullets` \| `professional` \| `summary` |
 | `--cleanup-provider <p>` | `rules` | `rules` \| `openrouter` |
 | `--cleanup-model <id>` | OpenRouter default | LLM cleanup model |

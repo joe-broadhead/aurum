@@ -4,7 +4,6 @@
 //! decides when to decode, how to stabilize prefixes, and how to discard
 //! superseded results.
 
-use crate::audio::WHISPER_SAMPLE_RATE;
 use crate::cancel::CancelFlag;
 use crate::pcm::PcmBuffer;
 use crate::window::{PartialClock, PartialWindowPolicy};
@@ -347,17 +346,8 @@ fn longest_common_prefix<'a>(a: &'a str, b: &'a str) -> &'a str {
     &a[..end]
 }
 
-/// Migration note: [`PartialWindowPolicy`] / [`PartialClock`] remain supported
-/// for simple host loops. Prefer [`PartialSession`] for production partial UX.
-#[inline]
-pub fn legacy_policy_dictation() -> PartialWindowPolicy {
-    PartialWindowPolicy::dictation()
-}
-
-/// Suggested samples for ~1 s of audio at whisper rate.
-pub fn samples_per_second() -> usize {
-    WHISPER_SAMPLE_RATE as usize
-}
+// Prefer [`PartialSession`] for production partial UX; hosts may still use
+// [`PartialWindowPolicy::dictation`] / [`PartialClock`] directly.
 
 #[cfg(test)]
 mod tests {

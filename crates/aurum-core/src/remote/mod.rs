@@ -18,7 +18,6 @@ mod wire_format;
 
 pub use client::{
     map_http_status, validate_endpoint, HardenedHttpClient, RemoteEndpoint, RemotePolicy,
-    DEFAULT_OPENROUTER_ORIGIN,
 };
 pub use interrupt::{read_body_limited_with_op, send_with_op};
 pub use limits::{

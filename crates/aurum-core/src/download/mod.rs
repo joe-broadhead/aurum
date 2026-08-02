@@ -1,6 +1,11 @@
-//! Shared verify-before-publish artifact downloader (JOE-1591).
+//! Shared verify-before-publish artifact downloader helpers (JOE-1591).
 //!
-//! Used by STT and TTS catalogues so download/trust policy is identical.
+//! **Status (honest):** STT (`model/`) and TTS (`tts/catalogue.rs`) still use
+//! their own download loops for progress UX and HF-specific redirects. This
+//! module is the shared **policy primitives** path (`download_byte_cap`,
+//! digest/spec types, and optional `download_verified` for hosts that want a
+//! single pipeline). Do not claim full catalogue unification until both call
+//! sites route through `download_verified`.
 
 use crate::error::{EnvironmentError, ProviderError, Result};
 use futures_util::StreamExt;

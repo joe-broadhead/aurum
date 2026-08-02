@@ -63,15 +63,15 @@ Unknown models with `auto` **fail closed** — set mode explicitly; do not inven
 - Chat multimodal / many remote routes: SRT **refused** unless `--allow-unreliable-timestamps`.
 - Prefer `-o txt` or `-o json` when unsure.
 
-### Long-form remote
+### Long-form remote (JOE-2212)
 
-Very long lectures can hit remote segment limits (~8k chars) or truncate on some
-full-file paths. Prefer:
+Remote OpenAI / OpenRouter / xAI STT **automatically** splits audio into ~210s
+windows, runs each request, and stitches text + offset segments. Short files stay
+single-request.
 
-1. Local whisper for full long-form offline, or
-2. Shorter chunks until automatic chunk-and-stitch ships (v0.0.21 track),
-
-and say so honestly if the user hits errors.
+- Override: `AURUM_REMOTE_STT_CHUNK_SECS` (positive seconds).
+- Cancel between chunks is honoured via `TranscriptionOptions.cancel`.
+- Prefer local whisper when the user wants fully offline long-form.
 
 ## Cleanup after STT
 

@@ -117,7 +117,7 @@ When `local_only` is set on the runtime/validated config (CLI offline flag and l
 | Max remote upload (STT) | ~24 MB compressed |
 | Max TTS characters | 5000 (`[tts].max_chars`) |
 | TTS timeout | 120000 ms (`[tts].timeout_ms`) |
-| TTS speaking rate | 1.0, allowed range (0, 4] |
+| TTS speaking rate | 1.0, allowed range `0.5..=2.0` (CLI clamps the same) |
 
 Whisper special tokens such as `[BLANK_AUDIO]` are stripped. Segment timestamps
 are clamped to audio duration.

@@ -191,11 +191,6 @@ impl ProviderBuildContext {
         self.api_key.is_some()
     }
 
-    /// Deprecated alias: prefer [`Self::api_key_cloned`].
-    #[deprecated(note = "use api_key_cloned() — does not return plaintext")]
-    pub fn api_key_exposed(&self) -> Option<SecretString> {
-        self.api_key_cloned()
-    }
 }
 
 impl std::fmt::Debug for ProviderBuildContext {

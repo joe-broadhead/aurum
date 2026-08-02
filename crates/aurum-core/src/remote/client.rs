@@ -4,19 +4,12 @@
 //! [`ProviderHttpPolicy`]. Timeouts, proxy, loopback, and custom-endpoint flags
 //! remain on [`RemotePolicy`].
 
-use super::policy::{
-    normalize_request_path, OpenRouterHttpPolicy, ProviderHttpPolicy, OPENROUTER_ORIGIN,
-};
+use super::policy::{normalize_request_path, OpenRouterHttpPolicy, ProviderHttpPolicy};
 use crate::error::{ProviderError, Result, UserError};
 use reqwest::{Client, Method, RequestBuilder, StatusCode};
 use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
-
-/// Official OpenRouter HTTPS origin (credentialed default).
-///
-/// Prefer [`super::policy::OPENROUTER_ORIGIN`]; kept for existing imports.
-pub const DEFAULT_OPENROUTER_ORIGIN: &str = OPENROUTER_ORIGIN;
 
 /// Validated remote endpoint with trust classification.
 #[derive(Debug, Clone)]

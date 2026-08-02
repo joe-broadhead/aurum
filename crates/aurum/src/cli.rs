@@ -414,24 +414,13 @@ pub struct CleanupArgs {
     )]
     pub style: Option<String>,
 
-    /// Alias for --style (matches transcribe flag naming).
-    #[arg(long = "cleanup", value_name = "STYLE")]
-    pub cleanup: Option<String>,
-
     /// Cleanup backend: rules (default) or openrouter.
     #[arg(long = "provider", value_name = "rules|openrouter")]
     pub provider: Option<String>,
 
-    /// Alias for --provider.
-    #[arg(long = "cleanup-provider", value_name = "rules|openrouter")]
-    pub cleanup_provider: Option<String>,
-
     /// Model when provider is openrouter.
     #[arg(long = "model", value_name = "MODEL")]
     pub model: Option<String>,
-
-    #[arg(long = "cleanup-model", value_name = "MODEL")]
-    pub cleanup_model: Option<String>,
 
     /// Output format for structured result.
     #[arg(short = 'o', long = "output", value_name = "txt|json", value_parser = ["txt", "json"])]
@@ -1175,26 +1164,23 @@ async fn run_cleanup_cmd(cli: CleanupArgs) -> Result<()> {
     init_tracing(cli.verbose);
     let mut cfg = Config::load()?;
 
-    // Prefer explicit cleanup flags; style defaults to `clean` for this subcommand
-    // when neither CLI nor non-raw config is set — operators expect cleanup to do something.
-    let style_raw =
-        cli.style
-            .as_deref()
-            .or(cli.cleanup.as_deref())
-            .unwrap_or(if cfg.cleanup_style == "raw" {
-                "clean"
-            } else {
-                cfg.cleanup_style.as_str()
-            });
+    // Style defaults to `clean` for this subcommand when config is still `raw` —
+    // operators expect `aurum cleanup` to do something without extra flags.
+    let style_raw = cli
+        .style
+        .as_deref()
+        .unwrap_or(if cfg.cleanup_style == "raw" {
+            "clean"
+        } else {
+            cfg.cleanup_style.as_str()
+        });
     let provider_raw = cli
         .provider
         .as_deref()
-        .or(cli.cleanup_provider.as_deref())
         .unwrap_or(cfg.cleanup_provider.as_str());
     let model = cli
         .model
         .as_deref()
-        .or(cli.cleanup_model.as_deref())
         .map(|s| s.to_string())
         .or_else(|| cfg.cleanup_openrouter_model.clone());
 

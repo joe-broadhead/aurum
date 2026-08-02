@@ -1149,9 +1149,6 @@ fn validate_tts_provider(name: &str) -> Result<()> {
     }
 }
 
-/// On-disk / pre-merge configuration schema (raw).
-pub type RawConfig = ConfigFile;
-
 /// Configuration that has passed [`Config::validate`] (JOE-1779 / JOE-1654).
 #[derive(Clone)]
 pub struct ValidatedConfig {

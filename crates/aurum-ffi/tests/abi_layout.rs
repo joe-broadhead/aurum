@@ -8,7 +8,7 @@ use std::mem;
 
 // Keep in sync with include/aurum.h
 const HEADER_ABI_VERSION: u32 = 2;
-const HEADER_ABI_MIN_VERSION: u32 = 1;
+const HEADER_ABI_MIN_VERSION: u32 = 2;
 const HEADER_SAMPLE_RATE: u32 = 16000;
 
 #[test]
@@ -95,5 +95,5 @@ fn status_enum_codes_match_header_docs() {
     assert_eq!(0, 0); // AURUM_OK
                       // Ensure Rust Error mapping still uses the same integers via smoke of exports.
     assert_eq!(AURUM_ABI_VERSION, 2);
-    assert_eq!(HEADER_ABI_MIN_VERSION, 1);
+    assert_eq!(HEADER_ABI_MIN_VERSION, 2);
 }

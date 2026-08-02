@@ -656,7 +656,7 @@ impl AbiCapabilities {
             struct_size: std::mem::size_of::<Self>() as u32,
             struct_version: 1,
             abi_version: crate::types::AURUM_ABI_VERSION,
-            abi_min_version: 1,
+            abi_min_version: crate::types::AURUM_ABI_MIN_VERSION,
             has_stt: 1,
             has_tts: if cfg!(feature = "tts") { 1 } else { 0 },
             has_cleanup: 1,

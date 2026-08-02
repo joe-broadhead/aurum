@@ -2,12 +2,12 @@
 
 /// Monotonic C ABI version. Bump on any breaking C/header change.
 ///
-/// v2 adds jobs, capabilities, expanded statuses, doctor, and TTS jobs while
-/// keeping v1 blocking exports binary-compatible (JOE-1577).
+/// Current surface is ABI **2** (jobs, capabilities, expanded statuses, doctor,
+/// TTS jobs). Greenfield: no dual-support lag for older ABIs.
 pub const AURUM_ABI_VERSION: u32 = 2;
 
-/// Oldest ABI still supported by this build (v1 blocking surface).
-pub const AURUM_ABI_MIN_VERSION: u32 = 1;
+/// Oldest ABI supported by this build (equals current version on a greenfield cut).
+pub const AURUM_ABI_MIN_VERSION: u32 = 2;
 
 /// Required PCM sample rate (Hz), mono f32.
 pub const AURUM_SAMPLE_RATE: u32 = 16_000;

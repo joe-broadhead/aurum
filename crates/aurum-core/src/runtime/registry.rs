@@ -208,7 +208,7 @@ impl<T> ModelRegistry<T> {
         (removed, retained)
     }
 
-    /// Alias for [`Self::clear_idle`] — never forcibly drops active leases.
+    /// Clear idle entries only — never forcibly drops active leases.
     pub fn clear(&self) {
         let _ = self.clear_idle();
     }

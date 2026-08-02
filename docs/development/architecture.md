@@ -67,7 +67,7 @@ factories rather than adding CLI/engine `match` arms for every surface.
 
 Validated **config**, **capability preflight**, **versioned JSON DTOs**, and a
 stable **error category** map sit at the library boundary. See
-[compatibility.md](compatibility.md) and [migration-0.0.3.md](migration-0.0.3.md).
+[compatibility.md](compatibility.md).
 
 ## Performance & progressive STT (JOE-1574)
 

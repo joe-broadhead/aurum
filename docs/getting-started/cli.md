@@ -88,9 +88,9 @@ provider’s reviewed defaults (not local Kitten/`Luna`). See [TTS guide](../gui
 | Flag | Default | Description |
 |------|---------|-------------|
 | `TEXT_FILE` | stdin | Input text |
-| `-s, --style` / `--cleanup` | `clean`* | Cleanup style (`*` defaults to `clean` if config is `raw`) |
-| `--provider` / `--cleanup-provider` | `rules` | Backend |
-| `--model` / `--cleanup-model` | config | OpenRouter model |
+| `-s, --style` | `clean`* | Cleanup style (`*` defaults to `clean` if config is `raw`) |
+| `--provider` | `rules` | Backend |
+| `--model` | config | OpenRouter model |
 | `-o txt\|json` | `txt` | Output |
 | `--output-file` | stdout | Write path |
 

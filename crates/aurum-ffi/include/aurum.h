@@ -56,8 +56,8 @@ extern "C" {
 
 /** Monotonic ABI version; bump on breaking header changes. */
 #define AURUM_ABI_VERSION 2
-/** Oldest ABI still supported by this library. */
-#define AURUM_ABI_MIN_VERSION 1
+/** Oldest ABI supported by this library (greenfield: equals current). */
+#define AURUM_ABI_MIN_VERSION 2
 
 /** Required STT PCM sample rate (Hz), mono f32. */
 #define AURUM_SAMPLE_RATE 16000

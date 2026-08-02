@@ -496,9 +496,9 @@ struct Msg {
 #[derive(Debug, Deserialize)]
 struct CleanupEnvelope {
     cleaned_text: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    warnings: Vec<String>,
+    /// Provider may return warnings; accepted and discarded.
+    #[serde(default, rename = "warnings")]
+    _warnings: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

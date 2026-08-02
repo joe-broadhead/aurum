@@ -44,7 +44,7 @@ Constants: `STT_RESULT_SCHEMA_VERSION`, `TTS_META_SCHEMA_VERSION`, `ERROR_SCHEMA
 | Item | Value | Freeze rule |
 |------|-------|-------------|
 | `AURUM_ABI_VERSION` | **2** | Breaking C changes bump version + header |
-| `AURUM_ABI_MIN_VERSION` | **1** | Keep v1 blocking surface binary-compatible when practical |
+| `AURUM_ABI_MIN_VERSION` | **2** | Greenfield: equals current ABI (no dual-version lag) |
 | `AURUM_SAMPLE_RATE` | **16000** | PCM contract |
 | Jobs / cleanup / doctor / capabilities | Present in ABI v2 | Additive status codes preferred |
 

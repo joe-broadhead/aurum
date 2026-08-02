@@ -595,6 +595,13 @@ pub unsafe extern "C" fn aurum_capabilities(out: *mut AurumCapabilitiesC) -> i32
                 "unsupported capabilities struct_version {host_ver} (need 1)"
             )));
         }
+        // When host reports a size, require exact match (no dual-size lag).
+        if host_size != 0 && host_size != caps.struct_size {
+            return Err(FfiError::invalid_arg(format!(
+                "capabilities struct_size mismatch: host={host_size} library={}",
+                caps.struct_size
+            )));
+        }
         unsafe {
             (*out).struct_size = caps.struct_size;
             (*out).struct_version = caps.struct_version;
@@ -606,7 +613,6 @@ pub unsafe extern "C" fn aurum_capabilities(out: *mut AurumCapabilitiesC) -> i32
             (*out).has_jobs = caps.has_jobs;
             (*out).has_doctor = caps.has_doctor;
             (*out).sample_rate_hz = caps.sample_rate_hz;
-            let _ = host_size; // accepted for forward compat
         }
         Ok(())
     })

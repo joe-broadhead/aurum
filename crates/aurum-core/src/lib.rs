@@ -113,7 +113,7 @@ pub use cleanup::{
     CleanupProviderKind, CleanupReport, CleanupResult, CleanupStyle, OpenRouterCleanup,
     RulesCleanup, SegmentCleanupPolicy, TextCleanup,
 };
-pub use config::{Config, EffectiveConfigDiagnostic, RawConfig, ValidatedConfig};
+pub use config::{Config, ConfigFile, EffectiveConfigDiagnostic, ValidatedConfig};
 pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_SCHEMA_VERSION};
 pub use domain::{FiniteDurationSecs, ModelId, SampleRateHz};
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};

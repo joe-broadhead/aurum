@@ -64,8 +64,6 @@ impl ErrorCategory {
 }
 
 /// Top-level error type used across the core library and CLI.
-///
-/// Prefer the [`AurumError`] alias in new code.
 #[derive(Debug, Error)]
 pub enum TranscriptionError {
     #[error("{0}")]
@@ -81,7 +79,7 @@ pub enum TranscriptionError {
     Internal(String),
 }
 
-/// Preferred name for the crate-wide error type (JOE-1611).
+/// Synonym for [`TranscriptionError`] (JOE-1611).
 pub type AurumError = TranscriptionError;
 
 #[derive(Debug, Error)]
@@ -233,7 +231,7 @@ pub enum ProviderError {
 }
 
 impl TranscriptionError {
-    /// Coarse group label (backward compatible).
+    /// Coarse group label for exit codes and ErrorDto category.
     pub fn category(&self) -> &'static str {
         match self {
             Self::User(_) => "user",

@@ -244,16 +244,10 @@ Arguments:
 Options:
   -s, --style <raw|clean|bullets|professional|summary>
           Cleanup style (default: clean for this subcommand, or config)
-      --cleanup <STYLE>
-          Alias for --style (matches transcribe flag naming)
       --provider <rules|openrouter>
           Cleanup backend: rules (default) or openrouter
-      --cleanup-provider <rules|openrouter>
-          Alias for --provider
       --model <MODEL>
           Model when provider is openrouter
-      --cleanup-model <MODEL>
-          
   -o, --output <txt|json>
           Output format for structured result [possible values: txt, json]
       --output-file <PATH>

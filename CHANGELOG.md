@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   migration (canonical `[stt]` + `[providers.*]` only; unknown top-level
   sections fail closed); drop OpenRouter `X-Title` header alias; rename cache
   cheap-status `Legacy` → `Present`; sweep only `.aurum.partial` leftovers.
+- **Deeper greenfield strip:** `AURUM_ABI_MIN_VERSION = 2` (no ABI v1 lag);
+  remove `aurum cleanup` dual flag aliases (`--cleanup` / `--cleanup-provider` /
+  `--cleanup-model` on that subcommand only — STT still uses `--cleanup*`);
+  export `ConfigFile` instead of `RawConfig`; delete `migration-0.0.3.md`;
+  FFI capabilities `struct_size` mismatch fails closed.
 
 ### Added
 

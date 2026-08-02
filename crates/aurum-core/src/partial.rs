@@ -346,9 +346,6 @@ fn longest_common_prefix<'a>(a: &'a str, b: &'a str) -> &'a str {
     &a[..end]
 }
 
-// Prefer [`PartialSession`] for production partial UX; hosts may still use
-// [`PartialWindowPolicy::dictation`] / [`PartialClock`] directly.
-
 #[cfg(test)]
 mod tests {
     use super::*;

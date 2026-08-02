@@ -284,7 +284,8 @@ impl AurumEngine {
 
     /// Local STT provider bound to this engine's pool and governor (JOE-1784).
     ///
-    /// Prefer [`Self::stt_provider`] with [`ProviderId::local`] for new code.
+    /// Equivalent to [`Self::stt_provider`] with [`ProviderId::local`] plus
+    /// local-only convenience defaults.
     pub fn local_whisper(&self) -> Result<LocalWhisperProvider> {
         self.ensure_open()?;
         Ok(LocalWhisperProvider::with_runtime(

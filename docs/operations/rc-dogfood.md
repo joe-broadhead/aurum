@@ -1,12 +1,12 @@
 # RC multi-platform dogfood checklist (JOE-1897)
 
-**Document version:** 1.0  
+**Document version:** 1.1  
 **Tier A platforms:** macOS arm64, Linux x86_64, Windows x86_64  
 See [platform-support.md](platform-support.md).
 
 ## Purpose
 
-During a 1.0 RC interval, operators run this checklist on **every Tier A
+During a production RC interval (toward **v0.0.21**), operators run this checklist on **every Tier A
 platform** (or CI automates the green cells). Results fill the evidence
 template for the RC exit report.
 
@@ -14,7 +14,7 @@ template for the RC exit report.
 
 ```bash
 # Automated subset (doctor, cache, freeze check, clean-install smoke when possible)
-./scripts/rc_dogfood_checklist.sh --tag v0.0.16 --out dist/rc-dogfood
+./scripts/rc_dogfood_checklist.sh --tag v0.0.20 --out dist/rc-dogfood
 
 # CI job `rc-dogfood-smoke` runs the automated subset on Linux PR/master.
 ```

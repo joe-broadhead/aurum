@@ -1,13 +1,10 @@
-# Explicit remote STT
+# Explicit remote (pointer)
 
-Only when the user asks for OpenRouter / cloud STT:
+Remote STT/TTS is fully documented in **`skills/aurum-speech/`**:
 
-```bash
-export OPENROUTER_API_KEY=...   # do not echo into chat
-aurum file.wav --provider openrouter
-aurum file.wav --provider openrouter --openrouter-stt-mode transcriptions
-```
+- STT matrix: `../aurum-speech/references/stt.md`
+- TTS matrix: `../aurum-speech/references/tts.md`
+- Hard rules: `../aurum-speech/references/do-not.md`
 
-- LLM-assisted paths may have **unreliable timestamps** — do not treat as dedicated ASR.
-- Prefer `-o txt` or `-o json` unless `--allow-unreliable-timestamps` or a dedicated ASR mode is used.
-- Never log the API key.
+Only when the user asks for cloud speech, and only with an explicit
+`--provider` plus the matching env key. Never select remote because a key exists.

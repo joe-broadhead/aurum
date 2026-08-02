@@ -55,7 +55,7 @@ Copy for each review engagement (no confidential details in public repos):
 
 ### Disposition rules (JOE-1655)
 
-* **Critical / High:** must be fixed and independently retested before 1.0.
+* **Critical / High:** must be fixed and independently retested before the **v0.0.21** assurance cut.
 * **Medium:** reviewed disposition + target date allowed if residual risk accepted.
 * **Low:** backlog OK with owner.
 

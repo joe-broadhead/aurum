@@ -1,4 +1,6 @@
-# Local STT
+# Local STT (pointer)
+
+Prefer **`skills/aurum-speech/references/stt.md`** for the full matrix.
 
 ```bash
 aurum meeting.m4a
@@ -12,4 +14,3 @@ aurum meeting.m4a --cleanup clean
 - Default model: `base` (unchanged by profiles unless `--profile` is passed).
 - `--model` always overrides `--profile`.
 - ffmpeg is required for non-16 kHz mono WAV inputs.
-- Do not pass API keys for local STT.

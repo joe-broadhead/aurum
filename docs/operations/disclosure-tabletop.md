@@ -2,7 +2,7 @@
 
 **Document version:** 1.0  
 **Purpose:** Rehearse the vulnerability response path without live secrets.  
-**Audience:** maintainers + external reviewers preparing 1.0 RC evidence.
+**Audience:** maintainers + external reviewers preparing **v0.0.21** RC evidence.
 
 ## Tabletop script (sample scenario)
 

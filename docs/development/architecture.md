@@ -57,7 +57,7 @@ factories rather than adding CLI/engine `match` arms for every surface.
 
 1. **CLI owns UX** — progress, first-run tips, OpenRouter SRT policy, TTS overwrite policy, batch manifests, support bundles  
 2. **Core owns truth** — providers return normalized results + honesty fields  
-3. **FFI owns a narrow embed surface** — PCM, preload, cancel, rules cleanup, local TTS jobs, doctor/capabilities ([guide](../library/ffi.md)); contracts remain provisional until 1.0  
+3. **FFI owns a narrow embed surface** — PCM, preload, cancel, rules cleanup, local TTS jobs, doctor/capabilities ([guide](../library/ffi.md)); contracts remain provisional on 0.0.x (remote providers are not on the C ABI)  
 4. **Fail closed** — bad magic, oversized audio, missing keys, offline missing models/voices, bad SHA-256  
 5. **No default network** except explicit model/voice download or remote STT provider  
 6. **ASR ≠ cleanup ≠ TTS** — separate stages and modules  

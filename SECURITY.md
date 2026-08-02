@@ -11,8 +11,9 @@ public issues or pull requests.
 
 ## Disclosure rehearsal (JOE-1638 / JOE-1890)
 
-Before 1.0, maintainers rehearse the vulnerability response path at least once
-per major line (tabletop is acceptable when no live issue exists):
+On the continuous 0.0.x line (and before each production-assurance cut such as
+**v0.0.21**), maintainers rehearse the vulnerability response path at least once
+(tabletop is acceptable when no live issue exists):
 
 1. **Receive** — private advisory or maintainer-only channel; acknowledge within
    a working day when possible.

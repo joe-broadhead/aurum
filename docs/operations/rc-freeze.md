@@ -1,11 +1,12 @@
-# 1.0 RC compatibility freeze inventory (JOE-1896)
+# RC compatibility freeze inventory (JOE-1896) — v0.0.21 programme
 
-**Document version:** 1.0  
-**Freeze anchor package version:** `0.0.16` (this cut begins the RC inventory)  
-**Parent epic:** [JOE-1655](https://linear.app/joe-broadhead/issue/JOE-1655)
+**Document version:** 1.1  
+**Freeze anchor package version:** `0.0.16` (inventory first introduced); current product tip **0.0.20**  
+**Parent epic:** [JOE-1655](https://linear.app/joe-broadhead/issue/JOE-1655) (retargeted to **v0.0.21**)
 
-This inventory names the **public surfaces frozen for a 1.0 RC interval**.
-Pre-1.0 0.0.x still allows additive patches; **removing or renaming** a frozen
+This inventory names the **public surfaces frozen for a production RC interval**
+toward the **v0.0.21** assurance cut (formerly labelled “1.0 RC”). On the continuous
+0.0.x line, additive patches remain allowed; **removing or renaming** a frozen
 item during RC **resets the freeze clock** (see § Breaking-change policy).
 
 See also [compatibility.md](../development/compatibility.md) for 0.0.x classes.

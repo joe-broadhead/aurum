@@ -29,10 +29,11 @@ aurum tests/fixtures/silence.wav --model tiny -o json
 | Message | Meaning |
 |---------|---------|
 | API key is missing | Set `OPENROUTER_API_KEY` |
-| guardrail restrictions / data policy | **Privacy prerequisite:** https://openrouter.ai/settings/privacy |
-| No endpoints found that support input audio | Model is text-only — pick an audio-capable id |
+| No endpoints available matching your guardrail restrictions | **Privacy prerequisite:** https://openrouter.ai/settings/privacy |
+| No endpoints found that support input audio | Model is text-only — pick a reviewed audio-capable id |
 | looks like a local whisper model | Don’t pass `tiny`/`base` with `--provider openrouter` |
 | SRT refused | Use `-o json` or `--allow-unreliable-timestamps` |
+| model not in reviewed registry | Use a listed id, or set `--openrouter-stt-mode chat` / `transcriptions` explicitly |
 
 OpenRouter account privacy/guardrails must allow the model, or **all** endpoints
 can fail. Re-probe catalogues after policy changes:
@@ -40,7 +41,23 @@ can fail. Re-probe catalogues after policy changes:
 
 ## OpenRouter SRT refused
 
-Expected. LLM timestamps are unreliable. Prefer `-o txt` or `-o json`.
+Expected for **llm_assisted** (chat multimodal) routes. Prefer dedicated ASR models
+from the reviewed registry for SRT, or use `-o txt` / `-o json`.
+
+## Remote STT: segment too long / truncated long files
+
+First-party OpenAI/xAI paths reject a single segment when transcript text exceeds
+the max segment bound (~8k characters). Very long lectures may need external
+chunking until automatic chunk-and-stitch lands (tracked for v0.0.21). Prefer
+local whisper for full long-form offline, or shorter remote segments.
+
+## Other remote providers
+
+| Provider | Typical issues |
+|----------|----------------|
+| `openai` | Missing `OPENAI_API_KEY`; use reviewed STT/TTS model ids |
+| `elevenlabs` | TTS only; requires explicit `voice_id` (not Kitten aliases) |
+| `xai` | Experimental; official `/v1/stt` + `/v1/tts` only; voices `eve\|ara\|leo\|rex\|sal` |
 
 ## Metal / abort on process exit (library)
 

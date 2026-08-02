@@ -9,7 +9,7 @@
 2. **Yank crates.io** only for safety-critical broken builds; prefer advisory + new tag.
 3. **Cosign/SBOM** of the superseding tag are the new trust root.
 4. **Model pin revoke** follows [model-revocation.md](model-revocation.md).
-5. **Human sign-off** is required for 1.0 RC exit — automation cannot self-declare.
+5. **Human sign-off** is required for **v0.0.21** RC exit — automation cannot self-declare.
 
 ## Scenarios rehearsed
 
@@ -40,7 +40,7 @@
 
 Writes `dist/security-rehearsal/RC_ROLLBACK_REHEARSAL.md` with sign-off fields.
 
-## Human sign-off (1.0 RC exit)
+## Human sign-off (v0.0.21 RC exit)
 
 | Field | Value |
 |-------|--------|
@@ -51,7 +51,7 @@ Writes `dist/security-rehearsal/RC_ROLLBACK_REHEARSAL.md` with sign-off fields.
 | Independent verify run URL | |
 | Residual risks accepted | |
 | **Approver name** | |
-| **Approve 1.0 cut?** | yes / no |
+| **Approve v0.0.21 cut?** | yes / no |
 | Date (UTC) | |
 
 Automation **must not** fill the approver fields.

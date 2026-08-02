@@ -29,10 +29,14 @@ aurum tests/fixtures/silence.wav --model tiny -o json
 | Message | Meaning |
 |---------|---------|
 | API key is missing | Set `OPENROUTER_API_KEY` |
-| guardrail restrictions / data policy | Fix https://openrouter.ai/settings/privacy |
+| guardrail restrictions / data policy | **Privacy prerequisite:** https://openrouter.ai/settings/privacy |
 | No endpoints found that support input audio | Model is text-only — pick an audio-capable id |
 | looks like a local whisper model | Don’t pass `tiny`/`base` with `--provider openrouter` |
 | SRT refused | Use `-o json` or `--allow-unreliable-timestamps` |
+
+OpenRouter account privacy/guardrails must allow the model, or **all** endpoints
+can fail. Re-probe catalogues after policy changes:
+`./scripts/probe_provider_catalogues.sh --live` (JOE-2213).
 
 ## OpenRouter SRT refused
 

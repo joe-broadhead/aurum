@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-2213 — Provider catalogue probe:** offline/live probe for reviewed STT/TTS
+  registries and product defaults (`scripts/probe_provider_catalogues.sh`,
+  example `probe_provider_catalogues`, workflow_dispatch CI job). Fail closed if
+  a default is missing from its static registry; live mode checks OpenRouter
+  speech + OpenAI model lists without printing secrets. Docs cover OpenRouter
+  privacy prerequisite and demotion rules (JOE-1978 residual called out).
+
 ## [0.0.20] - 2026-08-02
 
 Post–security-sign-off product cut: live OpenRouter TTS catalogue refresh and

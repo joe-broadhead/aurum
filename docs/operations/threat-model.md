@@ -1,7 +1,7 @@
 # Threat model and control matrix (JOE-1637 / JOE-1893)
 
 **Document version:** 2.0 (Group J)  
-**Applies to:** Aurum v0.0.x toward 1.0  
+**Applies to:** Aurum v0.0.x toward the **v0.0.21** production-assurance cut  
 **Owner:** maintainer (joe-broadhead/aurum)
 
 This document supersedes the v1 profile sketch with a **versioned control

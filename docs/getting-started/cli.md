@@ -24,14 +24,14 @@ aurum --version
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--provider local\|openrouter` | `local` | ASR backend |
-| `--model <NAME>` | `base` (local) | Local ggml name or OpenRouter model id (wins over `--profile`) |
+| `--provider local\|openrouter\|openai\|xai` | `local` | ASR backend (`grok` config alias → `xai`) |
+| `--model <NAME>` | `base` (local) | Local ggml name or reviewed remote model id (wins over `--profile`) |
 | `--profile speed\|balance\|quality` | off | Intent mapping (JOE-1723); does not change the default when omitted |
 | `--language <CODE>` | `auto` | Language hint or auto-detect |
 | `-o, --output txt\|srt\|json` | `txt` | Output format |
 | `--output-file <PATH>` | stdout | Write to file |
 | `--timestamps` | off | Request segments (implied by `srt`) |
-| `--allow-unreliable-timestamps` | off | Force SRT on OpenRouter |
+| `--allow-unreliable-timestamps` | off | Force SRT when the route does not guarantee timestamps |
 | `--cleanup <style>` | config / `raw` | `raw` \| `clean` \| `bullets` \| `professional` \| `summary` |
 | `--cleanup-provider <p>` | `rules` | `rules` \| `openrouter` |
 | `--cleanup-model <id>` | OpenRouter default | LLM cleanup model |
@@ -64,9 +64,9 @@ Redacted offline diagnostics only (no audio, transcripts, or API keys).
 | Flag | Default | Description |
 |------|---------|-------------|
 | `TEXT` / `-` / `--input-file` | — | Exactly one UTF-8 text source |
-| `--provider` | `local` | Only `local` in MVP |
-| `--model` | `kitten-nano-int8` | TTS model pack id |
-| `--voice` | `Luna` | Voice alias |
+| `--provider` | `local` | `local` \| `openrouter` \| `openai` \| `elevenlabs` \| `xai` |
+| `--model` | local `kitten-nano-int8`; remote uses provider default | Local pack id or reviewed remote model id |
+| `--voice` | local `Luna`; remote uses provider default | Local alias or remote voice id (no cross-provider remap) |
 | `--language` | `en` | Language hint |
 | `-o, --output` | `wav` | Only `wav` |
 | `-O, --output-file` | required | Destination WAV path |
@@ -74,11 +74,12 @@ Redacted offline diagnostics only (no audio, transcripts, or API keys).
 | `--speaking-rate` | `1.0` | Clamped `0.5..=2.0` |
 | `--cleanup` | off | Rules-only `raw` \| `clean` |
 | `--timeout` | config / `120000` | Milliseconds |
-| `--local-only` | off | No download if pack missing |
+| `--local-only` | off | No download if pack missing (local only) |
 | `--emit-json` | off | Honesty JSON on stdout |
 | `-v` | off | Diagnostics |
 
-See [TTS guide](../guide/tts.md) for honesty JSON, cache pins, and license matrix.
+When only `--provider` is set for remote TTS, model/voice default to that
+provider’s reviewed defaults (not local Kitten/`Luna`). See [TTS guide](../guide/tts.md).
 
 ## Cleanup-only options
 
@@ -107,11 +108,13 @@ See [TTS guide](../guide/tts.md) for honesty JSON, cache pins, and license matri
 aurum models
 aurum interview.mp3 --model small-q5_1 --language en -o json
 aurum interview.mp3 --cleanup clean --cleanup-segments keep
-aurum interview.mp3 --provider openrouter --model openai/gpt-audio-mini
+aurum interview.mp3 --provider openrouter --model openai/whisper-large-v3
+aurum interview.mp3 --provider openai --model whisper-1
 echo "um hello" | aurum cleanup -s clean
 aurum cleanup notes.txt --style bullets -o json
 aurum tts "Hello from aurum" --output-file /tmp/a.wav --emit-json
 aurum tts --input-file prompt.txt -O /tmp/a.wav --voice Luna
+aurum tts "Hello" --provider openai --model tts-1 --voice alloy -O /tmp/oai.wav
 aurum tts models
 aurum tts voices
 ```

@@ -19,15 +19,18 @@ aurum talk.m4a --model tiny-q5_1
 aurum talk.m4a --model base
 ```
 
-## xAI / Grok (JOE-1942)
+## xAI / Grok (JOE-1942 / JOE-1976)
 
 | | |
 |--|--|
 | Auth | `XAI_API_KEY` or `[providers.xai]` |
 | Alias | config/CLI may use `grok` → canonical `xai` |
-| STT | REST multipart `/audio/transcriptions` |
-| TTS | REST `/audio/speech` (OpenAI-compatible body) |
-| Not in this vertical | Realtime/WebSocket voice |
+| STT | Official REST `POST /v1/stt` (product id `xai-stt`) |
+| TTS | Official REST `POST /v1/tts` (product id `xai-tts`) |
+| Voices | Reviewed: `eve` \| `ara` \| `leo` \| `rex` \| `sal` |
+| Not in this vertical | Realtime/WebSocket voice; OpenAI `/audio/*` paths; OpenAI voice ids |
+
+Tier is **experimental** until protected live smoke is retained.
 
 ```bash
 export XAI_API_KEY=...

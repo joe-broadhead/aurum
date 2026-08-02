@@ -9,7 +9,7 @@
 [![Release](https://img.shields.io/github/v/release/joe-broadhead/aurum?include_prereleases&logo=github)](https://github.com/joe-broadhead/aurum/releases)
 [![crates.io aurum-core](https://img.shields.io/crates/v/aurum-core.svg?logo=rust)](https://crates.io/crates/aurum-core)
 [![crates.io aurum-stt](https://img.shields.io/crates/v/aurum-stt.svg?logo=rust)](https://crates.io/crates/aurum-stt)
-[![docs.rs aurum-core](https://img.shields.io/docsrs/aurum-core?logo=docsdotrs)](https://docs.rs/aurum-core)
+[![docs.rs aurum-core](https://docs.rs/aurum-core)](https://docs.rs/aurum-core)
 
 </div>
 
@@ -27,12 +27,12 @@
 <div align="center">
 
 **Speech both ways. On-device by default.**
-No API key required · clean providers · optional cleanup styles · reusable **`aurum-core`**
+No API key required · local whisper + KittenTTS · optional remote providers · reusable **`aurum-core`**
 
 [Docs](https://joe-broadhead.github.io/aurum/) ·
 [Quickstart](docs/getting-started/quickstart.md) ·
+[Providers](docs/guide/providers.md) ·
 [Library](docs/library/integration.md) ·
-[Cleanup](docs/guide/cleanup.md) ·
 [Security](SECURITY.md)
 
 </div>
@@ -46,14 +46,14 @@ Aurum is an on-device **speech CLI** and **Rust library**:
 1. **STT** — audio file → text with **whisper.cpp** (Metal on macOS)
 2. Optionally **clean** the text (fillers, bullets, professional, summary)
 3. Emit **`txt`**, **`srt`**, or **`json`**
-4. **TTS** — `aurum tts "…"` → mono **WAV** on-device (KittenTTS ONNX; no API key)
+4. **TTS** — `aurum tts "…"` → mono **WAV** on-device (KittenTTS / Kokoro ONNX; no API key)
 
 Remote STT/TTS (`openrouter`, `openai`, `elevenlabs`, `xai`) is **optional and
 explicit** — never the default. Local whisper + Kitten remain zero-key defaults.
 See [provider matrix](docs/guide/provider-matrix.md) and
 [qualification](docs/operations/provider-qualification.md).
 
-> **v0.0.12** — Group G: formal SBOM (CycloneDX/SPDX), PROVENANCE.json verify, cargo-fuzz smoke, platform support matrix. Library API remains provisional on the 0.0.x line.
+> **v0.0.20** — post–security-sign-off product cut (provider platform + OpenRouter TTS catalogue refresh). Library API remains provisional on the **0.0.x** line. Next assurance cut is **v0.0.21** (not 1.0).
 
 ## Highlights
 
@@ -62,9 +62,9 @@ See [provider matrix](docs/guide/provider-matrix.md) and
 | **Local by default** | whisper.cpp STT + ONNX TTS — no API key |
 | **Fast first run** | Quantized STT e.g. `tiny-q5_1` (~32 MB); TTS pack ~26 MB |
 | **Batch** | `aurum batch` with resume manifests |
-| **Embeddable** | PCM STT API · `aurum-ffi` (STT + local TTS jobs) · library TTS |
+| **Embeddable** | PCM STT API · `aurum-ffi` (local STT + TTS jobs) · library TTS |
 | **Cleanup / flow** | On-device rules or OpenRouter LLM (`aurum cleanup`) |
-| **Local TTS** | `aurum tts` · 8 English voices · pinned SHA-256 pack |
+| **Local TTS** | `aurum tts` · Kitten + opt-in Kokoro · pinned SHA-256 packs |
 | **Honest remote** | Opt-in OpenRouter / OpenAI / ElevenLabs / xAI; SRT fail-closed when timestamps unreliable |
 | **Scriptable** | Exit codes · JSON · completions · man · support bundles |
 
@@ -89,7 +89,8 @@ aurum tts "Hello from aurum" -O /tmp/hello.wav
 aurum support-bundle -O /tmp/aurum-support.json
 ```
 
-Agent skills for coding agents: [`skills/`](skills/).
+Agent skills for coding agents: [`skills/`](skills/) — start with
+[`skills/aurum-speech/`](skills/aurum-speech/) for all STT/TTS work.
 
 ## Workspace
 
@@ -100,8 +101,9 @@ Agent skills for coding agents: [`skills/`](skills/).
 | [`aurum-ffi`](crates/aurum-ffi) | C ABI for native embeds ([`aurum.h`](crates/aurum-ffi/include/aurum.h)) |
 
 ```toml
-# Depend on the library (pin a commit or tag)
-aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.12" }
+# Prefer crates.io when published, or pin a git tag
+aurum-core = "0.0.20"
+# aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.20" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).
@@ -118,13 +120,15 @@ aurum tts "Hello" -O out.wav [--voice Luna]
 aurum tts models && aurum tts voices
 aurum support-bundle -O support.json
 aurum completions zsh
-aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
+# Opt-in remote examples:
+aurum <FILE> --provider openrouter --model openai/whisper-large-v3
+aurum tts "Hello" --provider openai --model tts-1 --voice alloy -O /tmp/oai.wav
 ```
 
 | Flag | Default | Notes |
 |------|---------|--------|
-| `--provider` | `local` | `local` \| `openrouter` |
-| `--model` | `base` (local) | e.g. `tiny-q5_1`, or an OpenRouter id |
+| `--provider` | `local` | STT: `local` \| `openrouter` \| `openai` \| `xai` · TTS also: `elevenlabs` |
+| `--model` | `base` (local STT) | ggml name, or a reviewed remote model id |
 | `--profile` | off | `speed` \| `balance` \| `quality` (opt-in; does not change default alone) |
 | `-o` / `--output` | `txt` | `txt` \| `srt` \| `json` |
 | `--cleanup` | `raw` (off) | `clean` \| `bullets` \| `professional` \| `summary` |
@@ -138,15 +142,19 @@ aurum <FILE> --provider openrouter --model google/gemini-2.5-flash-lite
 | Quickstart | [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md) |
 | CLI reference | [docs/getting-started/cli.md](docs/getting-started/cli.md) |
 | Providers | [docs/guide/providers.md](docs/guide/providers.md) |
+| Provider matrix | [docs/guide/provider-matrix.md](docs/guide/provider-matrix.md) |
 | Models | [docs/guide/models.md](docs/guide/models.md) |
 | Cleanup | [docs/guide/cleanup.md](docs/guide/cleanup.md) |
 | TTS | [docs/guide/tts.md](docs/guide/tts.md) |
 | Configuration | [docs/guide/configuration.md](docs/guide/configuration.md) |
 | Native embeds (FFI) | [docs/library/ffi.md](docs/library/ffi.md) |
 | Architecture | [docs/development/architecture.md](docs/development/architecture.md) |
+| Release gate | [docs/operations/release-gate.md](docs/operations/release-gate.md) |
 | Security | [SECURITY.md](SECURITY.md) |
 
 Site: **https://joe-broadhead.github.io/aurum/**
+
+## Docs site (local)
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
@@ -163,12 +171,19 @@ cargo test -p aurum-core --test local_integration -- --ignored
 
 ## Release
 
-Maintainer-only. Prepare → merge `release/x.y.z` → tag → multi-platform binaries. 
+Maintainer-only. Prepare → merge `release/x.y.z` → tag → multi-platform binaries.
 Details: [docs/development/release.md](docs/development/release.md).
 
-## Non-goals (v0.x)
+## Versioning
 
-Built-in microphone capture · speaker diarization · stable library API · Swift FFI.
+Aurum ships on a continuous **0.0.x** line. Production-assurance work formerly
+aimed at “1.0” is retargeted to **v0.0.21**. Pin tags or crates.io versions;
+do not assume a stable major version yet.
+
+## Non-goals (0.0.x)
+
+Built-in microphone capture · speaker diarization · stable library major API ·
+remote execution on the C ABI · multi-tenant isolation in one process.
 
 ## License
 

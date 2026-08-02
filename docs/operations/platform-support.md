@@ -1,6 +1,6 @@
 # Platform support matrix (JOE-1863)
 
-Aurum **v0.0.x** is pre-1.0. Tiers describe what we ship and test — not a 1.0
+Aurum ships continuous **0.0.x** releases. Tiers describe what we ship and test — not a frozen major
 guarantee. Use this matrix for install planning and clean-install qualification.
 
 ## Tiers
@@ -31,7 +31,7 @@ Use the smoke script on a fresh machine or empty cache:
 
 ```bash
 # From a release checkout or cloned tag:
-./scripts/clean_install_smoke.sh --from-release --version v0.0.13
+./scripts/clean_install_smoke.sh --from-release --version v0.0.20
 
 # Or source build (Tier B / CI):
 ./scripts/clean_install_smoke.sh --from-source

@@ -7,3 +7,4 @@
 - Paste secrets, audio files, or full transcripts into chat by default.
 - Claim WER/RTF numbers without a versioned report under `evals/` / bench output.
 - Expand FFI ABI casually — treat it as a stability boundary.
+- Improvise full STT/TTS provider advice here — use **`skills/aurum-speech/`**.

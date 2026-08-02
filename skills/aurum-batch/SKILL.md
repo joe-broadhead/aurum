@@ -1,11 +1,11 @@
 ---
 name: aurum-batch
-description: "Run Aurum bounded resumable multi-file transcription with versioned manifests. Use for folders of lectures, interviews, or voice notes."
+description: "Run Aurum bounded resumable multi-file transcription with versioned manifests. Use for folders of lectures, interviews, or voice notes. For single-file STT/TTS and providers, load skills/aurum-speech."
 license: MIT
 metadata:
   owner: "aurum"
   persona: "batch"
-  version: "0.0.4"
+  version: "0.0.20"
 ---
 
 # Aurum batch skill
@@ -13,6 +13,9 @@ metadata:
 ## Mission
 
 Process **collections** of audio with one model load, deterministic outputs, and honest partial success.
+
+Provider/model selection follows the same rules as single-file STT — see
+**`skills/aurum-speech/`** (local default; remote only with explicit provider + key).
 
 ## Flow
 
@@ -28,7 +31,9 @@ Process **collections** of audio with one model load, deterministic outputs, and
 - Do not clobber an existing manifest without `--resume`.
 - Report succeeded/failed/pending counts from the summary.
 - Keep outputs under `--output-dir`; do not write transcripts into the source tree by default.
+- Do not invent flags; see `aurum batch --help`.
 
 ## Load order
 
 - `references/workflow.md`
+- `../aurum-speech/references/stt.md` when choosing models/providers

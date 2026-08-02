@@ -1,8 +1,8 @@
 # Compatibility & deprecation (JOE-1612 / JOE-1780 / JOE-1896)
 
-**Boundary:** contracts for the **0.0.x** line. Pre-1.0 change stays
-**predictable and honest**. For the **1.0 RC freeze inventory** (frozen
-surfaces, break-reset policy, automated checks), see
+**Boundary:** contracts for the continuous **0.0.x** line. Change stays
+**predictable and honest**. For the **v0.0.21 RC freeze inventory** (frozen
+surfaces, break-reset policy, automated checks — formerly labelled “1.0 RC”), see
 [rc-freeze.md](../operations/rc-freeze.md).
 
 ## Classification
@@ -26,12 +26,13 @@ surfaces, break-reset policy, automated checks), see
 | Internal `postprocess`, download, remote client details | **internal** | May change without notice |
 | Experimental adapters / experimental STT models | **feature-gated / experimental** | Not part of the stability claim |
 
-## SemVer (pre-1.0 / 0.0.x)
+## SemVer (0.0.x continuous)
 
-Aurum currently iterates as **0.0.x** patch steps until a deliberate major step.
+Aurum iterates as **0.0.x** patch steps. A major `1.0.0` is **not** planned for
+the current programme; production-assurance work targets **v0.0.21**.
 
-- **PATCH (0.0.x):** bugfixes, docs, additive diagnostics, non-breaking DTO fields with defaults, evidence packs
-- **Breaking 0.x:** removed public items require a migration note and at least one release of deprecation when practical
+- **PATCH (0.0.x):** bugfixes, docs, additive diagnostics, non-breaking DTO fields with defaults, evidence packs, provider catalogue refresh
+- **Breaking 0.0.x:** removed public items require a migration note and at least one release of deprecation when practical
 
 ## Deprecation window
 

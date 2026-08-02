@@ -34,7 +34,7 @@ Operators must not infer crates.io or SLSA L3 guarantees from GitHub Release evi
 
 ```bash
 # After downloading all assets into ./release-assets
-export AURUM_EXPECT_TAG=v0.0.13
+export AURUM_EXPECT_TAG=v0.0.20
 export AURUM_EXPECT_COMMIT=<full git sha of the tag>
 # Cosign identity for the release workflow + tag (see table below)
 export AURUM_REQUIRE_COSIGN=1
@@ -93,7 +93,7 @@ the **tag** identity. Release notes for each GitHub Release print the exact stri
 mkdir -p dist/release-assets
 cp dist/sbom/* dist/release-assets/
 # copy binaries into dist/release-assets, then:
-./scripts/generate_provenance.sh dist/release-assets v0.0.13
+./scripts/generate_provenance.sh dist/release-assets v0.0.20
 # rebuild SHA256SUMS after provenance is written (see release.yml)
 # cosign sign-blob is performed only in GitHub Actions OIDC context
 ```

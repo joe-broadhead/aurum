@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/joe-broadhead/aurum/master/scripts/
 
 # Or from a clone:
 ./scripts/install.sh --from-release
-AURUM_VERSION=v0.0.4 ./scripts/install.sh --from-release
+AURUM_VERSION=v0.0.20 ./scripts/install.sh --from-release
 ```
 
 Default install directory: `~/.local/bin` (`AURUM_INSTALL_DIR` to override).

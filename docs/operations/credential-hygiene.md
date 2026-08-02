@@ -30,4 +30,4 @@ install. `scripts/check_security_tool_pins.sh` enforces this on workflow YAML.
 ### What this issue does not cover
 
 Formal keyless publishing, Sigstore/cosign, and SLSA attestation remain in the
-v1.0 assurance programme.
+v0.0.21 production-assurance programme (formerly labelled “1.0”).

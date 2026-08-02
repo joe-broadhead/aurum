@@ -6,7 +6,7 @@
 # From a clone:
 ./scripts/install.sh --from-release
 # Or pin:
-AURUM_VERSION=v0.0.4 ./scripts/install.sh --from-release
+AURUM_VERSION=v0.0.20 ./scripts/install.sh --from-release
 ```
 
 The installer downloads the platform asset, verifies `SHA256SUMS`, and installs to
@@ -47,4 +47,7 @@ aurum man | sudo tee /usr/local/share/man/man1/aurum.1
 ```bash
 aurum doctor
 aurum models
+aurum tts models
 ```
+
+Speech workflows: load `skills/aurum-speech/`.

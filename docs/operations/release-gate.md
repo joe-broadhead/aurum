@@ -1,7 +1,8 @@
 # Release gate (JOE-1640 / JOE-1578)
 
-Aurum **v0.0.x** is pre-1.0. This gate defines what must be true before tagging any
-release, and what additional freezes apply before a future **1.0**.
+Aurum ships on a continuous **0.0.x** line. This gate defines what must be true
+before tagging any release, and what additional freezes apply for the
+**v0.0.21 production-assurance cut** (the programme formerly labelled “1.0”).
 
 ## Automated gate (every tag)
 
@@ -62,11 +63,11 @@ Before tagging when remote providers changed:
 
 See also [provenance.md](provenance.md), [platform-support.md](platform-support.md), [fuzzing.md](fuzzing.md), [reproducibility.md](reproducibility.md), [qe-depth.md](qe-depth.md), [model-revocation.md](model-revocation.md), [disclosure-tabletop.md](disclosure-tabletop.md), [rc-freeze.md](rc-freeze.md), [rc-dogfood.md](rc-dogfood.md), [rc-rollback.md](rc-rollback.md), [rc-exit.md](rc-exit.md).
 
-## Compatibility freeze (toward 1.0)
+## Compatibility freeze (toward v0.0.21)
 
 Full inventory: **[rc-freeze.md](rc-freeze.md)** (JOE-1896).
 
-Before declaring 1.0, freeze and test:
+Before declaring the **v0.0.21** assurance cut, freeze and test:
 
 - Supported CLI commands/flags/exit categories
 - Config schema + precedence
@@ -79,7 +80,7 @@ Documented provisional surfaces remain experimental until listed in
 [compatibility.md](../development/compatibility.md). Breaking a frozen surface
 during RC **resets the freeze**.
 
-## RC dogfood (1.0)
+## RC dogfood (v0.0.21)
 
 Full checklist: **[rc-dogfood.md](rc-dogfood.md)** (JOE-1897).
 
@@ -96,7 +97,7 @@ Full rehearsal: **[rc-rollback.md](rc-rollback.md)** (JOE-1895).
 1. Yank crates.io versions only if safety-critical (prefer yank + advisory).
 2. GitHub Release: publish a fixed tag `vX.Y.Z+1` — do not rewrite tags.
 3. Document migration in `docs/development/migration-*.md`.
-4. Human sign-off required for 1.0 cut (automation cannot self-declare).
+4. Human sign-off required for the **v0.0.21** assurance cut (automation cannot self-declare).
 
 ## Support matrix (tiers)
 

@@ -12,10 +12,10 @@ It does **not** replace the qualified human assessment required by JOE-1920.
 
 | ID | Issue | Severity | Disposition | Owner | Residual risk | Target |
 |----|-------|----------|-------------|-------|---------------|--------|
-| F-003 | JOE-1916 | Medium | **Fixed** (PR #54) | Maintainer | Residual: untrusted `--notes` still free-form after scrub; operators must not paste secrets into notes. | Accepted for 0.0.x / 1.0 freeze |
+| F-003 | JOE-1916 | Medium | **Fixed** (PR #54) | Maintainer | Residual: untrusted `--notes` still free-form after scrub; operators must not paste secrets into notes. | Accepted for 0.0.x / v0.0.21 freeze |
 | F-004 | JOE-1917 | Medium | **Fixed** (PR #55) | Maintainer | Residual: process-level governor does not replace OS cgroup limits in multi-tenant hosts (unsupported deployment). | Accepted; multi-tenant remains unsupported |
 | F-005 | JOE-1918 | Medium | **Fixed** (PR #56) | Maintainer | Residual: hostile local filesystem races outside documented BYOM trust modes remain out of scope for Tier A local use. | Accepted under BYOM trust-mode docs |
-| F-006 | JOE-1919 | Medium | **Fixed for 1.0 evidence gap stated in review** (PR #57) with **accepted residual** | Maintainer | Residual: full interoperable SLSA attestations per artifact and crates.io package provenance parity are **not** claimed; GitHub Release cosign + full-SHA PROVENANCE are required. | Track post-1.0 / optional hardening; not a High reopen |
+| F-006 | JOE-1919 | Medium | **Fixed for production-assurance evidence gap stated in review** (PR #57) with **accepted residual** | Maintainer | Residual: full interoperable SLSA attestations per artifact and crates.io package provenance parity are **not** claimed; GitHub Release cosign + full-SHA PROVENANCE are required. | Track post-v0.0.21 / optional hardening; not a High reopen |
 
 ## Detail
 
@@ -52,7 +52,7 @@ See also [external-review-disposition-2026-08-02.md](external-review-disposition
 
 ### F-006 — SBOM / provenance identity (JOE-1919)
 
-**Finding:** provenance/commit binding too loose for 1.0 evidence claims.
+**Finding:** provenance/commit binding too loose for production-assurance evidence claims.
 
 **Fix:** require full 40-char commit in generate/verify; richer PROVENANCE metadata
 (PR #57). Prefix/short-SHA matching is rejected in `verify_release_assets.sh`.
@@ -79,4 +79,4 @@ Provider-platform remediation (JOE-1975–1980) and freeze checklist:
 ## Sign-off hooks
 
 - Publishable human summary: update Linear JOE-1920 document after freeze tag exists.
-- RC exit report: link this file + tag SHA when generating `generate_rc_exit_report.sh` for 1.0.
+- RC exit report: link this file + tag SHA when generating `generate_rc_exit_report.sh` for **v0.0.21**.

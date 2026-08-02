@@ -12,36 +12,39 @@ Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 
 | Area | API |
 |------|-----|
-| ASR | `TranscriptionProvider`, `LocalWhisperProvider`, `OpenRouterProvider` |
+| ASR | `TranscriptionProvider`, local whisper, OpenRouter / OpenAI / xAI remotes |
+| Engine | `AurumEngine`, `ValidatedConfig`, provider registry / factories |
 | Audio | `load_audio`, `AudioInput::from_pcm`, safety limits |
 | PCM / mic hosts | `PcmBuffer`, `transcribe_pcm`, `preload`, `local_only` |
 | Partials (host-driven) | `PartialWindowPolicy`, `PartialClock` |
-| Cancel | `CancelFlag` in `TranscriptionOptions` |
+| Cancel | `CancelFlag` / `OpContext` in options |
 | Models | catalogue, download, pins, progress callbacks |
 | Cleanup | `RulesCleanup`, `OpenRouterCleanup`, `apply_cleanup*` |
 | Output | `format_result` — txt / srt / json |
 | Post-ASR | special-token strip, timestamp clamp |
-| TTS | `LocalTtsProvider`, catalogue, WAV write (feature `tts`, default on) |
+| TTS | local Kitten/Kokoro + remote OpenRouter / OpenAI / ElevenLabs / xAI (feature `tts`, default on) |
 
 ```toml
-aurum-core = "0.0.17"
-# or git tag = "v0.0.17"
+aurum-core = "0.0.20"
+# or git tag = "v0.0.20"
 ```
 
-See [Integration](integration.md).
+See [Integration](integration.md) and [AurumEngine](engine.md).
 
 ## Stability
 
-!!! warning "Experimental Rust API"
-    Until `aurum-core` `0.1.0`, expect breaking changes. Pin a git **tag** or **rev**.
+!!! warning "Provisional Rust API (0.0.x)"
+    On the continuous **0.0.x** line, expect breaking changes between patches when
+    necessary. Pin a crates.io version, git **tag**, or **rev**. A stable major
+    (`1.0.0`) is not planned for the current programme; next assurance cut is **0.0.21**.
 
 The **C ABI** (`AURUM_ABI_VERSION`) is versioned separately and is intended to stay
-narrow; see [Native embeds](ffi.md).
+narrow; remote providers are **not** exposed on the FFI. See [Native embeds](ffi.md).
 
 ## crates.io
 
 | Package | Install / depend |
 |---------|------------------|
-| `aurum-core` | `aurum-core = "0.0.17"` (default features include TTS; use `default-features = false` for STT-only) |
+| `aurum-core` | `aurum-core = "0.0.20"` (default features include TTS; use `default-features = false` for STT-only) |
 | `aurum-stt` | `cargo install aurum-stt` → runs `aurum` |
-| `aurum-ffi` | `aurum-ffi = "0.0.17"` or build from source (`libaurum_ffi` + `aurum.h`) |
+| `aurum-ffi` | `aurum-ffi = "0.0.20"` or build from source (`libaurum_ffi` + `aurum.h`) |

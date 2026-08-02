@@ -137,8 +137,11 @@ nav:
       - RC dogfood: operations/rc-dogfood.md
       - RC rollback: operations/rc-rollback.md
       - Support policy: operations/support-policy.md
-      - RC exit: operations/rc-exit.md
+      - RC exit (v0.0.21): operations/rc-exit.md
       - External review brief: operations/external-review-brief.md
+      - Post-provider security freeze: operations/post-provider-security-freeze.md
+      - External review disposition (2026-08-01): operations/external-review-disposition-2026-08-01.md
+      - External review disposition (2026-08-02): operations/external-review-disposition-2026-08-02.md
       - Benchmarks: operations/benchmarks.md
       - Performance reports: operations/performance-reports.md
       - Evals: operations/evals.md
@@ -156,3 +159,4 @@ nav:
       - Migration 0.0.3: development/migration-0.0.3.md
       - Release: development/release.md
       - ADR-001 Kokoro: development/adr-001-kokoro-tts-adapter.md
+      - ADR-002 Provider registry: development/adr-002-provider-registry.md

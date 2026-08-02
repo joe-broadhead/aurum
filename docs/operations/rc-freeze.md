@@ -1,15 +1,16 @@
-# RC compatibility freeze inventory (JOE-1896) — v0.0.21 programme
+# RC compatibility freeze inventory (JOE-1896) — v0.0.22 programme
 
-**Document version:** 1.1  
-**Freeze anchor package version:** `0.0.16` (inventory first introduced); current product tip **0.0.20**  
-**Parent epic:** [JOE-1655](https://linear.app/joe-broadhead/issue/JOE-1655) (retargeted to **v0.0.21**)
+**Document version:** 1.2  
+**Freeze anchor package version:** `0.0.16` (inventory first introduced); current product tip **0.0.22**  
+**Parent epic:** [JOE-2215](https://linear.app/joe-broadhead/issue/JOE-2215) (v0.0.22 product outcomes); prior cut JOE-1655 → v0.0.21  
 
 This inventory names the **public surfaces frozen for a production RC interval**
-toward the **v0.0.21** assurance cut (formerly labelled “1.0 RC”). On the continuous
-0.0.x line, additive patches remain allowed; **removing or renaming** a frozen
-item during RC **resets the freeze clock** (see § Breaking-change policy).
+toward the **v0.0.22** product-acceptance cut. On the continuous 0.0.x line,
+additive patches remain allowed; **removing or renaming** a frozen item during RC
+**resets the freeze clock** (see § Breaking-change policy).
 
-See also [compatibility.md](../development/compatibility.md) for 0.0.x classes.
+See also [compatibility.md](../development/compatibility.md) for 0.0.x classes
+and [v0022-product-acceptance.md](v0022-product-acceptance.md) for the gate.
 
 ## Frozen surfaces (RC)
 
@@ -57,6 +58,15 @@ Evidence: `crates/aurum-ffi/tests/abi_layout.rs`, `include/aurum.h`.
 | STT pin identity = filename + SHA-256 + exact size | Trusted catalogue only |
 | Cache layout under user cache dir | Documented; quarantine on verify failure |
 | TTS pack digests / trust modes | `builtin` / `verified` / `local_unverified` semantics |
+| Batch manifest schema | **v2 only** (v1 rejected) — JOE-2220 |
+
+### Provider support tiers (JOE-2223)
+
+| Item | Freeze rule |
+|------|-------------|
+| `supported` requires fresh (≤30d) protected evidence | `check_provider_evidence.sh` in release gate |
+| Experimental remotes never become silent defaults | No local→remote fallback |
+| Evidence records exclude payloads/secrets | Schema + docs |
 
 ### Model / voice IDs (defaults)
 

@@ -3,7 +3,7 @@
 Speech both ways. On-device by default.  
 Stack: **Rust 1.89+**, Cargo workspace (`aurum-core`, `aurum-stt` CLI, `aurum-ffi`).  
 Version source of truth: `VERSION` (must match workspace `version` and CHANGELOG).  
-Product tip: **0.0.21**. Continuous **0.0.x** line; production-assurance cut **0.0.21** (not 1.0).
+Product tip: **0.0.22**. Continuous **0.0.x** line; product-outcomes cut **0.0.22** (not 1.0).
 
 ## Agent skills
 

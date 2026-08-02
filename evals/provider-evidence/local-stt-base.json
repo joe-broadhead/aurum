@@ -4,9 +4,9 @@
   "operation": "stt",
   "model_id": "base",
   "support_tier": "supported",
-  "aurum_version": "0.0.21",
+  "aurum_version": "0.0.22",
   "protocol_contract": "local_whisper_v1",
-  "executed_at_unix": 1785710389,
+  "executed_at_unix": 1785712187,
   "workflow_run_id": "offline-ci",
   "auth_ok": true,
   "passed": true,
@@ -14,6 +14,6 @@
   "sample_rate_hz": 16000,
   "backend_kind": "asr",
   "timestamps_reliable": true,
-  "expires_at_unix": 1788302389,
+  "expires_at_unix": 1788304187,
   "notes": "local STT \u2014 no network evidence required"
 }

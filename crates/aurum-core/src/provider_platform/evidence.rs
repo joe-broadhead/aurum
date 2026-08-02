@@ -587,7 +587,7 @@ mod tests {
     fn local_gate_passes_without_files() {
         let idx = ProviderEvidenceIndex {
             schema_version: 1,
-            aurum_version: "0.0.21".into(),
+            aurum_version: "0.0.22".into(),
             supported_claims: vec![claim("local", EvidenceOperation::Stt, "base")],
             experimental_routes: vec![],
             notes: None,
@@ -600,7 +600,7 @@ mod tests {
     fn missing_remote_evidence_fails() {
         let idx = ProviderEvidenceIndex {
             schema_version: 1,
-            aurum_version: "0.0.21".into(),
+            aurum_version: "0.0.22".into(),
             supported_claims: vec![claim("openai", EvidenceOperation::Stt, "whisper-1")],
             experimental_routes: vec![],
             notes: None,
@@ -621,7 +621,7 @@ mod tests {
         rec.expires_at_unix = None;
         let idx = ProviderEvidenceIndex {
             schema_version: 1,
-            aurum_version: "0.0.21".into(),
+            aurum_version: "0.0.22".into(),
             supported_claims: vec![claim("openai", EvidenceOperation::Stt, "whisper-1")],
             experimental_routes: vec![],
             notes: None,
@@ -640,7 +640,7 @@ mod tests {
         rec.protocol_contract = "openai_stt_v1".into();
         let idx = ProviderEvidenceIndex {
             schema_version: 1,
-            aurum_version: "0.0.21".into(),
+            aurum_version: "0.0.22".into(),
             supported_claims: vec![claim("openai", EvidenceOperation::Stt, "whisper-1")],
             experimental_routes: vec![],
             notes: None,

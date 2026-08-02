@@ -21,7 +21,8 @@ Quick map of production docs (read this first):
 | RC dogfood | [RC dogfood](rc-dogfood.md) |
 | RC rollback | [RC rollback](rc-rollback.md) |
 | Support / security-fix policy | [Support policy](support-policy.md) |
-| RC exit report (v0.0.21) | [RC exit](rc-exit.md) |
+| RC exit report (v0.0.22) | [RC exit](rc-exit.md) |
+| Product acceptance (v0.0.22) | [v0.0.22 acceptance](v0022-product-acceptance.md) |
 | External security review brief | [External review brief](external-review-brief.md) |
 | Post-provider freeze checklist | [Post-provider freeze](post-provider-security-freeze.md) |
 | Supply chain | [Supply chain](../development/supply-chain.md) |
@@ -30,7 +31,7 @@ Quick map of production docs (read this first):
 | ADRs | [Kokoro ADR-001](../development/adr-001-kokoro-tts-adapter.md) · [Provider registry ADR-002](../development/adr-002-provider-registry.md) |
 | Security reporting | [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md) |
 
-**Versioning:** continuous **0.0.x**. Production-assurance cut is **v0.0.21** (not 1.0).
+**Versioning:** continuous **0.0.x**. Product-outcomes cut is **v0.0.22** (not 1.0).
 
 ## Diagnose
 

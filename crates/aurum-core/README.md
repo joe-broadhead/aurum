@@ -11,14 +11,14 @@ Reusable **on-device speech I/O** library for [Aurum](https://github.com/joe-bro
 - Cleanup / flow (rules or OpenRouter)
 - Model download, pins, txt/srt/json
 
-**API status:** provisional on continuous **0.0.x** (next assurance cut **v0.0.21**, not 1.0). Pin a crates.io version or git tag.
+**API status:** provisional on continuous **0.0.x** (next assurance cut **v0.0.22**, not 1.0). Pin a crates.io version or git tag.
 
 ## Depend
 
 ```toml
-aurum-core = "0.0.21"
+aurum-core = "0.0.22"
 # STT only (smaller): default-features = false
-# git: tag = "v0.0.21"
+# git: tag = "v0.0.22"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 

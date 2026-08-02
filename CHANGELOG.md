@@ -7,6 +7,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.22] - 2026-08-03
+
+World-class product outcomes & SDK coherence cut (**JOE-2215** / **JOE-2226**
+candidate freeze). Continuous **0.0.x** (not 1.0). Human GO is still required
+before tag `v0.0.22` and publication; this section describes the product surface
+on the freeze commit.
+
+### Added
+
+- **JOE-2216 — STT quality observatory:** versioned real-speech corpus schema,
+  scorecard, fail-closed budget compare, profile evidence pin
+  (`0.0.22-observatory-v1`), retained reports under `evals/reports/stt/`.
+- **JOE-2217 — TTS listening programme:** objective checks + human listening
+  protocol (`0.0.22-tts-listening-v1`), Kitten default decision retained.
+- **JOE-2218 — Named-hardware performance budgets:** latency/RTF/RSS harness and
+  retained reports (`0.0.22-perf-v1`).
+- **JOE-2219 — Long-form STT fidelity:** boundary-aware windows, overlap/dedup,
+  explicit timestamp provenance; STT JSON DTO `schema_version` **2**.
+- **JOE-2220 — Batch resume integrity:** content-addressed, transactional
+  resume; batch manifest **v2** (v1 rejected).
+- **JOE-2221 — SDK contract coherence:** `AurumError` / `AurumConfig` /
+  `OperationOptions`, migration guide `docs/library/migration-0.0.21-0.0.22.md`.
+- **JOE-2222 — Observability:** privacy-safe per-operation metrics, traces, and
+  diagnostics (`OpEvent`); no payload telemetry.
+- **JOE-2223 — Provider evidence programme:** support-tier freshness (≤30d),
+  demotion policy, `evals/provider-evidence/`, release-gate check. Remotes remain
+  **experimental** until protected inference evidence lands.
+- **JOE-2224 — Product contracts:** generated CLI/provider matrix surfaces from
+  authoritative registries with drift check.
+- **JOE-2225 — Native SDK Tier A packages:** `package_native_sdk.sh` /
+  `qualify_native_sdk_bundle.sh`, cmake/pkg-config templates; release workflow
+  builds downloaded-artifact SDK archives for macOS arm64, Linux x86_64, Windows
+  x86_64. Remote providers remain absent from the C ABI.
+- **JOE-2226 — Product acceptance gate scaffolding:** version freeze to
+  **0.0.22**, evidence index, RC exit report retargeted to JOE-2215, residual map.
+
+### Changed
+
+- Product tip **0.0.21 → 0.0.22** across `VERSION`, workspace crates, docs, skills,
+  and generated product contracts.
+- Release assets: Tier A **native SDK** archives are first-class release
+  artifacts (in addition to CLI binaries), with checksums/provenance/cosign.
+
+### Documentation
+
+- `docs/operations/v0022-product-acceptance.md` — evidence index, acceptance map,
+  honest residuals, human sign-off template (blank in automation).
+- Native SDK guide: `docs/library/native-sdk.md`.
+- Provider qualification: support-tier evidence rules.
+
+### Security / privacy
+
+- No change to local-first default, no silent remote fallback, no payload
+  telemetry in retained evidence. Multi-tenant in-process isolation remains
+  unsupported. Full SLSA per-artifact attestations remain an accepted residual
+  (cosign keyless + PROVENANCE + SHA256SUMS required).
+
 ## [0.0.21] - 2026-08-02
 
 Production-assurance cut (**JOE-1655**): long-form remote STT, provider catalogue
@@ -722,7 +779,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.21...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.22...HEAD
+[0.0.22]: https://github.com/joe-broadhead/aurum/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/joe-broadhead/aurum/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/joe-broadhead/aurum/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/joe-broadhead/aurum/compare/v0.0.18...v0.0.19

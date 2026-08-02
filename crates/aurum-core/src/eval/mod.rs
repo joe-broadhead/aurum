@@ -7,6 +7,7 @@
 //! in [`observatory`].
 
 pub mod observatory;
+pub mod tts_listening;
 
 pub use observatory::{
     allowed_mean_wer, budget_exit_code, compare_stt_budget, observatory_core_budget_tiny,
@@ -15,6 +16,13 @@ pub use observatory::{
     OBSERVATORY_SCHEMA_VERSION, ObservatoryCorpus, ObservatoryFixture, ObservatoryFixtureScore,
     ObservatoryReport, ObservatoryScoreExtras, RunIdentity, STT_OBSERVATORY_EVIDENCE_VERSION,
     SttBudget,
+};
+pub use tts_listening::{
+    aggregate_listening, evaluate_support_tier, join_discontinuity_score, score_tts_pcm,
+    tts_local_matrix, tts_production_pack, ListeningAggregate, ListeningRating, ListeningReport,
+    SupportTierDecision, TtsEvalFixture, TtsEvalPack, TtsEvalParticipation, TtsObjectiveReport,
+    TtsObjectiveScore, TtsObjectiveThresholds, TtsRunIdentity, TTS_EVAL_SCHEMA_VERSION,
+    TTS_EVIDENCE_VERSION,
 };
 
 use serde::{Deserialize, Serialize};

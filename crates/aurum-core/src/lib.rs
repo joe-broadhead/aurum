@@ -120,13 +120,17 @@ pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VE
 pub use engine::AurumEngine;
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
 pub use eval::{
-    allowed_mean_wer, budget_exit_code, build_report, char_error_rate, compare_stt_budget,
-    observatory_core_budget_tiny, observatory_core_corpus, repetition_ratio,
-    score_observatory_fixture, score_stt, silence_false_positive, smoke_corpus, word_error_rate,
+    aggregate_listening, allowed_mean_wer, budget_exit_code, build_report, char_error_rate,
+    compare_stt_budget, evaluate_support_tier, join_discontinuity_score, observatory_core_budget_tiny,
+    observatory_core_corpus, repetition_ratio, score_observatory_fixture, score_stt, score_tts_pcm,
+    silence_false_positive, smoke_corpus, tts_local_matrix, tts_production_pack, word_error_rate,
     AssetResolution, BudgetComparison, BudgetFinding, BudgetSeverity, CorpusCoverage, EvalCorpus,
-    EvalReport, NORMALIZATION_POLICY_VERSION, OBSERVATORY_SCHEMA_VERSION, ObservatoryCorpus,
-    ObservatoryFixture, ObservatoryFixtureScore, ObservatoryReport, ObservatoryScoreExtras,
-    RunIdentity, STT_OBSERVATORY_EVIDENCE_VERSION, SttBudget, SttFixture, SttScore,
+    EvalReport, ListeningAggregate, ListeningRating, ListeningReport, NORMALIZATION_POLICY_VERSION,
+    OBSERVATORY_SCHEMA_VERSION, ObservatoryCorpus, ObservatoryFixture, ObservatoryFixtureScore,
+    ObservatoryReport, ObservatoryScoreExtras, RunIdentity, STT_OBSERVATORY_EVIDENCE_VERSION,
+    SttBudget, SttFixture, SttScore, SupportTierDecision, TtsEvalFixture, TtsEvalPack,
+    TtsEvalParticipation, TtsObjectiveReport, TtsObjectiveScore, TtsObjectiveThresholds,
+    TtsRunIdentity, TTS_EVAL_SCHEMA_VERSION, TTS_EVIDENCE_VERSION,
 };
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
 pub use observability::{

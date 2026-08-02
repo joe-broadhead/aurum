@@ -19,6 +19,26 @@ aurum talk.m4a --model tiny-q5_1
 aurum talk.m4a --model base
 ```
 
+## OpenAI (first-party, JOE-1940)
+
+| | |
+|--|--|
+| Auth | `OPENAI_API_KEY` or `[providers.openai]` |
+| STT | Multipart `POST /audio/transcriptions` (official origin only) |
+| TTS | `POST /audio/speech` (prefer PCM) |
+| STT models | Reviewed: `whisper-1`, `gpt-4o-mini-transcribe`, `gpt-4o-transcribe` |
+| TTS models | Reviewed: `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` |
+
+```bash
+export OPENAI_API_KEY=sk-...
+aurum talk.mp3 --provider openai --model whisper-1
+aurum tts "Hello" --provider openai --model tts-1 --voice alloy -O /tmp/oai.wav
+```
+
+Independent from OpenRouter: different credential, origin (`api.openai.com`), and
+no OpenRouter attribution headers. Audio/text leave the machine only with
+explicit `provider=openai`.
+
 ## OpenRouter
 
 | | |

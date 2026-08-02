@@ -139,6 +139,7 @@ mod tests {
         let ids: Vec<_> = list.providers.iter().map(|p| p.id.as_str()).collect();
         assert!(ids.contains(&"local"));
         assert!(ids.contains(&"openrouter"));
+        assert!(ids.contains(&"openai"));
 
         let local = list.providers.iter().find(|p| p.id == "local").unwrap();
         assert!(local.stt);
@@ -155,5 +156,11 @@ mod tests {
         #[cfg(feature = "tts")]
         assert!(or.tts, "openrouter registers TTS factory (JOE-1939)");
         assert_eq!(or.network, NetworkRequirement::RequiresNetwork);
+
+        let oai = list.providers.iter().find(|p| p.id == "openai").unwrap();
+        assert!(oai.stt);
+        #[cfg(feature = "tts")]
+        assert!(oai.tts, "openai registers TTS factory (JOE-1940)");
+        assert_eq!(oai.network, NetworkRequirement::RequiresNetwork);
     }
 }

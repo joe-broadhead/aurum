@@ -48,7 +48,7 @@ Failures in the curated set **fail CI**.
 |-------------|--------|
 | ASan + pure lib tests on **Linux nightly** | Enabled in CI |
 | ASan on macOS/Windows hosts | **Gap** — toolchain/friction; covered by Linux CI |
-| UBSan full matrix | **Gap** — tracked for v0.0.21 residuals; ASan + Miri first |
+| UBSan full matrix | **Accepted residual for v0.0.21** — ASan + Miri first; track later 0.0.x |
 | Full whisper/ORT under ASan | **Gap** — link time / false positives; integration suite instead |
 | Concurrency stress (jobs / fault injection) | Enabled on stable in CI |
 

@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **JOE-1655 residual closeout:** map every production-assurance criterion to
+  delivered children or accepted residual for **v0.0.21**; retarget RC exit
+  report generator language from 1.0 → v0.0.21; add
+  `docs/operations/v0021-residual-closeout.md`.
 - Full public docs sweep: retarget production-assurance language from “1.0” to
   **v0.0.21** continuous **0.0.x** policy; refresh README/index status to
   **0.0.20**; document multi-provider STT/TTS (OpenRouter, OpenAI, ElevenLabs,

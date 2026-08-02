@@ -9,7 +9,7 @@ remediation (JOE-1975–1980, F-005 snap staging), then hand to JOE-1920 human r
 
 - Overwrite or re-point `v0.0.18`
 - Represent green PR CI alone as independent security review
-- Mark JOE-1655 Done until the **v0.0.21** assurance programme residual is closed
+- Mark JOE-1655 Done without residual closeout ([v0021-residual-closeout.md](v0021-residual-closeout.md))
 - Tag without explicit maintainer approval
 
 ## Freeze prep (maintainer)

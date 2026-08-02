@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Assemble 1.0 RC exit report (JOE-1904).
-# Machine-checkable rows only; human sign-off left blank.
+# Assemble production-assurance RC exit report (JOE-1904) for the continuous
+# 0.0.x line (programme cut currently v0.0.21). Machine-checkable rows only;
+# human sign-off left blank.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -39,12 +40,13 @@ elif [ -f dist/sbom/native-components.md ]; then
 fi
 
 {
-  echo "# Aurum 1.0 RC exit report"
+  echo "# Aurum RC exit report (v0.0.21 programme)"
   echo
   echo "- **generated_at_utc:** ${STAMP}"
   echo "- **workspace_version:** ${VER}"
   echo "- **source_commit:** ${COMMIT}"
   echo "- **generator:** scripts/generate_rc_exit_report.sh (JOE-1904)"
+  echo "- **programme:** JOE-1655 production-assurance cut (continuous 0.0.x; not 1.0)"
   echo
   echo "## Machine-checkable evidence"
   echo
@@ -61,6 +63,7 @@ fi
   echo "| Model revocation | docs/operations/model-revocation.md | $(check_file docs/operations/model-revocation.md) |"
   echo "| Provenance / cosign | docs/operations/provenance.md | $(check_file docs/operations/provenance.md) |"
   echo "| QE depth | docs/operations/qe-depth.md | $(check_file docs/operations/qe-depth.md) |"
+  echo "| Residual closeout | docs/operations/v0021-residual-closeout.md | $(check_file docs/operations/v0021-residual-closeout.md) |"
   echo "| SBOM generate | scripts/generate_sbom.sh | ${SBOM_ST} |"
   echo "| Native inventory | native-components.md | ${NATIVE_ST} |"
   echo "| Downstream consumers | scripts/rc_downstream_check.sh | ${DOWNSTREAM_ST} |"
@@ -71,7 +74,7 @@ fi
   echo "See docs/operations/release-gate.md for the full gate table (fuzz, Miri,"
   echo "sanitizer, coverage, mutants, clean-install, repro, independent verify)."
   echo
-  echo "## Human sign-off (required for 1.0 — leave blank in automation)"
+  echo "## Human sign-off (required for v0.0.21 — leave blank in automation)"
   echo
   echo "| Field | Value |"
   echo "|-------|--------|"
@@ -81,12 +84,12 @@ fi
   echo "| External review High/Critical closed | |"
   echo "| Residual risks accepted | |"
   echo "| **Approver name** | |"
-  echo "| **Approve 1.0 release?** | |"
+  echo "| **Approve v0.0.21 release?** | |"
   echo "| Date (UTC) | |"
   echo
   echo "## Definition of Done (JOE-1655)"
   echo
-  echo "A 1.0 cut requires this report plus human approval of one immutable"
+  echo "A **v0.0.21** cut requires this report plus human approval of one immutable"
   echo "source/tag/artifact/schema/document set. Automation cannot self-declare."
   echo
 } > "${REPORT}"

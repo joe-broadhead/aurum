@@ -104,7 +104,7 @@ impl AurumEngine {
         Ok(Self {
             config,
             governor,
-            metrics: Arc::new(Metrics::new()),
+            metrics: Arc::new(Metrics::engine_local()),
             stt_pool: Arc::new(SttContextPool::new()),
             #[cfg(feature = "tts")]
             tts_pool: Arc::new(TtsSessionPool::new()),

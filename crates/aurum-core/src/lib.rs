@@ -143,7 +143,10 @@ pub use eval::{
 };
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
 pub use observability::{
-    process_metrics, DiagnosticBundle, Metrics, MetricsSnapshot, SpanTimer, METRICS_SCHEMA_VERSION,
+    privacy_scan, process_metrics, BoundedEventSink, DiagnosticBundle, EventSink, Metrics,
+    MetricsScope, MetricsSnapshot, NoopEventSink, OpEvent, OpKind, OpStage, SpanTimer,
+    TerminalCategory, TerminalGuard, DEFAULT_EVENT_QUEUE_CAP, METRICS_SCHEMA_VERSION,
+    OP_EVENT_SCHEMA_VERSION, PRIVACY_CANARY_MARKERS,
 };
 pub use output::{
     commit_text, format_result, write_result, write_result_to_path, CommitMode, OutputFormat,

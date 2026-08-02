@@ -53,5 +53,6 @@ Source pack mutation after staging does not affect the snap.
 
 ## Freeze gate
 
-See [post-provider-security-freeze.md](post-provider-security-freeze.md) (JOE-1981).
-Do not cut a tag until human approval; do not mark JOE-1655 Done from this file alone.
+See [post-provider-security-freeze.md](post-provider-security-freeze.md) (JOE-1981)
+and [v0021-residual-closeout.md](v0021-residual-closeout.md) (JOE-1655 programme
+close). Do not cut a tag until human approval.

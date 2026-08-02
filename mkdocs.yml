@@ -138,6 +138,7 @@ nav:
       - RC rollback: operations/rc-rollback.md
       - Support policy: operations/support-policy.md
       - RC exit (v0.0.21): operations/rc-exit.md
+      - v0.0.21 residual closeout: operations/v0021-residual-closeout.md
       - External review brief: operations/external-review-brief.md
       - Post-provider security freeze: operations/post-provider-security-freeze.md
       - External review disposition (2026-08-01): operations/external-review-disposition-2026-08-01.md

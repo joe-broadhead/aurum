@@ -145,6 +145,11 @@ pub use provider_platform::{
     PROVIDER_LIST_SCHEMA_VERSION,
 };
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
+#[cfg(feature = "tts")]
+pub use providers::{
+    lookup_elevenlabs_tts, ElevenLabsTtsProvider, DEFAULT_ELEVENLABS_TTS_MODEL,
+    ELEVENLABS_TTS_REGISTRY, EXAMPLE_ELEVENLABS_VOICE_ID,
+};
 pub use providers::{
     lookup_openai_stt, OpenAiSttProvider, DEFAULT_OPENAI_STT_MODEL, OPENAI_STT_REGISTRY,
 };

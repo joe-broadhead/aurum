@@ -500,6 +500,15 @@ pub use openai_tts::{
     DEFAULT_OPENAI_TTS_VOICE, OPENAI_TTS_REGISTRY,
 };
 
+#[cfg(feature = "tts")]
+pub mod elevenlabs_tts;
+#[cfg(feature = "tts")]
+pub use elevenlabs_tts::{
+    lookup_elevenlabs_tts, validate_elevenlabs_voice_id, ElevenLabsTtsProvider,
+    ElevenLabsTtsRecord, DEFAULT_ELEVENLABS_TTS_MODEL, ELEVENLABS_TTS_REGISTRY,
+    EXAMPLE_ELEVENLABS_VOICE_ID,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

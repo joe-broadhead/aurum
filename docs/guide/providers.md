@@ -19,6 +19,23 @@ aurum talk.m4a --model tiny-q5_1
 aurum talk.m4a --model base
 ```
 
+## ElevenLabs (TTS only, JOE-1941)
+
+| | |
+|--|--|
+| Auth | `ELEVENLABS_API_KEY` / `xi-api-key` |
+| Path | `POST /v1/text-to-speech/{voice_id}?output_format=pcm_24000` |
+| Models | Reviewed: `eleven_multilingual_v2`, `eleven_turbo_v2_5`, `eleven_flash_v2_5` |
+| Voice | **Required** ElevenLabs `voice_id` (never remapped from Luna/Kitten) |
+
+```bash
+export ELEVENLABS_API_KEY=...
+aurum tts "Hello" --provider elevenlabs \
+  --model eleven_multilingual_v2 --voice 21m00Tcm4TlvDq8ikWAM -O /tmp/el.wav
+```
+
+Retention/logging is **account-dependent**; Aurum does not claim zero-retention.
+
 ## OpenAI (first-party, JOE-1940)
 
 | | |

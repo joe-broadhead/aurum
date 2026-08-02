@@ -223,7 +223,6 @@ jobs:
 
       - name: Checksums + SBOM + provenance + cosign (JOE-1859 / JOE-1860 / JOE-1882)
         env:
-          GITHUB_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ needs.validate.outputs.release_tag }}
         run: |
           set -euo pipefail
@@ -242,6 +241,10 @@ jobs:
           test -f release-assets/aurum.cdx.json
           test -f release-assets/aurum.spdx.json
           test -f release-assets/aurum-sbom-inventory.json
+          # Provenance must record the **tag commit**, not workflow_dispatch HEAD on master.
+          # github.sha for workflow_dispatch is the default-branch tip; checkout is the tag.
+          TAG_COMMIT="$(git rev-parse HEAD)"
+          export GITHUB_SHA="${TAG_COMMIT}"
           # Structured provenance over binaries + SBOM (before final SHA256SUMS).
           ./scripts/generate_provenance.sh release-assets "${RELEASE_TAG}"
           cd release-assets
@@ -265,7 +268,7 @@ jobs:
           ls -la
           cat SHA256SUMS
           export AURUM_EXPECT_TAG="${RELEASE_TAG}"
-          export AURUM_EXPECT_COMMIT="$(git -C "${GITHUB_WORKSPACE}" rev-parse HEAD)"
+          export AURUM_EXPECT_COMMIT="${TAG_COMMIT}"
           export AURUM_REQUIRE_COSIGN=1
           export AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER="https://token.actions.githubusercontent.com"
           # OIDC subject follows the workflow *trigger* ref, not the checked-out tag.

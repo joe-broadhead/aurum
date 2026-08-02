@@ -13,6 +13,7 @@ mod limits;
 mod openai_speech;
 mod policy;
 mod status;
+mod wire_format;
 
 pub use client::{
     map_http_status, validate_endpoint, HardenedHttpClient, RemoteEndpoint, RemotePolicy,
@@ -32,3 +33,4 @@ pub use policy::{
     XAI_DEFAULT_BASE, XAI_ORIGIN,
 };
 pub use status::{redact_secret, redact_secret_with};
+pub use wire_format::{resolve_encoded_format, ExpectedWireFormat};

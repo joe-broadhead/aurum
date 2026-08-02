@@ -31,7 +31,7 @@ are **opt-in** only.
 | `openrouter` | yes | yes | **supported** (reviewed models) | Mocks + prior STT prod path; TTS mock CI |
 | `openai` | yes | yes | **supported** (reviewed models) | Mocks; credentialed smoke optional |
 | `elevenlabs` | — | yes | **supported** (reviewed models) | Mocks; voice_id explicit |
-| `xai` | yes | yes | **experimental** | Mocks; REST only; realtime deferred |
+| `xai` | yes | yes | **experimental** | Official `/v1/stt` + `/v1/tts` (JOE-1976); mocks; protected smoke pending |
 
 Demote a remote model by removing it from the reviewed registry (fail closed)
 without touching local paths.

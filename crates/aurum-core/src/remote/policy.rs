@@ -284,12 +284,9 @@ impl ProviderHttpPolicy for XaiHttpPolicy {
     }
 
     fn allows_path(&self, path: &str) -> bool {
-        // REST chat + speech I/O (JOE-1942). Realtime/WebSocket paths remain denied.
-        path_allowed(
-            path,
-            &["chat/completions", "audio/transcriptions", "audio/speech"],
-            &[],
-        )
+        // Official Voice REST (JOE-1976): POST /v1/stt and POST /v1/tts only.
+        // OpenAI-shaped /audio/* and realtime/WebSocket remain denied.
+        path_allowed(path, &["stt", "tts"], &[])
     }
 }
 
@@ -432,9 +429,11 @@ mod tests {
         assert!(ElevenLabsHttpPolicy.allows_path("v1/text-to-speech/voiceid"));
         assert!(!ElevenLabsHttpPolicy.allows_path("chat/completions"));
 
-        assert!(XaiHttpPolicy.allows_path("chat/completions"));
-        assert!(XaiHttpPolicy.allows_path("audio/transcriptions"));
-        assert!(XaiHttpPolicy.allows_path("audio/speech"));
+        assert!(XaiHttpPolicy.allows_path("stt"));
+        assert!(XaiHttpPolicy.allows_path("tts"));
+        assert!(!XaiHttpPolicy.allows_path("audio/transcriptions"));
+        assert!(!XaiHttpPolicy.allows_path("audio/speech"));
+        assert!(!XaiHttpPolicy.allows_path("chat/completions"));
         assert!(!XaiHttpPolicy.allows_path("realtime"));
     }
 

@@ -2,14 +2,12 @@
 //!
 //! Reuses [`OpenAiSpeechRequest`] protocol; auth/origin via [`OpenAiHttpPolicy`].
 
-use crate::audio::{
-    normalize_remote_audio, BoundedAudioBody, EncodedAudioFormat, RemoteAudioLimits,
-};
+use crate::audio::{normalize_remote_audio, BoundedAudioBody, RemoteAudioLimits};
 use crate::error::{ProviderError, Result, UserError};
 use crate::remote::{
-    map_http_status, parse_pcm_content_type, read_body_limited_with_op, send_with_op,
-    HardenedHttpClient, OpenAiHttpPolicy, OpenAiSpeechRequest, RemoteBodyLimits, RemotePolicy,
-    SpeechResponseFormat,
+    map_http_status, read_body_limited_with_op, resolve_encoded_format, send_with_op,
+    ExpectedWireFormat, HardenedHttpClient, OpenAiHttpPolicy, OpenAiSpeechRequest,
+    RemoteBodyLimits, RemotePolicy, SpeechResponseFormat,
 };
 use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
@@ -282,21 +280,21 @@ impl SynthesisProvider for OpenAiTtsProvider {
 
         // OpenAI may return audio/mpeg even when pcm was requested on older models —
         // prefer PCM path when content-type or default rate applies.
-        let (format, sample_hint) = if content_type.contains("mpeg") || content_type.contains("mp3")
+        // Requested PCM; accept only allowlisted PCM MIME (JOE-1977). MP3 only if MIME is mp3.
+        let expected = ExpectedWireFormat::pcm(rec.default_sample_rate_hz, 1);
+        let format = if content_type.to_ascii_lowercase().contains("mpeg")
+            || content_type.to_ascii_lowercase().contains("audio/mp3")
         {
-            (EncodedAudioFormat::Mp3, rec.default_sample_rate_hz)
+            // Fail closed: we requested PCM; MP3 response is a contract violation unless
+            // explicitly allowed — reject (OpenAI docs say pcm when requested).
+            return Err(ProviderError::InvalidProviderPayload {
+                provider: PROVIDER_NAME.into(),
+                reason: "expected PCM but Content-Type indicates MP3".into(),
+            }
+            .into());
         } else {
-            let (rate_hz, ch) =
-                parse_pcm_content_type(&content_type).unwrap_or((rec.default_sample_rate_hz, 1));
-            (
-                EncodedAudioFormat::PcmS16Le {
-                    sample_rate_hz: rate_hz,
-                    channels: ch,
-                },
-                rate_hz,
-            )
+            resolve_encoded_format(PROVIDER_NAME, expected, &content_type, &bytes)?
         };
-        let _ = sample_hint;
 
         let bounded = BoundedAudioBody::try_from_bytes(
             bytes,

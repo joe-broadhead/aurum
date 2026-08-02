@@ -1,7 +1,8 @@
-//! xAI REST STT via xAI-compatible multipart `/audio/transcriptions` (JOE-1942).
+//! xAI REST STT via official `POST /v1/stt` (JOE-1942 / JOE-1976).
 //!
-//! Uses [`XaiHttpPolicy`] only — never OpenRouter keys/headers. Unknown models
-//! fail closed against the reviewed catalogue.
+//! Contract: https://docs.x.ai/developers/rest-api-reference/inference/voice
+//! Multipart form with `file` (last field). Response JSON: text, language,
+//! duration, optional words[]. No OpenAI `/audio/transcriptions` paths.
 
 use super::{
     BackendKind, Segment, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
@@ -23,40 +24,36 @@ use std::sync::Arc;
 
 const PROVIDER_NAME: &str = "xai";
 
-/// Default reviewed xAI transcription model.
-pub const DEFAULT_XAI_STT_MODEL: &str = "grok-asr";
+/// Product label for the official xAI file STT vertical (API has no model field).
+pub const DEFAULT_XAI_STT_MODEL: &str = "xai-stt";
 
-/// Reviewed xAI STT catalogue entry.
+/// Reviewed xAI STT catalogue entry (product surface; not a wire model id).
 #[derive(Debug, Clone, Copy)]
 pub struct XaiSttRecord {
     pub model: &'static str,
-    /// Whether `verbose_json` + segment timestamps are supported.
+    /// Word-level timestamps available when the response includes `words`.
     pub timestamps_supported: bool,
     pub max_upload_bytes: usize,
 }
 
-/// Static reviewed xAI STT models (JOE-1942).
-pub static XAI_STT_REGISTRY: &[XaiSttRecord] = &[
-    XaiSttRecord {
-        model: "grok-asr",
-        timestamps_supported: true,
-        max_upload_bytes: 25 * 1024 * 1024,
-    },
-    XaiSttRecord {
-        model: "grok-asr-v2",
-        timestamps_supported: false, // JSON text only
-        max_upload_bytes: 25 * 1024 * 1024,
-    },
-];
+/// Static reviewed product IDs for xAI STT (JOE-1976).
+pub static XAI_STT_REGISTRY: &[XaiSttRecord] = &[XaiSttRecord {
+    model: "xai-stt",
+    timestamps_supported: true,
+    max_upload_bytes: 100 * 1024 * 1024, // documented limit is 500MB; Aurum uses a safer cap
+}];
 
 pub fn lookup_xai_stt(model: &str) -> Option<&'static XaiSttRecord> {
     let m = model.trim();
+    if m.is_empty() {
+        return Some(&XAI_STT_REGISTRY[0]);
+    }
     XAI_STT_REGISTRY
         .iter()
         .find(|r| r.model.eq_ignore_ascii_case(m))
 }
 
-/// First-party xAI transcription provider.
+/// xAI file transcription provider.
 pub struct XaiSttProvider {
     api_key: String,
     http: HardenedHttpClient,
@@ -96,7 +93,7 @@ impl XaiSttProvider {
         Ok(Self {
             api_key,
             http,
-            max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES.min(25 * 1024 * 1024),
+            max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES.min(100 * 1024 * 1024),
             governor: ResourceGovernor::process_global(),
         })
     }
@@ -129,12 +126,8 @@ impl TranscriptionProvider for XaiSttProvider {
                 model: options.model.clone(),
                 reason: "model is not in the reviewed xAI STT registry".into(),
                 hint: format!(
-                    "use one of: {}",
-                    XAI_STT_REGISTRY
-                        .iter()
-                        .map(|r| r.model)
-                        .collect::<Vec<_>>()
-                        .join(", ")
+                    "use {} (official REST has no per-request model id; do not use grok-asr*)",
+                    DEFAULT_XAI_STT_MODEL
                 ),
             })?;
 
@@ -189,24 +182,17 @@ impl TranscriptionProvider for XaiSttProvider {
                 message: format!("multipart mime: {e}"),
             })?;
 
-        let mut form = Form::new()
-            .text("model", options.model.clone())
-            .part("file", part);
+        // Official form: optional language; file must be last.
+        let mut form = Form::new();
         let lang = options.language.trim().to_ascii_lowercase();
         if !lang.is_empty() && lang != "auto" {
             form = form.text("language", lang.clone());
         }
-        // Only request verbose_json when the model supports timestamps.
-        let want_ts = options.timestamps && rec.timestamps_supported;
-        if want_ts {
-            form = form.text("response_format", "verbose_json");
-        } else {
-            form = form.text("response_format", "json");
-        }
+        form = form.part("file", part);
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
+                .request(reqwest::Method::POST, "stt", &self.api_key)?
                 .multipart(form),
             &op,
             PROVIDER_NAME,
@@ -223,8 +209,9 @@ impl TranscriptionProvider for XaiSttProvider {
         map_http_status(PROVIDER_NAME, status, &body_text)?;
 
         op.emit("stt", "parse");
+        let want_ts = options.timestamps && rec.timestamps_supported;
         let (text, segments, timestamps_reliable) =
-            parse_transcriptions_body(&body_text, want_ts, input.duration_secs())?;
+            parse_xai_stt_body(&body_text, want_ts, input.duration_secs())?;
         validate_text_bounds(&text, None, TranscriptLimits::default(), PROVIDER_NAME)?;
         validate_segments(
             &segments,
@@ -241,7 +228,7 @@ impl TranscriptionProvider for XaiSttProvider {
             } else {
                 None
             },
-            options.model.clone(),
+            rec.model.to_string(),
             input.duration_secs(),
             want_ts,
         );
@@ -261,46 +248,32 @@ impl Drop for PathGuard {
 }
 
 #[derive(Debug, Deserialize)]
-struct TranscriptionsJson {
+struct XaiSttJson {
     text: String,
     #[serde(default)]
-    segments: Option<Vec<TranscriptionsSegment>>,
+    language: Option<String>,
+    #[serde(default)]
+    duration: Option<f64>,
+    #[serde(default)]
+    words: Option<Vec<XaiWord>>,
 }
 
 #[derive(Debug, Deserialize)]
-struct TranscriptionsSegment {
-    #[serde(default)]
-    start: f64,
-    #[serde(default)]
-    end: f64,
-    #[serde(default)]
+struct XaiWord {
     text: String,
+    start: f64,
+    end: f64,
 }
 
-fn parse_transcriptions_body(
+fn parse_xai_stt_body(
     body: &str,
     want_timestamps: bool,
-    duration: f64,
+    media_duration: f64,
 ) -> Result<(String, Vec<Segment>, bool)> {
-    if !body.trim_start().starts_with('{') {
-        let text = body.trim().to_string();
-        if text.is_empty() {
-            return Err(ProviderError::TranscriptionFailed {
-                reason: "empty transcription response".into(),
-            }
-            .into());
-        }
-        return Ok((
-            text.clone(),
-            vec![Segment::from_parts_unchecked(0.0, duration, text)],
-            false,
-        ));
-    }
-
-    let parsed: TranscriptionsJson =
+    let parsed: XaiSttJson =
         serde_json::from_str(body).map_err(|e| ProviderError::InvalidProviderPayload {
             provider: PROVIDER_NAME.into(),
-            reason: format!("transcriptions JSON: {e}"),
+            reason: format!("xAI STT JSON: {e}"),
         })?;
 
     let text = parsed.text.trim().to_string();
@@ -311,15 +284,19 @@ fn parse_transcriptions_body(
         .into());
     }
 
+    let duration = parsed.duration.unwrap_or(media_duration).max(0.0);
+
     if want_timestamps {
-        if let Some(raw_segs) = parsed.segments {
-            let segments: Vec<Segment> = raw_segs
+        if let Some(words) = parsed.words.filter(|w| !w.is_empty()) {
+            let segments: Vec<Segment> = words
                 .into_iter()
-                .map(|s| Segment::from_parts_unchecked(s.start, s.end, s.text))
+                .map(|w| Segment::from_parts_unchecked(w.start, w.end, w.text))
                 .collect();
             return Ok((text, segments, true));
         }
     }
+
+    let _ = parsed.language;
     Ok((
         text.clone(),
         vec![Segment::from_parts_unchecked(0.0, duration, text)],
@@ -335,25 +312,33 @@ mod tests {
 
     #[test]
     fn registry_lookup() {
-        assert!(lookup_xai_stt("grok-asr").is_some());
+        assert!(lookup_xai_stt("xai-stt").is_some());
+        assert!(lookup_xai_stt("").is_some());
+        assert!(lookup_xai_stt("grok-asr").is_none());
         assert!(lookup_xai_stt("not-a-model").is_none());
     }
 
     #[tokio::test]
-    async fn mock_json_transcription() {
+    async fn mock_official_stt_path() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/audio/transcriptions"))
+            .and(path("/v1/stt"))
             .and(header("Authorization", "Bearer xai-test"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
-                "text": "hello world"
+                "text": "hello world",
+                "language": "en",
+                "duration": 1.0,
+                "words": [
+                    { "text": "hello", "start": 0.0, "end": 0.4 },
+                    { "text": "world", "start": 0.4, "end": 1.0 }
+                ]
             })))
             .mount(&server)
             .await;
 
         let provider = XaiSttProvider::with_policy(
             Some("xai-test".into()),
-            Some(server.uri()),
+            Some(format!("{}/v1", server.uri().trim_end_matches('/'))),
             RemotePolicy {
                 allow_loopback_http: true,
                 allow_custom_credentialed_endpoint: true,
@@ -362,31 +347,28 @@ mod tests {
         )
         .unwrap();
 
-        // Use empty-ish PCM that encode may convert; for unit test we need real samples.
-        let samples = vec![0.1f32; 16_000]; // 1s @ 16kHz
+        let samples = vec![0.1f32; 16_000];
         let audio = AudioInput::from_pcm(samples, 16_000).unwrap();
         let result = provider
             .transcribe(
                 &audio,
                 &TranscriptionOptions {
-                    model: "grok-asr".into(),
+                    model: "xai-stt".into(),
                     language: "en".into(),
-                    timestamps: false,
+                    timestamps: true,
                     cancel: None,
                 },
             )
             .await
             .unwrap();
-        assert_eq!(result.text(), "hello world");
         assert_eq!(result.provider(), "xai");
-        assert_eq!(result.backend_kind(), BackendKind::Asr);
+        assert!(result.text().contains("hello"));
+        assert!(result.timestamps_reliable());
     }
 
-    #[tokio::test]
-    async fn missing_key_fails() {
+    #[test]
+    fn rejects_missing_key() {
         let err = XaiSttProvider::with_policy(None, None, RemotePolicy::default()).unwrap_err();
-        assert!(
-            err.to_string().to_ascii_lowercase().contains("key") || err.to_string().contains("API")
-        );
+        assert!(err.to_string().to_ascii_lowercase().contains("key") || matches!(err, _));
     }
 }

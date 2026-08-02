@@ -31,8 +31,8 @@ aurum talk.m4a --model base
 
 ```bash
 export XAI_API_KEY=...
-aurum talk.mp3 --provider xai --model grok-asr
-aurum tts "Hello" --provider xai --model grok-tts --voice alloy -O /tmp/x.wav
+aurum talk.mp3 --provider xai --model xai-stt
+aurum tts "Hello" --provider xai --model xai-tts --voice eve -O /tmp/x.wav
 ```
 
 ## ElevenLabs (TTS only, JOE-1941)

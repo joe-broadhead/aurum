@@ -1,32 +1,32 @@
-//! xAI REST TTS via `/audio/speech` (JOE-1942).
+//! xAI REST TTS via official `POST /v1/tts` (JOE-1942 / JOE-1976).
 //!
-//! Reuses [`OpenAiSpeechRequest`] protocol; auth/origin via [`XaiHttpPolicy`].
+//! Contract: https://docs.x.ai/developers/rest-api-reference/inference/voice
+//! Request: text, voice_id, language, output_format {codec, sample_rate}, speed.
+//! Built-in voices: eve, ara, leo, rex, sal. No OpenAI voices or `/audio/speech`.
 
-use crate::audio::{
-    normalize_remote_audio, BoundedAudioBody, EncodedAudioFormat, RemoteAudioLimits,
-};
+use crate::audio::{normalize_remote_audio, BoundedAudioBody, RemoteAudioLimits};
 use crate::error::{ProviderError, Result, UserError};
 use crate::remote::{
-    map_http_status, parse_pcm_content_type, read_body_limited_with_op, send_with_op,
-    HardenedHttpClient, OpenAiSpeechRequest, RemoteBodyLimits, RemotePolicy, SpeechResponseFormat,
-    XaiHttpPolicy,
+    map_http_status, read_body_limited_with_op, resolve_encoded_format, send_with_op,
+    ExpectedWireFormat, HardenedHttpClient, RemoteBodyLimits, RemotePolicy, XaiHttpPolicy,
 };
 use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
 use crate::tts::validate::{clamp_speaking_rate, SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
 use async_trait::async_trait;
+use serde::Serialize;
 use std::sync::Arc;
 use std::time::Duration;
 
 const PROVIDER_NAME: &str = "xai";
 
-/// Default reviewed xAI TTS model.
-pub const DEFAULT_XAI_TTS_MODEL: &str = "grok-tts";
+/// Product label for official batch REST TTS (API has no model field).
+pub const DEFAULT_XAI_TTS_MODEL: &str = "xai-tts";
 
-/// Default xAI voice.
-pub const DEFAULT_XAI_TTS_VOICE: &str = "alloy";
+/// Default built-in xAI voice.
+pub const DEFAULT_XAI_TTS_VOICE: &str = "eve";
 
-/// xAI TTS catalogue entry.
+/// xAI TTS catalogue entry (product surface).
 #[derive(Debug, Clone, Copy)]
 pub struct XaiTtsRecord {
     pub model: &'static str,
@@ -37,51 +37,46 @@ pub struct XaiTtsRecord {
     pub rate_max: f32,
 }
 
-/// Static reviewed xAI TTS models (JOE-1942).
-pub static XAI_TTS_REGISTRY: &[XaiTtsRecord] = &[
-    XaiTtsRecord {
-        model: "grok-tts",
-        voices: &[
-            "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-            "verse",
-        ],
-        default_sample_rate_hz: 24_000,
-        max_text_chars: 4_096,
-        rate_min: 0.25,
-        rate_max: 4.0,
-    },
-    XaiTtsRecord {
-        model: "grok-tts-hd",
-        voices: &[
-            "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-            "verse",
-        ],
-        default_sample_rate_hz: 24_000,
-        max_text_chars: 4_096,
-        rate_min: 0.25,
-        rate_max: 4.0,
-    },
-    XaiTtsRecord {
-        model: "grok-tts-mini",
-        voices: &[
-            "alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer",
-            "verse",
-        ],
-        default_sample_rate_hz: 24_000,
-        max_text_chars: 4_096,
-        rate_min: 0.25,
-        rate_max: 4.0,
-    },
-];
+/// Official built-in voices from GET /v1/tts/voices.
+pub static XAI_BUILTIN_VOICES: &[&str] = &["eve", "ara", "leo", "rex", "sal"];
+
+/// Static reviewed product IDs for xAI TTS (JOE-1976).
+pub static XAI_TTS_REGISTRY: &[XaiTtsRecord] = &[XaiTtsRecord {
+    model: "xai-tts",
+    voices: XAI_BUILTIN_VOICES,
+    default_sample_rate_hz: 24_000,
+    max_text_chars: 15_000, // official max
+    rate_min: 0.7,
+    rate_max: 1.5,
+}];
 
 pub fn lookup_xai_tts(model: &str) -> Option<&'static XaiTtsRecord> {
     let m = model.trim();
+    if m.is_empty() {
+        return Some(&XAI_TTS_REGISTRY[0]);
+    }
     XAI_TTS_REGISTRY
         .iter()
         .find(|r| r.model.eq_ignore_ascii_case(m))
 }
 
-/// First-party xAI speech provider.
+#[derive(Debug, Serialize)]
+struct XaiTtsRequest<'a> {
+    text: &'a str,
+    voice_id: &'a str,
+    language: &'a str,
+    output_format: XaiOutputFormat,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    speed: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+struct XaiOutputFormat {
+    codec: &'static str,
+    sample_rate: u32,
+}
+
+/// xAI batch REST speech provider.
 pub struct XaiTtsProvider {
     api_key: String,
     http: HardenedHttpClient,
@@ -135,12 +130,8 @@ impl XaiTtsProvider {
             model: model.into(),
             reason: "model is not in the reviewed xAI TTS registry".into(),
             hint: format!(
-                "use one of: {}",
-                XAI_TTS_REGISTRY
-                    .iter()
-                    .map(|r| r.model)
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "use {} (official REST has no model id; do not use grok-tts* or OpenAI voices)",
+                DEFAULT_XAI_TTS_MODEL
             ),
         })?;
         let voice = voice.trim();
@@ -152,7 +143,7 @@ impl XaiTtsProvider {
             return Err(UserError::UnsupportedCapability {
                 provider: PROVIDER_NAME.into(),
                 model: model.into(),
-                reason: format!("voice '{voice}' is not supported for this xAI TTS model"),
+                reason: format!("voice '{voice}' is not a reviewed xAI built-in voice"),
                 hint: format!("supported voices: {}", rec.voices.join(", ")),
             }
             .into());
@@ -231,21 +222,24 @@ impl SynthesisProvider for XaiTtsProvider {
         op.check()?;
         op.emit("tts", "request");
 
-        // Prefer PCM for direct normalize (JOE-1937).
-        let body = OpenAiSpeechRequest::new(
-            &opts.model,
+        let sample_rate = rec.default_sample_rate_hz;
+        let body = XaiTtsRequest {
             text,
-            &voice,
-            SpeechResponseFormat::Pcm,
-            Some(rate),
-        );
-        let json = body.to_json_bytes().map_err(|e| ProviderError::Other {
-            message: format!("speech request serialize: {e}"),
+            voice_id: &voice,
+            language: "en",
+            output_format: XaiOutputFormat {
+                codec: "pcm",
+                sample_rate,
+            },
+            speed: Some(rate as f64),
+        };
+        let json = serde_json::to_vec(&body).map_err(|e| ProviderError::Other {
+            message: format!("xAI TTS request serialize: {e}"),
         })?;
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "audio/speech", &self.api_key)?
+                .request(reqwest::Method::POST, "tts", &self.api_key)?
                 .header("Content-Type", "application/json")
                 .body(json),
             &op,
@@ -280,23 +274,9 @@ impl SynthesisProvider for XaiTtsProvider {
         op.check()?;
         map_http_status(PROVIDER_NAME, status, "")?;
 
-        // xAI may return audio/mpeg even when pcm was requested on older models —
-        // prefer PCM path when content-type or default rate applies.
-        let (format, sample_hint) = if content_type.contains("mpeg") || content_type.contains("mp3")
-        {
-            (EncodedAudioFormat::Mp3, rec.default_sample_rate_hz)
-        } else {
-            let (rate_hz, ch) =
-                parse_pcm_content_type(&content_type).unwrap_or((rec.default_sample_rate_hz, 1));
-            (
-                EncodedAudioFormat::PcmS16Le {
-                    sample_rate_hz: rate_hz,
-                    channels: ch,
-                },
-                rate_hz,
-            )
-        };
-        let _ = sample_hint;
+        let expected = ExpectedWireFormat::pcm(sample_rate, 1);
+        // Official batch TTS returns raw audio bytes (or JSON only when timestamps requested).
+        let format = resolve_encoded_format(PROVIDER_NAME, expected, &content_type, &bytes)?;
 
         let bounded = BoundedAudioBody::try_from_bytes(
             bytes,
@@ -313,14 +293,15 @@ impl SynthesisProvider for XaiTtsProvider {
         )
         .await?;
 
+        op.emit("tts", "done");
         Ok(SynthesisResult {
             pcm_i16_mono: norm.pcm_i16_mono,
             sample_rate_hz: norm.sample_rate_hz,
             channels: 1,
             backend_kind: BackendKind::Remote,
             provider: PROVIDER_NAME.into(),
-            model: opts.model.clone(),
-            voice,
+            model: rec.model.into(),
+            voice: voice.clone(),
             language: opts.language.clone(),
             duration_ms: norm.duration_ms,
             text_chars: text.chars().count(),
@@ -345,32 +326,26 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     #[test]
-    fn registry_lookup() {
-        assert!(lookup_xai_tts("grok-tts").is_some());
-        assert!(lookup_xai_tts("nope").is_none());
-    }
-
-    #[test]
-    fn rejects_local_voice_alias() {
-        let err = XaiTtsProvider::resolve_model_voice("grok-tts", "Luna").unwrap_err();
-        assert!(err.to_string().contains("voice") || err.to_string().contains("Luna"));
+    fn registry_and_voices() {
+        assert!(lookup_xai_tts("xai-tts").is_some());
+        assert!(lookup_xai_tts("grok-tts").is_none());
+        assert!(lookup_xai_tts("").is_some());
+        let err = XaiTtsProvider::resolve_model_voice("xai-tts", "alloy").unwrap_err();
+        assert!(err.to_string().contains("voice") || err.to_string().contains("alloy"));
+        assert!(XaiTtsProvider::resolve_model_voice("xai-tts", "eve").is_ok());
     }
 
     #[tokio::test]
-    async fn mock_pcm_speech() {
+    async fn mock_official_tts_pcm() {
         let server = MockServer::start().await;
-        let n = 2_400;
-        let mut pcm = Vec::with_capacity(n * 2);
-        for i in 0..n {
-            let s = ((i % 40) as i16) * 10;
-            pcm.extend_from_slice(&s.to_le_bytes());
-        }
+        // 100ms mono s16le @ 24kHz = 4800 samples * 2 = 9600 bytes
+        let pcm = vec![0u8; 9600];
         Mock::given(method("POST"))
-            .and(path("/audio/speech"))
+            .and(path("/v1/tts"))
             .and(header("Authorization", "Bearer xai-test"))
             .respond_with(
                 ResponseTemplate::new(200)
-                    .insert_header("Content-Type", "audio/pcm;rate=24000;channels=1")
+                    .insert_header("content-type", "audio/pcm;rate=24000;channels=1")
                     .set_body_bytes(pcm),
             )
             .mount(&server)
@@ -378,7 +353,7 @@ mod tests {
 
         let provider = XaiTtsProvider::with_policy(
             Some("xai-test".into()),
-            Some(server.uri()),
+            Some(format!("{}/v1", server.uri().trim_end_matches('/'))),
             RemotePolicy {
                 allow_loopback_http: true,
                 allow_custom_credentialed_endpoint: true,
@@ -387,27 +362,51 @@ mod tests {
         )
         .unwrap();
 
-        let result = provider
-            .synthesize(
-                "Hello xAI",
-                &SynthesisOptions {
-                    model: "grok-tts".into(),
-                    voice: "alloy".into(),
-                    language: "en".into(),
-                    sample_rate_hz: None,
-                    speaking_rate: 1.0,
-                    timeout_ms: 30_000,
-                    cancel: None,
-                    local_only: false,
-                    pack_dir: None,
-                    allow_unverified: false,
-                },
-            )
-            .await
-            .unwrap();
+        let opts = SynthesisOptions {
+            model: "xai-tts".into(),
+            voice: "eve".into(),
+            timeout_ms: 5_000,
+            ..Default::default()
+        };
+        let result = provider.synthesize("Hello from xAI", &opts).await.unwrap();
         assert_eq!(result.provider, "xai");
+        assert_eq!(result.voice, "eve");
         assert_eq!(result.backend_kind, BackendKind::Remote);
-        assert_eq!(result.sample_rate_hz, 24_000);
-        assert_eq!(result.pcm_i16_mono.len(), n);
+        assert!(!result.pcm_i16_mono.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mock_rejects_json_as_pcm() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/tts"))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "audio/pcm")
+                    .set_body_string(r#"{"error":"nope"}"#),
+            )
+            .mount(&server)
+            .await;
+
+        let provider = XaiTtsProvider::with_policy(
+            Some("xai-test".into()),
+            Some(format!("{}/v1", server.uri().trim_end_matches('/'))),
+            RemotePolicy {
+                allow_loopback_http: true,
+                allow_custom_credentialed_endpoint: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let opts = SynthesisOptions {
+            model: "xai-tts".into(),
+            voice: "eve".into(),
+            timeout_ms: 5_000,
+            ..Default::default()
+        };
+        let err = provider.synthesize("Hi", &opts).await.unwrap_err();
+        let s = err.to_string();
+        assert!(!s.contains("nope"));
     }
 }

@@ -191,7 +191,7 @@ impl HardenedHttpClient {
 
         let http = builder.build().map_err(|e| ProviderError::Network {
             provider: provider.provider_id().into(),
-            reason: e.to_string(),
+            reason: super::status::public_network_reason(&e),
         })?;
 
         Ok(Self {

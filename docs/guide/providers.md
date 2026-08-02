@@ -91,7 +91,10 @@ aurum tts "Hello from OpenRouter" --provider openrouter \
   --model openai/gpt-4o-mini-tts --voice alloy -O /tmp/or.wav --emit-json
 ```
 
-- Only **reviewed** OpenRouter TTS models are accepted (fail closed).
+- Only **reviewed exact** OpenRouter TTS model ids are accepted (fail closed). Default:
+  `openai/gpt-4o-mini-tts-2025-12-15` (no silent undated alias).
+- Tier is **experimental** until a protected live speech smoke is retained; mock CI alone
+  does not promote to supported (JOE-1978).
 - Voices are provider voice ids (e.g. `alloy`); local Kitten aliases are **not** remapped.
 - Prefer PCM wire format; Aurum normalizes to mono `i16` via the shared remote-audio pipeline.
 - **Privacy:** synthesis text is sent to OpenRouter (and potentially an upstream model).

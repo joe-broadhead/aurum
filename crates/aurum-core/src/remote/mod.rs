@@ -32,5 +32,5 @@ pub use policy::{
     OPENROUTER_APP_REFERER, OPENROUTER_APP_TITLE, OPENROUTER_DEFAULT_BASE, OPENROUTER_ORIGIN,
     XAI_DEFAULT_BASE, XAI_ORIGIN,
 };
-pub use status::{redact_secret, redact_secret_with};
+pub use status::{public_network_reason, redact_secret, redact_secret_with};
 pub use wire_format::{resolve_encoded_format, ExpectedWireFormat};

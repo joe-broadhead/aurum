@@ -80,7 +80,7 @@ pub async fn read_body_limited(
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| ProviderError::Network {
             provider: provider.into(),
-            reason: e.to_string(),
+            reason: super::status::public_network_reason(&e),
         })?;
         if out.len().saturating_add(chunk.len()) > limits.max_bytes {
             return Err(ProviderError::ResponseTooLarge {

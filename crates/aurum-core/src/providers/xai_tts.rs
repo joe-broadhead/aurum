@@ -11,6 +11,7 @@ use crate::remote::{
     ExpectedWireFormat, HardenedHttpClient, RemoteBodyLimits, RemotePolicy, XaiHttpPolicy,
 };
 use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
+use crate::secret::SecretString;
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
 use crate::tts::validate::{clamp_speaking_rate, SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
 use async_trait::async_trait;
@@ -78,7 +79,7 @@ struct XaiOutputFormat {
 
 /// xAI batch REST speech provider.
 pub struct XaiTtsProvider {
-    api_key: String,
+    api_key: SecretString,
     http: HardenedHttpClient,
     governor: Arc<ResourceGovernor>,
 }
@@ -94,13 +95,12 @@ impl std::fmt::Debug for XaiTtsProvider {
 
 impl XaiTtsProvider {
     pub fn with_policy(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         mut policy: RemotePolicy,
     ) -> Result<Self> {
         let api_key = api_key
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.expose().trim().is_empty())
             .ok_or(UserError::MissingApiKey)?;
 
         if base_url
@@ -159,6 +159,16 @@ impl SynthesisProvider for XaiTtsProvider {
     }
 
     async fn synthesize(&self, text: &str, opts: &SynthesisOptions) -> Result<SynthesisResult> {
+        if opts.pack_dir.is_some() || opts.allow_unverified {
+            return Err(UserError::UnsupportedCapability {
+                provider: PROVIDER_NAME.into(),
+                model: opts.model.clone(),
+                reason: "local pack_dir/allow_unverified are not valid for remote TTS".into(),
+                hint: "omit pack_dir; use a local TTS provider for custom packs".into(),
+            }
+            .into());
+        }
+
         if opts.local_only {
             return Err(UserError::UnsupportedCapability {
                 provider: PROVIDER_NAME.into(),
@@ -239,7 +249,7 @@ impl SynthesisProvider for XaiTtsProvider {
 
         let response = send_with_op(
             self.http
-                .request(reqwest::Method::POST, "tts", &self.api_key)?
+                .request(reqwest::Method::POST, "tts", self.api_key.expose())?
                 .header("Content-Type", "application/json")
                 .body(json),
             &op,

@@ -150,6 +150,87 @@ pub fn reverify_artifact_before_load(path: &Path, expect_sha256: Option<&str>) -
     Ok(())
 }
 
+/// Stage a **verified** pack artifact into a private cache snapshot for native load.
+///
+/// Closes the remaining reverify→ORT/NPZ reopen window (post-v0.0.18 F-005 re-open):
+/// after digest check, bytes are copied into `cache_root/tts/verified-snaps/<sha>/`
+/// and re-hashed there; native loaders must open the **snapshot** path, not the
+/// pack path. Without a digest (`local_unverified`), falls back to reverify-only
+/// on the original path (explicit residual for unverified packs).
+pub fn stage_verified_for_load(
+    source: &Path,
+    expect_sha256: Option<&str>,
+    cache_root: &Path,
+    leaf_name: &str,
+) -> Result<PathBuf> {
+    reverify_artifact_before_load(source, expect_sha256)?;
+    let Some(expect) = expect_sha256.map(|s| s.to_ascii_lowercase()) else {
+        // No digest: cannot form an immutable content-addressed snap; residual
+        // for local_unverified is documented (hostile FS out of Tier A).
+        return Ok(source.to_path_buf());
+    };
+    if !expect.chars().all(|c| c.is_ascii_hexdigit()) || expect.len() != 64 {
+        return Err(UserError::InvalidConfig {
+            reason: "expect_sha256 must be a 64-char hex digest for verified staging".into(),
+        }
+        .into());
+    }
+    let snap_dir = cache_root.join("tts").join("verified-snaps").join(&expect);
+    fs::create_dir_all(&snap_dir).map_err(EnvironmentError::Io)?;
+    let dest = snap_dir.join(sanitize_snap_leaf(leaf_name));
+    if dest.is_file() {
+        // Existing snap: re-check digest (fail closed if corrupted).
+        reverify_artifact_before_load(&dest, Some(&expect))?;
+        return Ok(dest);
+    }
+    // Exclusive partial → durable rename (JOE-1918 partial policy).
+    let partial = snap_dir.join(format!(
+        ".partial-{leaf}-{rand}",
+        leaf = sanitize_snap_leaf(leaf_name),
+        rand = std::process::id()
+    ));
+    {
+        let mut src = fs::File::open(source).map_err(EnvironmentError::Io)?;
+        let mut out = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&partial)
+            .map_err(EnvironmentError::Io)?;
+        std::io::copy(&mut src, &mut out).map_err(EnvironmentError::Io)?;
+        out.sync_all().map_err(EnvironmentError::Io)?;
+    }
+    // Re-hash partial before publish.
+    let got = sha256_file(&partial)?;
+    if !got.eq_ignore_ascii_case(&expect) {
+        let _ = fs::remove_file(&partial);
+        return Err(UserError::InvalidConfig {
+            reason: format!(
+                "staged artifact digest mismatch (source may have been swapped during copy)\n  expected {expect}\n  got      {got}"
+            ),
+        }
+        .into());
+    }
+    fs::rename(&partial, &dest).map_err(EnvironmentError::Io)?;
+    reverify_artifact_before_load(&dest, Some(&expect))?;
+    Ok(dest)
+}
+
+fn sanitize_snap_leaf(name: &str) -> String {
+    let base = Path::new(name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("artifact");
+    base.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
 /// Verify digests/sizes for pack artifacts relative to `root` (JOE-1649).
 ///
 /// Every artifact path is resolved with symlink rejection and proven to remain
@@ -486,5 +567,31 @@ mod tests {
             err.to_string().contains("digest") || err.to_string().contains("changed"),
             "expected digest change detection: {err}"
         );
+    }
+
+    #[test]
+    fn stage_verified_isolates_from_source_swap() {
+        let dir = tempdir().unwrap();
+        let pack = dir.path().join("pack");
+        let m = write_fake_sine_pack(&pack, "stage").unwrap();
+        let config = pack.join("config.json");
+        let expect = m.artifacts[0].sha256.clone().unwrap();
+        let cache = dir.path().join("cache");
+        let staged =
+            stage_verified_for_load(&config, Some(&expect), &cache, "config.json").unwrap();
+        assert_ne!(staged, config);
+        assert!(staged.starts_with(cache.join("tts").join("verified-snaps")));
+        // Mutate pack path after staging — snap remains good.
+        fs::write(&config, b"mutated-after-stage").unwrap();
+        reverify_artifact_before_load(&staged, Some(&expect)).unwrap();
+        let again =
+            stage_verified_for_load(&config, Some(&expect), &cache, "config.json").unwrap_err();
+        assert!(
+            again.to_string().contains("digest") || again.to_string().contains("changed"),
+            "source mutation must fail re-stage: {again}"
+        );
+        // Existing snap still loadable.
+        let snap2 = stage_verified_for_load(&staged, Some(&expect), &cache, "config.json").unwrap();
+        assert_eq!(snap2, staged);
     }
 }

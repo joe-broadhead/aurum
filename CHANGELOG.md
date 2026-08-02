@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancel checks, and stitch text/segments with time offsets. Short files stay
   single-request. Override with `AURUM_REMOTE_STT_CHUNK_SECS`. Soft-splits rare
   overlong single segments past the 8k char bound. Local whisper unchanged.
+- **JOE-2213 — Provider catalogue probe:** offline/live probe for reviewed STT/TTS
+  registries and product defaults (`scripts/probe_provider_catalogues.sh`,
+  example `probe_provider_catalogues`, workflow_dispatch CI job). Fail closed if
+  a default is missing from its static registry; live mode checks OpenRouter
+  speech + OpenAI model lists without printing secrets. Docs cover OpenRouter
+  privacy prerequisite and demotion rules (JOE-1978 residual called out).
 
 ### Documentation
 

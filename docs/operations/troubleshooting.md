@@ -29,23 +29,29 @@ aurum tests/fixtures/silence.wav --model tiny -o json
 | Message | Meaning |
 |---------|---------|
 | API key is missing | Set `OPENROUTER_API_KEY` |
-| No endpoints available matching your guardrail restrictions | Account privacy/data policy blocks the model — fix https://openrouter.ai/settings/privacy |
+| No endpoints available matching your guardrail restrictions | **Privacy prerequisite:** https://openrouter.ai/settings/privacy |
 | No endpoints found that support input audio | Model is text-only — pick a reviewed audio-capable id |
 | looks like a local whisper model | Don’t pass `tiny`/`base` with `--provider openrouter` |
 | SRT refused | Use `-o json` or `--allow-unreliable-timestamps` |
 | model not in reviewed registry | Use a listed id, or set `--openrouter-stt-mode chat` / `transcriptions` explicitly |
+
+OpenRouter account privacy/guardrails must allow the model, or **all** endpoints
+can fail. Re-probe catalogues after policy changes:
+`./scripts/probe_provider_catalogues.sh --live` (JOE-2213).
 
 ## OpenRouter SRT refused
 
 Expected for **llm_assisted** (chat multimodal) routes. Prefer dedicated ASR models
 from the reviewed registry for SRT, or use `-o txt` / `-o json`.
 
-## Remote STT: segment too long / truncated long files
+## Remote STT long-form (JOE-2212)
 
-First-party OpenAI/xAI paths reject a single segment when transcript text exceeds
-the max segment bound (~8k characters). Very long lectures may need external
-chunking until automatic chunk-and-stitch lands (tracked for v0.0.21). Prefer
-local whisper for full long-form offline, or shorter remote segments.
+OpenAI, OpenRouter, and xAI automatically **time-chunk** audio longer than ~210s
+and stitch text/segments with offsets. Short files stay single-request.
+
+- Override window: `AURUM_REMOTE_STT_CHUNK_SECS` (positive seconds)
+- Cancel is checked between chunks
+- Local whisper is unchanged (full-file offline)
 
 ## Other remote providers
 

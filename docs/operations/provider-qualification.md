@@ -98,6 +98,35 @@ Account-level retention/logging is **vendor-dependent**; Aurum does not claim
 zero-retention on behalf of third parties. See also
 [credential hygiene](credential-hygiene.md).
 
+### OpenRouter privacy prerequisite
+
+OpenRouter account **privacy / data policy / guardrails** must allow the chosen
+model, or every request fails with “No endpoints available matching your
+guardrail restrictions.” Operators: https://openrouter.ai/settings/privacy
+
+### Catalogue probe (JOE-2213)
+
+Keep reviewed registries aligned with live vendor catalogues so defaults do not
+ship dead:
+
+```bash
+# Offline (CI-safe): dump static registries + fail if a product default is missing
+./scripts/probe_provider_catalogues.sh --offline \
+  --out dist/provider-catalogue/PROBE_REPORT.md
+
+# Live (keys in env; list endpoints only — no synthesis audio/text):
+OPENROUTER_API_KEY=… OPENAI_API_KEY=… \
+  ./scripts/probe_provider_catalogues.sh --live \
+  --out dist/provider-catalogue/PROBE_REPORT_LIVE.md
+```
+
+GitHub Actions: workflow **Provider catalogue probe** (`workflow_dispatch`;
+optional `live=true` with repository secrets).
+
+- **Static FAIL on a default** → demote/replace the constant before release.
+- **Live FAIL on a default** → open a demotion PR; do not ship.
+- OpenRouter TTS remains **experimental** until protected smoke (JOE-1978).
+
 ## Release gate checklist
 
 Before publishing a release that includes provider-platform changes:

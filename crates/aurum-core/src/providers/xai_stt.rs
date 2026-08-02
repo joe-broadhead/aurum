@@ -11,9 +11,9 @@ use crate::audio::{self, AudioInput, DEFAULT_FFMPEG_TIMEOUT, DEFAULT_MAX_UPLOAD_
 use crate::error::{ProviderError, Result, UserError};
 use crate::postprocess;
 use crate::remote::{
-    map_http_status, read_body_limited_with_op, send_with_op, validate_segments,
-    validate_text_bounds, HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
-    XaiHttpPolicy,
+    effective_chunk_secs, map_http_status, read_body_limited_with_op, send_with_op,
+    transcribe_maybe_chunked, validate_segments, validate_text_bounds, HardenedHttpClient,
+    RemoteBodyLimits, RemotePolicy, TranscriptLimits, XaiHttpPolicy,
 };
 use crate::runtime::{PermitKind, ResourceGovernor};
 use crate::secret::SecretString;
@@ -116,6 +116,32 @@ impl TranscriptionProvider for XaiSttProvider {
     }
 
     async fn transcribe(
+        &self,
+        input: &AudioInput,
+        options: &TranscriptionOptions,
+    ) -> Result<TranscriptionResult> {
+        let _ = lookup_xai_stt(&options.model).ok_or_else(|| UserError::UnsupportedCapability {
+            provider: PROVIDER_NAME.into(),
+            model: options.model.clone(),
+            reason: "model is not in the reviewed xAI STT registry".into(),
+            hint: format!(
+                "use {} (official REST has no per-request model id; do not use grok-asr*)",
+                DEFAULT_XAI_STT_MODEL
+            ),
+        })?;
+        transcribe_maybe_chunked(
+            input,
+            options,
+            PROVIDER_NAME,
+            effective_chunk_secs(),
+            |chunk, opts| async move { self.transcribe_one_shot(&chunk, &opts).await },
+        )
+        .await
+    }
+}
+
+impl XaiSttProvider {
+    async fn transcribe_one_shot(
         &self,
         input: &AudioInput,
         options: &TranscriptionOptions,

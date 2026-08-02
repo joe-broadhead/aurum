@@ -16,8 +16,9 @@ use crate::audio::{self, AudioInput, DEFAULT_FFMPEG_TIMEOUT, DEFAULT_MAX_UPLOAD_
 use crate::error::{ProviderError, Result, UserError};
 use crate::postprocess;
 use crate::remote::{
-    map_http_status, read_body_limited_with_op, send_with_op, validate_segments,
-    validate_text_bounds, HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
+    effective_chunk_secs, map_http_status, read_body_limited_with_op, send_with_op,
+    transcribe_maybe_chunked, validate_segments, validate_text_bounds, HardenedHttpClient,
+    RemoteBodyLimits, RemotePolicy, TranscriptLimits,
 };
 use crate::runtime::{PermitKind, ResourceGovernor};
 use crate::secret::SecretString;
@@ -183,6 +184,25 @@ impl TranscriptionProvider for OpenRouterProvider {
     }
 
     async fn transcribe(
+        &self,
+        input: &AudioInput,
+        options: &TranscriptionOptions,
+    ) -> Result<TranscriptionResult> {
+        // Resolve route once so unknown models fail closed before chunking (JOE-2212).
+        let _ = self.resolve_path(&options.model)?;
+        transcribe_maybe_chunked(
+            input,
+            options,
+            "openrouter",
+            effective_chunk_secs(),
+            |chunk, opts| async move { self.transcribe_one_shot(&chunk, &opts).await },
+        )
+        .await
+    }
+}
+
+impl OpenRouterProvider {
+    async fn transcribe_one_shot(
         &self,
         input: &AudioInput,
         options: &TranscriptionOptions,

@@ -55,6 +55,15 @@ local whisper for full long-form offline, or shorter remote segments.
 | `elevenlabs` | TTS only; requires explicit `voice_id` (not Kitten aliases) |
 | `xai` | Experimental; official `/v1/stt` + `/v1/tts` only; voices `eve\|ara\|leo\|rex\|sal` |
 
+## Remote STT long-form (JOE-2212)
+
+OpenAI, OpenRouter, and xAI automatically **time-chunk** audio longer than ~210s
+and stitch text/segments with offsets. Short files stay single-request.
+
+- Override window: `AURUM_REMOTE_STT_CHUNK_SECS` (positive seconds)
+- Cancel is checked between chunks
+- Local whisper is unchanged (full-file offline)
+
 ## Metal / abort on process exit (library)
 
 ```rust

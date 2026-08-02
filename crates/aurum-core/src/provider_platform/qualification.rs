@@ -20,9 +20,16 @@ mod tests {
             .into_iter()
             .map(|s| s.id)
             .collect();
-        for need in ["local", "openrouter", "openai", "elevenlabs", "xai"] {
+        // STT (+ dual) verticals are always registered. ElevenLabs is TTS-only and only
+        // appears when the `tts` feature is enabled (e.g. default features / full build).
+        for need in ["local", "openrouter", "openai", "xai"] {
             assert!(ids.iter().any(|i| i == need), "missing provider {need}");
         }
+        #[cfg(feature = "tts")]
+        assert!(
+            ids.iter().any(|i| i == "elevenlabs"),
+            "missing provider elevenlabs"
+        );
         check_builtin_conformance(&reg).unwrap();
     }
 

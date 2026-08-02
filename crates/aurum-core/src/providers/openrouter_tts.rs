@@ -3,13 +3,12 @@
 //! Direction-specific from [`super::openrouter::OpenRouterProvider`] (STT).
 //! Prefer PCM wire format and normalize through [`crate::audio::normalize_remote_audio`].
 
-use crate::audio::{
-    normalize_remote_audio, BoundedAudioBody, EncodedAudioFormat, RemoteAudioLimits,
-};
+use crate::audio::{normalize_remote_audio, BoundedAudioBody, RemoteAudioLimits};
 use crate::error::{ProviderError, Result, UserError};
 use crate::remote::{
-    map_http_status, parse_pcm_content_type, read_body_limited_with_op, send_with_op,
-    HardenedHttpClient, OpenAiSpeechRequest, RemoteBodyLimits, RemotePolicy, SpeechResponseFormat,
+    map_http_status, read_body_limited_with_op, resolve_encoded_format, send_with_op,
+    ExpectedWireFormat, HardenedHttpClient, OpenAiSpeechRequest, RemoteBodyLimits, RemotePolicy,
+    SpeechResponseFormat,
 };
 use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
@@ -278,13 +277,8 @@ impl SynthesisProvider for OpenRouterTtsProvider {
         // Never echo response body text; status mapping is allowlisted only.
         map_http_status(PROVIDER_NAME, status, "")?;
 
-        let (sample_rate_hz, channels) =
-            parse_pcm_content_type(&content_type).unwrap_or((rec.default_sample_rate_hz, 1));
-
-        let format = EncodedAudioFormat::PcmS16Le {
-            sample_rate_hz,
-            channels,
-        };
+        let expected = ExpectedWireFormat::pcm(rec.default_sample_rate_hz, 1);
+        let format = resolve_encoded_format(PROVIDER_NAME, expected, &content_type, &bytes)?;
         let bounded = BoundedAudioBody::try_from_bytes(
             bytes,
             RemoteAudioLimits::default().max_encoded_bytes,

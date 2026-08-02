@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JOE-1976:** xAI STT/TTS use official REST `POST /v1/stt` and `POST /v1/tts`
+  (not OpenAI `/audio/*`). Product ids `xai-stt` / `xai-tts`; voices
+  `eve|ara|leo|rex|sal`. Stability **Experimental** end-to-end until protected
+  smokes. Legacy `grok-asr*` / `grok-tts*` / OpenAI voice ids fail closed.
+- **JOE-1977:** remote TTS fails closed on MIME/format mismatch via
+  `resolve_encoded_format` — missing/generic/JSON/HTML Content-Type never
+  defaults to PCM; rate/channel params must match the requested wire format.
 - **JOE-1975 (High):** engine-bound remote STT/TTS acquire `PermitKind::Remote` from
   the **engine-local** governor (not `process_global`), and HTTP `.send()` / body
   reads race cancel + absolute deadline via `send_with_op` /

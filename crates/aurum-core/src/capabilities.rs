@@ -573,7 +573,7 @@ pub fn xai_stt_capabilities(model: &str) -> Result<ProviderCapabilities> {
         provider: "xai".into(),
         model: model.into(),
         reason: "model is not in the reviewed xAI STT registry".into(),
-        hint: "use grok-asr or grok-asr-v2".into(),
+        hint: "use xai-stt (official REST POST /v1/stt; not grok-asr*)".into(),
     })?;
     let mut caps = ProviderCapabilities::with_core("xai", rec.model, CapabilityOperation::Stt);
     caps.stt_backend = Some(SttBackendClass::Asr);
@@ -589,9 +589,10 @@ pub fn xai_stt_capabilities(model: &str) -> Result<ProviderCapabilities> {
     caps.streaming_implemented_by_aurum = false;
     caps.descriptor_freshness = DescriptorFreshness::Reviewed;
     caps.notes = vec![
-        "xAI REST multipart /audio/transcriptions (OpenAI-compatible request shape).".into(),
-        "Realtime/WebSocket speech is not implemented; preflight fails closed for streaming claims."
-            .into(),
+        "xAI official REST multipart POST /v1/stt (not OpenAI /audio/transcriptions).".into(),
+        "Product id xai-stt: API has no per-request model field.".into(),
+        "Realtime/WebSocket speech is not implemented; fails closed.".into(),
+        "Experimental: mocks only until protected credentialed smoke.".into(),
         "Audio leaves the machine only when provider=xai (or alias grok) is selected.".into(),
     ];
     Ok(caps)
@@ -606,7 +607,7 @@ pub fn xai_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
             provider: "xai".into(),
             model: model.into(),
             reason: "model is not in the reviewed xAI TTS registry".into(),
-            hint: "use grok-tts, grok-tts-hd, or grok-tts-mini".into(),
+            hint: "use xai-tts with voice_id eve|ara|leo|rex|sal (not OpenAI alloy)".into(),
         })?;
         let mut caps = ProviderCapabilities::with_core("xai", rec.model, CapabilityOperation::Tts);
         caps.languages = vec!["en".into(), "auto".into()];
@@ -617,7 +618,7 @@ pub fn xai_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
         caps.output_formats = vec!["wav".into(), "json".into()];
         caps.voice_model = Some(VoiceModel::ProviderVoiceIds);
         caps.supports_voice_ids = true;
-        caps.output_audio_formats = vec!["pcm_s16le".into(), "mp3".into()];
+        caps.output_audio_formats = vec!["pcm_s16le".into()];
         caps.direct_pcm = true;
         caps.sample_rates_hz = vec![rec.default_sample_rate_hz];
         caps.supports_speaking_rate = true;
@@ -627,8 +628,10 @@ pub fn xai_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
         caps.streaming_implemented_by_aurum = false;
         caps.descriptor_freshness = DescriptorFreshness::Reviewed;
         caps.notes = vec![
-            "xAI REST /audio/speech (OpenAI-compatible request body).".into(),
-            "Streaming/realtime voice is not implemented in this vertical.".into(),
+            "xAI official REST POST /v1/tts (not OpenAI /audio/speech).".into(),
+            "Product id xai-tts: API has no model field; built-in voices only.".into(),
+            "Streaming/realtime voice is not implemented.".into(),
+            "Experimental: mocks only until protected credentialed smoke.".into(),
             format!("Reviewed voices: {}.", rec.voices.join(", ")),
         ];
         Ok(caps)
@@ -827,7 +830,7 @@ pub fn preflight_stt(
                     model: model.into(),
                     reason: "SRT requires reliable timestamps; this xAI model is text-only JSON"
                         .into(),
-                    hint: "use grok-asr with timestamps, or output txt/json".into(),
+                    hint: "use xai-stt with timestamps (word timings), or output txt/json".into(),
                 }
                 .into());
             }

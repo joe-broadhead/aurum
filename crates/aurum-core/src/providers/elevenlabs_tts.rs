@@ -3,13 +3,11 @@
 //! `POST /v1/text-to-speech/{voice_id}?output_format=pcm_24000` with `xi-api-key`.
 //! Voice IDs are provider-native; local Kitten aliases are never remapped.
 
-use crate::audio::{
-    normalize_remote_audio, BoundedAudioBody, EncodedAudioFormat, RemoteAudioLimits,
-};
+use crate::audio::{normalize_remote_audio, BoundedAudioBody, RemoteAudioLimits};
 use crate::error::{ProviderError, Result, UserError};
 use crate::remote::{
-    map_http_status, read_body_limited_with_op, send_with_op, ElevenLabsHttpPolicy,
-    HardenedHttpClient, RemoteBodyLimits, RemotePolicy,
+    map_http_status, read_body_limited_with_op, resolve_encoded_format, send_with_op,
+    ElevenLabsHttpPolicy, ExpectedWireFormat, HardenedHttpClient, RemoteBodyLimits, RemotePolicy,
 };
 use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
@@ -318,14 +316,18 @@ impl SynthesisProvider for ElevenLabsTtsProvider {
         op.check()?;
         map_http_status(PROVIDER_NAME, status, "")?;
 
-        // Prefer explicit PCM request; fall back to MP3 only if content-type is mpeg.
-        let format = if content_type.contains("mpeg") || content_type.contains("mp3") {
-            EncodedAudioFormat::Mp3
-        } else {
-            EncodedAudioFormat::PcmS16Le {
-                sample_rate_hz: rec.default_sample_rate_hz,
-                channels: 1,
+        // Requested pcm_24000; accept only allowlisted PCM MIME (JOE-1977).
+        let expected = ExpectedWireFormat::pcm(rec.default_sample_rate_hz, 1);
+        let format = if content_type.to_ascii_lowercase().contains("mpeg")
+            || content_type.to_ascii_lowercase().contains("audio/mp3")
+        {
+            return Err(ProviderError::InvalidProviderPayload {
+                provider: PROVIDER_NAME.into(),
+                reason: "expected PCM but Content-Type indicates MP3".into(),
             }
+            .into());
+        } else {
+            resolve_encoded_format(PROVIDER_NAME, expected, &content_type, &bytes)?
         };
 
         let bounded = BoundedAudioBody::try_from_bytes(

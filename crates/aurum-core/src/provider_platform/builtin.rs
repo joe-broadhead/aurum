@@ -495,7 +495,7 @@ impl XaiSttFactory {
                 "xAI STT",
                 ProviderOperations::STT_ONLY,
                 NetworkRequirement::RequiresNetwork,
-                ProviderStability::Stable,
+                ProviderStability::Experimental,
             ),
         }
     }
@@ -556,7 +556,7 @@ impl XaiTtsFactory {
                 "xAI TTS",
                 ProviderOperations::TTS_ONLY,
                 NetworkRequirement::RequiresNetwork,
-                ProviderStability::Stable,
+                ProviderStability::Experimental,
             ),
         }
     }

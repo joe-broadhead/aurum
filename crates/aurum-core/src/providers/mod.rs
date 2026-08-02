@@ -531,14 +531,23 @@ mod registry_defaults_tests {
     use super::*;
 
     #[test]
-    fn product_defaults_resolve_in_reviewed_registries() {
-        assert!(
-            lookup_openrouter_tts(DEFAULT_OPENROUTER_TTS_MODEL).is_some(),
-            "OpenRouter TTS default missing from OPENROUTER_TTS_REGISTRY"
-        );
+    fn product_stt_defaults_resolve_in_reviewed_registries() {
         assert!(
             lookup_openai_stt(DEFAULT_OPENAI_STT_MODEL).is_some(),
             "OpenAI STT default missing from OPENAI_STT_REGISTRY"
+        );
+        assert!(
+            lookup_xai_stt(DEFAULT_XAI_STT_MODEL).is_some(),
+            "xAI STT default missing from XAI_STT_REGISTRY"
+        );
+    }
+
+    #[cfg(feature = "tts")]
+    #[test]
+    fn product_tts_defaults_resolve_in_reviewed_registries() {
+        assert!(
+            lookup_openrouter_tts(DEFAULT_OPENROUTER_TTS_MODEL).is_some(),
+            "OpenRouter TTS default missing from OPENROUTER_TTS_REGISTRY"
         );
         assert!(
             lookup_openai_tts(DEFAULT_OPENAI_TTS_MODEL).is_some(),
@@ -547,10 +556,6 @@ mod registry_defaults_tests {
         assert!(
             lookup_elevenlabs_tts(DEFAULT_ELEVENLABS_TTS_MODEL).is_some(),
             "ElevenLabs TTS default missing from ELEVENLABS_TTS_REGISTRY"
-        );
-        assert!(
-            lookup_xai_stt(DEFAULT_XAI_STT_MODEL).is_some(),
-            "xAI STT default missing from XAI_STT_REGISTRY"
         );
         assert!(
             lookup_xai_tts(DEFAULT_XAI_TTS_MODEL).is_some(),

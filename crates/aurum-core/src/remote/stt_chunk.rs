@@ -7,7 +7,7 @@
 //!
 //! Local whisper is unchanged (handles full-file natively).
 
-use crate::audio::{AudioInput, WHISPER_SAMPLE_RATE};
+use crate::audio::AudioInput;
 use crate::error::{ProviderError, Result};
 use crate::providers::{Segment, TranscriptionOptions, TranscriptionResult};
 use crate::remote::limits::{validate_segments, validate_text_bounds, TranscriptLimits};
@@ -225,15 +225,10 @@ fn join_transcript_parts(parts: &[String]) -> String {
         if p.is_empty() {
             continue;
         }
-        if out.is_empty() {
-            out.push_str(p);
-        } else if out.ends_with(|c: char| c.is_whitespace()) || p.starts_with(|c: char| c.is_whitespace())
-        {
-            out.push_str(p);
-        } else {
+        if !out.is_empty() && !out.ends_with(|c: char| c.is_whitespace()) {
             out.push(' ');
-            out.push_str(p);
         }
+        out.push_str(p);
     }
     out
 }
@@ -285,9 +280,9 @@ where
         let result = one_shot(chunk_input, options.clone()).await.map_err(|e| {
             // Surface which chunk failed for operator diagnostics (no secrets).
             match e {
-                crate::error::TranscriptionError::Provider(ProviderError::TranscriptionFailed {
-                    reason,
-                }) => ProviderError::TranscriptionFailed {
+                crate::error::TranscriptionError::Provider(
+                    ProviderError::TranscriptionFailed { reason },
+                ) => ProviderError::TranscriptionFailed {
                     reason: format!(
                         "chunk {}/{} (offset {:.1}s): {reason}",
                         i + 1,
@@ -323,6 +318,7 @@ pub fn effective_chunk_secs() -> f64 {
 /// Convenience for tests: 16 kHz silence of `duration_secs`.
 #[cfg(test)]
 pub fn silence_input(duration_secs: f64) -> AudioInput {
+    use crate::audio::WHISPER_SAMPLE_RATE;
     let n = (duration_secs * f64::from(WHISPER_SAMPLE_RATE)).round() as usize;
     AudioInput::from_pcm_slice(&vec![0.0f32; n.max(1)], WHISPER_SAMPLE_RATE).unwrap()
 }
@@ -330,6 +326,7 @@ pub fn silence_input(duration_secs: f64) -> AudioInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::audio::WHISPER_SAMPLE_RATE;
     use crate::providers::BackendKind;
 
     #[test]
@@ -398,9 +395,13 @@ mod tests {
         b.set_backend_kind(BackendKind::Asr);
         b.set_timestamps_reliable(true);
 
-        let stitched =
-            stitch_chunk_results(&[(0.0, a), (210.0, b)], 420.0, "openai", TranscriptLimits::default())
-                .unwrap();
+        let stitched = stitch_chunk_results(
+            &[(0.0, a), (210.0, b)],
+            420.0,
+            "openai",
+            TranscriptLimits::default(),
+        )
+        .unwrap();
         assert_eq!(stitched.text(), "hello world");
         assert_eq!(stitched.segments().len(), 2);
         assert!((stitched.segments()[1].start() - 210.0).abs() < 1e-9);

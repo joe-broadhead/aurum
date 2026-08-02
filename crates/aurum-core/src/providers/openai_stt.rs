@@ -129,8 +129,8 @@ impl TranscriptionProvider for OpenAiSttProvider {
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
         // Fail closed on unknown models before any chunk work (JOE-2212).
-        let _ = lookup_openai_stt(&options.model).ok_or_else(|| {
-            UserError::UnsupportedCapability {
+        let _ =
+            lookup_openai_stt(&options.model).ok_or_else(|| UserError::UnsupportedCapability {
                 provider: PROVIDER_NAME.into(),
                 model: options.model.clone(),
                 reason: "model is not in the reviewed OpenAI STT registry".into(),
@@ -142,8 +142,7 @@ impl TranscriptionProvider for OpenAiSttProvider {
                         .collect::<Vec<_>>()
                         .join(", ")
                 ),
-            }
-        })?;
+            })?;
         transcribe_maybe_chunked(
             input,
             options,

@@ -287,30 +287,56 @@ fn dir_check(id: &str, path: &Path, create_ok: bool) -> DoctorCheck {
 }
 
 fn disk_space_check(path: &Path) -> DoctorCheck {
-    // Portable best-effort: try to create parent and report existence only.
-    // Full free-space probes are platform-specific; we keep this deterministic.
     let probe = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or(path);
-    if probe.exists() || path.exists() {
-        DoctorCheck {
-            id: "disk".into(),
-            ok: true,
-            severity: DoctorSeverity::Info,
-            summary: "cache path parent is reachable".into(),
-            detail: Some(probe.display().to_string()),
-            hint: None,
-        }
-    } else {
-        DoctorCheck {
+    if !(probe.exists() || path.exists()) {
+        return DoctorCheck {
             id: "disk".into(),
             ok: false,
             severity: DoctorSeverity::Warn,
             summary: "cache path parent not found".into(),
             detail: Some(probe.display().to_string()),
             hint: Some("create the directory or choose another cache root".into()),
+        };
+    }
+    // Best-effort free-space probe (same helper downloads use for preflight).
+    match crate::download::available_disk_bytes(if probe.exists() { probe } else { path }) {
+        Some(free) => {
+            const WARN_BELOW: u64 = 512 * 1024 * 1024; // 512 MiB
+            let mb = free / (1024 * 1024);
+            if free < WARN_BELOW {
+                DoctorCheck {
+                    id: "disk".into(),
+                    ok: true,
+                    severity: DoctorSeverity::Warn,
+                    summary: format!("low free space (~{mb} MiB)"),
+                    detail: Some(probe.display().to_string()),
+                    hint: Some(
+                        "model downloads need budget + 64 MiB headroom; free space or shrink cache"
+                            .into(),
+                    ),
+                }
+            } else {
+                DoctorCheck {
+                    id: "disk".into(),
+                    ok: true,
+                    severity: DoctorSeverity::Info,
+                    summary: format!("free space ~{mb} MiB"),
+                    detail: Some(probe.display().to_string()),
+                    hint: None,
+                }
+            }
         }
+        None => DoctorCheck {
+            id: "disk".into(),
+            ok: true,
+            severity: DoctorSeverity::Info,
+            summary: "cache path parent is reachable".into(),
+            detail: Some(probe.display().to_string()),
+            hint: None,
+        },
     }
 }
 

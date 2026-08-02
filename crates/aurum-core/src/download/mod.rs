@@ -1,6 +1,9 @@
 //! Shared verify-before-publish artifact downloader (JOE-1591).
 //!
-//! Used by STT and TTS catalogues so download/trust policy is identical.
+//! STT (`model/`) and TTS (`tts/catalogue.rs`) both route through
+//! [`download_verified_request`]. This module owns: exclusive partials, size
+//! caps from reviewed metadata only, HF/GitHub redirect policy, disk-budget
+//! preflight, streaming SHA-256, and durable publish.
 
 use crate::error::{EnvironmentError, ProviderError, Result};
 use futures_util::StreamExt;
@@ -8,9 +11,10 @@ use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
-/// Reviewed artifact identity for a single downloadable file.
+/// Reviewed artifact identity for a single downloadable file (static catalogue).
 #[derive(Debug, Clone, Copy)]
 pub struct ArtifactSpec {
     pub id: &'static str,
@@ -27,14 +31,43 @@ pub struct ArtifactSpec {
     pub source_revision: &'static str,
 }
 
+/// Runtime download identity (STT/TTS map pins into this).
+#[derive(Debug, Clone, Copy)]
+pub struct DownloadRequest<'a> {
+    pub id: &'a str,
+    pub filename: &'a str,
+    pub sha256: &'a str,
+    pub exact_bytes: Option<u64>,
+    pub approx_bytes: u64,
+    pub url: &'a str,
+}
+
+impl ArtifactSpec {
+    pub fn request(&self) -> DownloadRequest<'_> {
+        DownloadRequest {
+            id: self.id,
+            filename: self.filename,
+            sha256: self.sha256,
+            exact_bytes: self.exact_bytes,
+            approx_bytes: self.approx_bytes,
+            url: self.url,
+        }
+    }
+}
+
+/// Byte progress callback: `(downloaded_bytes, advisory_total_bytes)`.
+pub type DownloadByteProgress = Arc<dyn Fn(u64, u64) + Send + Sync>;
+
 /// Options for a single download.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DownloadOptions {
     pub show_progress: bool,
     pub connect_timeout: Duration,
     pub total_timeout: Duration,
     /// Hard size cap multiplier over `approx_bytes` / exact (default 3×, floor 1 MiB).
     pub size_cap_factor: u64,
+    /// Optional progress hook (CLI/library progress bars).
+    pub on_progress: Option<DownloadByteProgress>,
 }
 
 impl Default for DownloadOptions {
@@ -44,7 +77,20 @@ impl Default for DownloadOptions {
             connect_timeout: Duration::from_secs(30),
             total_timeout: Duration::from_secs(30 * 60),
             size_cap_factor: 3,
+            on_progress: None,
         }
+    }
+}
+
+impl std::fmt::Debug for DownloadOptions {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DownloadOptions")
+            .field("show_progress", &self.show_progress)
+            .field("connect_timeout", &self.connect_timeout)
+            .field("total_timeout", &self.total_timeout)
+            .field("size_cap_factor", &self.size_cap_factor)
+            .field("on_progress", &self.on_progress.is_some())
+            .finish()
     }
 }
 
@@ -55,26 +101,142 @@ pub fn download_byte_cap(approx_bytes: u64, exact: Option<u64>, factor: u64) -> 
     base.saturating_mul(factor.max(1)).max(FLOOR)
 }
 
+/// Extra free-space headroom beyond the hard download cap (disk pressure).
+const DISK_HEADROOM_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Best-effort free bytes for the filesystem containing `path`.
+///
+/// Returns `None` when the platform probe is unavailable — callers must not
+/// treat that as infinite space; they still rely on write failures + size caps.
+pub fn available_disk_bytes(path: &Path) -> Option<u64> {
+    available_disk_bytes_inner(path)
+}
+
+#[cfg(unix)]
+fn available_disk_bytes_inner(path: &Path) -> Option<u64> {
+    use std::ffi::CString;
+    use std::os::unix::ffi::OsStrExt;
+
+    let c_path = CString::new(path.as_os_str().as_bytes()).ok()?;
+    let mut buf: libc::statvfs = unsafe { std::mem::zeroed() };
+    let rc = unsafe { libc::statvfs(c_path.as_ptr(), &mut buf) };
+    if rc != 0 {
+        return None;
+    }
+    // f_frsize / f_bsize / f_bavail are `u64` on some platforms and `c_ulong` on
+    // others — cast through u64 for a single portable product.
+    #[allow(clippy::unnecessary_cast)]
+    let fr = {
+        let frsize = buf.f_frsize as u64;
+        let bsize = buf.f_bsize as u64;
+        if frsize > 0 {
+            frsize
+        } else {
+            bsize
+        }
+    };
+    if fr == 0 {
+        return None;
+    }
+    #[allow(clippy::unnecessary_cast)]
+    let avail = buf.f_bavail as u64;
+    Some(avail.saturating_mul(fr))
+}
+
+#[cfg(windows)]
+fn available_disk_bytes_inner(path: &Path) -> Option<u64> {
+    use std::os::windows::ffi::OsStrExt;
+    use std::ptr;
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetDiskFreeSpaceExW(
+            lp_directory_name: *const u16,
+            lp_free_bytes_available_to_caller: *mut u64,
+            lp_total_number_of_bytes: *mut u64,
+            lp_total_number_of_free_bytes: *mut u64,
+        ) -> i32;
+    }
+
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let mut free_to_caller: u64 = 0;
+    let ok = unsafe {
+        GetDiskFreeSpaceExW(
+            wide.as_ptr(),
+            &mut free_to_caller,
+            ptr::null_mut(),
+            ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        None
+    } else {
+        Some(free_to_caller)
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn available_disk_bytes_inner(_path: &Path) -> Option<u64> {
+    None
+}
+
+/// Fail closed when free space is known and below `need_bytes` + headroom.
+pub fn ensure_disk_budget(path: &Path, need_bytes: u64) -> Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(path);
+    // Ensure the parent exists so the probe hits the right volume.
+    if !parent.exists() {
+        let _ = fs::create_dir_all(parent);
+    }
+    let probe = if parent.exists() { parent } else { path };
+    let Some(free) = available_disk_bytes(probe) else {
+        return Ok(());
+    };
+    let required = need_bytes.saturating_add(DISK_HEADROOM_BYTES);
+    if free < required {
+        return Err(EnvironmentError::DiskSpace {
+            path: probe.display().to_string(),
+            reason: format!(
+                "insufficient free space: have {free} bytes, need ~{required} \
+                 (download budget {need_bytes} + {DISK_HEADROOM_BYTES} headroom)"
+            ),
+        }
+        .into());
+    }
+    Ok(())
+}
+
 /// Verify an on-disk file against reviewed identity.
 pub fn verify_artifact(path: &Path, spec: &ArtifactSpec) -> Result<()> {
+    verify_artifact_request(path, &spec.request())
+}
+
+/// Verify an on-disk file against a runtime download request.
+pub fn verify_artifact_request(path: &Path, req: &DownloadRequest<'_>) -> Result<()> {
     if !path.exists() {
         return Err(ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!("missing artifact {}", path.display()),
         }
         .into());
     }
     let meta = fs::metadata(path).map_err(|e| ProviderError::ModelDownload {
-        model: spec.id.to_string(),
+        model: req.id.to_string(),
         reason: e.to_string(),
     })?;
-    if let Some(exact) = spec.exact_bytes {
+    if let Some(exact) = req.exact_bytes {
         if meta.len() != exact {
             return Err(ProviderError::ModelDownload {
-                model: spec.id.to_string(),
+                model: req.id.to_string(),
                 reason: format!(
                     "size mismatch for {} (got {}, expected {exact})",
-                    spec.filename,
+                    req.filename,
                     meta.len()
                 ),
             }
@@ -82,18 +244,18 @@ pub fn verify_artifact(path: &Path, spec: &ArtifactSpec) -> Result<()> {
         }
     } else if meta.len() < 1_000 {
         return Err(ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!("artifact too small ({} bytes)", meta.len()),
         }
         .into());
     }
     let digest = sha256_file(path)?;
-    if digest != spec.sha256 {
+    if digest != req.sha256 {
         return Err(ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!(
                 "sha256 mismatch for {} (got {digest}, expected {})",
-                spec.filename, spec.sha256
+                req.filename, req.sha256
             ),
         }
         .into());
@@ -119,9 +281,18 @@ fn sha256_file(path: &Path) -> Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
-/// Download `spec` to `dest`, verifying before publish. Invisible until success.
+/// Download static [`ArtifactSpec`] to `dest`, verifying before publish.
 pub async fn download_verified(
     spec: &ArtifactSpec,
+    dest: &Path,
+    opts: &DownloadOptions,
+) -> Result<()> {
+    download_verified_request(&spec.request(), dest, opts).await
+}
+
+/// Download `req` to `dest`, verifying before publish. Invisible until success.
+pub async fn download_verified_request(
+    req: &DownloadRequest<'_>,
     dest: &Path,
     opts: &DownloadOptions,
 ) -> Result<()> {
@@ -132,8 +303,11 @@ pub async fn download_verified(
         })?;
     }
 
+    let hard_cap = download_byte_cap(req.approx_bytes, req.exact_bytes, opts.size_cap_factor);
+    ensure_disk_budget(dest, hard_cap)?;
+
     let tmp = exclusive_partial_path(dest)?;
-    let result = download_to_partial(spec, &tmp, dest, opts).await;
+    let result = download_to_partial(req, &tmp, dest, opts, hard_cap).await;
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
     }
@@ -184,61 +358,69 @@ fn exclusive_partial_path(dest: &Path) -> Result<PathBuf> {
     .into())
 }
 
+/// Allow HuggingFace CDN and GitHub release asset redirects; stop otherwise.
+fn artifact_redirect_policy(attempt: reqwest::redirect::Attempt<'_>) -> reqwest::redirect::Action {
+    let host = attempt.url().host_str().unwrap_or("").to_ascii_lowercase();
+    let ok = host == "huggingface.co"
+        || host.ends_with(".huggingface.co")
+        || host.ends_with(".hf.co")
+        || host == "hf.co"
+        || host.ends_with(".cdn.hf.co")
+        || host == "github.com"
+        || host == "www.github.com"
+        || host.ends_with(".github.com")
+        || host == "objects.githubusercontent.com"
+        || host.ends_with(".githubusercontent.com")
+        || host == "release-assets.githubusercontent.com";
+    if ok && attempt.previous().len() < 8 {
+        attempt.follow()
+    } else {
+        attempt.stop()
+    }
+}
+
 async fn download_to_partial(
-    spec: &ArtifactSpec,
+    req: &DownloadRequest<'_>,
     tmp: &Path,
     dest: &Path,
     opts: &DownloadOptions,
+    hard_cap: u64,
 ) -> Result<()> {
-    tracing::info!(id = spec.id, url = spec.url, "downloading artifact");
+    tracing::info!(id = req.id, url = req.url, "downloading artifact");
 
     let client = reqwest::Client::builder()
         .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(opts.connect_timeout)
         .timeout(opts.total_timeout)
-        // Model packs live on HF CDN (302 from resolve/). Allow only HF hosts.
-        .redirect(reqwest::redirect::Policy::custom(|attempt| {
-            let host = attempt.url().host_str().unwrap_or("").to_ascii_lowercase();
-            let ok = host == "huggingface.co"
-                || host.ends_with(".huggingface.co")
-                || host.ends_with(".hf.co")
-                || host == "hf.co"
-                || host.ends_with(".cdn.hf.co");
-            if ok && attempt.previous().len() < 8 {
-                attempt.follow()
-            } else {
-                attempt.stop()
-            }
-        }))
+        .redirect(reqwest::redirect::Policy::custom(artifact_redirect_policy))
         .build()
         .map_err(|e| ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!("http client: {e}"),
         })?;
 
     let response = client
-        .get(spec.url)
+        .get(req.url)
         .send()
         .await
         .map_err(|e| ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!("request failed: {e}"),
         })?;
 
     if !response.status().is_success() {
         return Err(ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!("HTTP {}", response.status()),
         }
         .into());
     }
 
-    let hard_cap = download_byte_cap(spec.approx_bytes, spec.exact_bytes, opts.size_cap_factor);
     // Content-Length may only lower the accepted limit (early reject).
     if let Some(cl) = response.content_length() {
         if cl > hard_cap {
             return Err(ProviderError::ModelDownload {
-                model: spec.id.to_string(),
+                model: req.id.to_string(),
                 reason: format!("Content-Length {cl} exceeds reviewed size cap {hard_cap}"),
             }
             .into());
@@ -248,8 +430,8 @@ async fn download_to_partial(
     let progress_total = response
         .content_length()
         .filter(|&n| n > 0 && n <= hard_cap)
-        .or(spec.exact_bytes)
-        .unwrap_or(spec.approx_bytes);
+        .or(req.exact_bytes)
+        .unwrap_or(req.approx_bytes);
 
     let pb = if opts.show_progress {
         use indicatif::{ProgressBar, ProgressStyle};
@@ -261,7 +443,7 @@ async fn download_to_partial(
             .unwrap_or_else(|_| ProgressStyle::default_bar())
             .progress_chars("=>-"),
         );
-        pb.set_message(format!("Downloading {}", spec.id));
+        pb.set_message(format!("Downloading {}", req.id));
         Some(pb)
     } else {
         None
@@ -280,7 +462,7 @@ async fn download_to_partial(
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|e| ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!("stream error: {e}"),
         })?;
         file.write_all(&chunk)
@@ -292,13 +474,16 @@ async fn download_to_partial(
         downloaded = downloaded.saturating_add(chunk.len() as u64);
         if downloaded > hard_cap {
             return Err(ProviderError::ModelDownload {
-                model: spec.id.to_string(),
+                model: req.id.to_string(),
                 reason: format!("download exceeded size cap ({downloaded} > {hard_cap})"),
             }
             .into());
         }
         if let Some(pb) = &pb {
             pb.set_position(downloaded.min(progress_total));
+        }
+        if let Some(cb) = &opts.on_progress {
+            cb(downloaded, progress_total);
         }
     }
     file.flush().map_err(|e| EnvironmentError::DiskSpace {
@@ -313,20 +498,20 @@ async fn download_to_partial(
     drop(file);
 
     let digest = hex::encode(hasher.finalize());
-    if digest != spec.sha256 {
+    if digest != req.sha256 {
         return Err(ProviderError::ModelDownload {
-            model: spec.id.to_string(),
+            model: req.id.to_string(),
             reason: format!(
                 "sha256 mismatch (got {digest}, expected {}) — refusing to publish",
-                spec.sha256
+                req.sha256
             ),
         }
         .into());
     }
-    if let Some(exact) = spec.exact_bytes {
+    if let Some(exact) = req.exact_bytes {
         if downloaded != exact {
             return Err(ProviderError::ModelDownload {
-                model: spec.id.to_string(),
+                model: req.id.to_string(),
                 reason: format!(
                     "size mismatch after download (got {downloaded}, expected {exact})"
                 ),
@@ -336,8 +521,6 @@ async fn download_to_partial(
     }
 
     // Durable publish: rename verified partial into place.
-    // Unix rename replaces atomically; avoid deleting dest first (availability gap).
-    // Windows: rename over existing may fail — fall back to remove+rename.
     publish_verified_download(tmp, dest)?;
     if let Some(parent) = dest.parent() {
         if let Ok(dir) = File::open(parent) {
@@ -350,12 +533,12 @@ async fn download_to_partial(
     }
 
     if let Some(pb) = pb {
-        pb.finish_with_message(format!("Downloaded {} ({downloaded} bytes)", spec.id));
+        pb.finish_with_message(format!("Downloaded {} ({downloaded} bytes)", req.id));
     }
 
     // Sidecar checksum for operators: `file.bin.sha256`
     let sidecar = PathBuf::from(format!("{}.sha256", dest.display()));
-    let _ = fs::write(&sidecar, format!("{}  {}\n", digest, spec.filename));
+    let _ = fs::write(&sidecar, format!("{}  {}\n", digest, req.filename));
 
     Ok(())
 }
@@ -413,7 +596,7 @@ pub fn sweep_stale_partials(dir: &Path, stale_after: Duration) {
     for ent in entries.flatten() {
         let name = ent.file_name();
         let name = name.to_string_lossy();
-        if !name.contains(".aurum.partial") && !name.contains(".bin.partial.") {
+        if !name.contains(".aurum.partial") {
             continue;
         }
         let Ok(meta) = ent.metadata() else {
@@ -444,5 +627,28 @@ mod tests {
     #[test]
     fn floor_for_tiny_pin() {
         assert_eq!(download_byte_cap(100, Some(100), 3), 1_000_000);
+    }
+
+    #[test]
+    fn disk_budget_ok_when_space_unknown_or_ample() {
+        let dir = tempfile::tempdir().unwrap();
+        // Tiny need should pass on any real volume; unknown probe also Ok.
+        ensure_disk_budget(dir.path(), 1).unwrap();
+    }
+
+    #[test]
+    fn disk_budget_fails_when_need_exceeds_free() {
+        let dir = tempfile::tempdir().unwrap();
+        // Only assert when probe works — otherwise skip.
+        if available_disk_bytes(dir.path()).is_some() {
+            let err = ensure_disk_budget(dir.path(), u64::MAX / 4).unwrap_err();
+            let s = err.to_string();
+            assert!(
+                s.contains("insufficient free space")
+                    || s.contains("DiskSpace")
+                    || s.contains("disk"),
+                "unexpected err: {s}"
+            );
+        }
     }
 }

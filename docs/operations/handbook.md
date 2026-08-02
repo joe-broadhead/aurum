@@ -26,7 +26,6 @@ Quick map of production docs (read this first):
 | Post-provider freeze checklist | [Post-provider freeze](post-provider-security-freeze.md) |
 | Supply chain | [Supply chain](../development/supply-chain.md) |
 | Compatibility | [Compatibility](../development/compatibility.md) |
-| Migration 0.0.3 | [Migration](../development/migration-0.0.3.md) |
 | Architecture | [Architecture](../development/architecture.md) |
 | ADRs | [Kokoro ADR-001](../development/adr-001-kokoro-tts-adapter.md) · [Provider registry ADR-002](../development/adr-002-provider-registry.md) |
 | Security reporting | [SECURITY.md](https://github.com/joe-broadhead/aurum/blob/master/SECURITY.md) |
@@ -44,9 +43,8 @@ aurum tts adapters
 ## Upgrade
 
 1. Read CHANGELOG for the target version.
-2. Run migration notes if present.
-3. `aurum doctor` after install.
-4. Verify release checksums when installing binaries.
+2. `aurum doctor` after install.
+3. Verify release checksums when installing binaries.
 
 ## Recover
 

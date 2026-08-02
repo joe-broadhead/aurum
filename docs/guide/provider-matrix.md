@@ -9,7 +9,7 @@ Snapshot of compiled builtin registry capabilities (JOE-1943). Defaults are
 | `openrouter` | yes | yes | `OPENROUTER_API_KEY` | reviewed ASR + chat multimodal | `hexgrad/kokoro-82m` (default), `fish-audio/s1`, `sesame/csm-1b`, `minimax/speech-2.8-turbo` (mp3) | no | no |
 | `openai` | yes | yes | `OPENAI_API_KEY` | `whisper-1`, `gpt-4o-*-transcribe` | `tts-1`, `tts-1-hd`, `gpt-4o-mini-tts` | no | no |
 | `elevenlabs` | — | yes | `ELEVENLABS_API_KEY` | — | `eleven_multilingual_v2`, turbo/flash v2.5 | no | no |
-| `xai` (`grok` alias) | yes | yes | `XAI_API_KEY` | `xai-stt` (POST `/v1/stt`) | `xai-tts` voices `eve|ara|leo|rex|sal` (POST `/v1/tts`) | experimental | no (REST only; no realtime) |
+| `xai` (`grok` alias) | yes | yes | `XAI_API_KEY` | `xai-stt` (POST `/v1/stt`) | `xai-tts` voices `eve|ara|leo|rex|sal` (POST `/v1/tts`) | no (REST only; no realtime) | no |
 
 ### Formats and honesty
 

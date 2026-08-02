@@ -1,11 +1,10 @@
 //! TTS voice/model catalogue, integrity pins, and download lock.
 
+use crate::download::{self, DownloadOptions, DownloadRequest};
 use crate::error::{EnvironmentError, ProviderError, Result, UserError};
-use futures_util::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// Default model id (KittenTTS nano int8 ONNX).
@@ -878,16 +877,6 @@ pub async fn ensure_voice_pack(
     Ok(pack_dir)
 }
 
-/// Hard download size cap from the pinned catalogue `approx_bytes`.
-///
-/// Content-Length must never raise this: a huge/false header would otherwise
-/// allow unbounded disk fill before the SHA check runs.
-pub(crate) fn download_byte_cap(approx_bytes: u64) -> u64 {
-    const FACTOR: u64 = 3;
-    const FLOOR: u64 = 1_000_000;
-    approx_bytes.saturating_mul(FACTOR).max(FLOOR)
-}
-
 async fn download_pinned(
     model: &str,
     url: &str,
@@ -897,145 +886,20 @@ async fn download_pinned(
     show_progress: bool,
 ) -> Result<()> {
     tracing::info!(%url, path = %dest.display(), "downloading TTS asset");
-
-    let partial = dest.with_extension(format!(
-        "partial.{}-{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
-            .unwrap_or(0)
-    ));
-    if partial.exists() {
-        let _ = fs::remove_file(&partial);
-    }
-
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .timeout(std::time::Duration::from_secs(30 * 60))
-        .build()
-        .map_err(|e| ProviderError::ModelDownload {
-            model: model.to_string(),
-            reason: format!("http client error: {e}"),
-        })?;
-
-    let response = client
-        .get(url)
-        .send()
-        .await
-        .map_err(|e| ProviderError::ModelDownload {
-            model: model.to_string(),
-            reason: format!("request failed: {e}"),
-        })?;
-
-    if !response.status().is_success() {
-        return Err(ProviderError::ModelDownload {
-            model: model.to_string(),
-            reason: format!("HTTP {}", response.status()),
-        }
-        .into());
-    }
-
-    // Progress total is advisory only — never raise the hard size cap from Content-Length.
-    let progress_total = response
-        .content_length()
-        .filter(|&n| n > 0 && n <= download_byte_cap(approx_bytes))
-        .unwrap_or(approx_bytes);
-    let pb = if show_progress {
-        let pb = ProgressBar::new(progress_total);
-        pb.set_style(
-            ProgressStyle::with_template(
-                "{msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
-            )
-            .unwrap_or_else(|_| ProgressStyle::default_bar())
-            .progress_chars("=>-"),
-        );
-        pb.set_message(format!(
-            "Downloading {}",
-            dest.file_name().and_then(|s| s.to_str()).unwrap_or("file")
-        ));
-        Some(pb)
-    } else {
-        None
+    let filename = dest.file_name().and_then(|s| s.to_str()).unwrap_or("file");
+    let req = DownloadRequest {
+        id: model,
+        filename,
+        sha256: expected_sha,
+        exact_bytes: None,
+        approx_bytes,
+        url,
     };
-
-    let mut file = File::create(&partial).map_err(|e| EnvironmentError::DirectoryAccess {
-        path: partial.display().to_string(),
-        reason: e.to_string(),
-    })?;
-
-    let mut stream = response.bytes_stream();
-    let mut hasher = Sha256::new();
-    let mut downloaded: u64 = 0;
-    // Fail-closed size cap from pinned catalogue size only (not Content-Length).
-    let max_allowed = download_byte_cap(approx_bytes);
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| ProviderError::ModelDownload {
-            model: model.to_string(),
-            reason: format!("stream error: {e}"),
-        })?;
-        file.write_all(&chunk)
-            .map_err(|e| EnvironmentError::DiskSpace {
-                path: partial.display().to_string(),
-                reason: e.to_string(),
-            })?;
-        hasher.update(&chunk);
-        downloaded += chunk.len() as u64;
-        if downloaded > max_allowed {
-            let _ = fs::remove_file(&partial);
-            return Err(ProviderError::ModelDownload {
-                model: model.to_string(),
-                reason: format!("download exceeded size cap ({downloaded} > {max_allowed})"),
-            }
-            .into());
-        }
-        if let Some(pb) = &pb {
-            pb.set_position(downloaded.min(progress_total));
-        }
-    }
-    file.flush().ok();
-    drop(file);
-
-    let digest = hex::encode(hasher.finalize());
-    if digest != expected_sha {
-        let _ = fs::remove_file(&partial);
-        return Err(ProviderError::ModelDownload {
-            model: model.to_string(),
-            reason: format!(
-                "sha256 mismatch for {} (got {digest}, expected {expected_sha}) — refusing to cache",
-                dest.file_name()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("file")
-            ),
-        }
-        .into());
-    }
-
-    // Windows cannot rename over an existing destination (re-download / pin repair).
-    if dest.exists() {
-        fs::remove_file(dest).map_err(|e| EnvironmentError::DirectoryAccess {
-            path: dest.display().to_string(),
-            reason: format!("failed to replace existing pack file: {e}"),
-        })?;
-    }
-    if let Err(e) = fs::rename(&partial, dest) {
-        let _ = fs::remove_file(&partial);
-        return Err(EnvironmentError::DirectoryAccess {
-            path: dest.display().to_string(),
-            reason: e.to_string(),
-        }
-        .into());
-    }
-
-    if let Some(pb) = pb {
-        pb.finish_with_message(format!(
-            "Downloaded {} ({downloaded} bytes)",
-            dest.file_name().and_then(|s| s.to_str()).unwrap_or("file")
-        ));
-    }
-    Ok(())
+    let opts = DownloadOptions {
+        show_progress,
+        ..DownloadOptions::default()
+    };
+    download::download_verified_request(&req, dest, &opts).await
 }
 
 #[cfg(test)]
@@ -1131,14 +995,13 @@ mod tests {
 
     #[test]
     fn download_cap_uses_pinned_approx_not_content_length() {
-        // Small pin → floor of 1 MiB.
-        assert_eq!(download_byte_cap(100), 1_000_000);
-        // Typical pin → 3× approx.
-        assert_eq!(download_byte_cap(10_000_000), 30_000_000);
-        // Cap must not grow with a forged Content-Length (helper ignores it).
+        // Shared download policy: 3× approx, 1 MiB floor; Content-Length ignored.
+        assert_eq!(download::download_byte_cap(100, None, 3), 1_000_000);
+        assert_eq!(download::download_byte_cap(10_000_000, None, 3), 30_000_000);
         let pin = 24_369_971u64;
         let forged_cl = 10_u64.pow(12);
-        assert!(download_byte_cap(pin) < forged_cl);
-        assert_eq!(download_byte_cap(pin), pin.saturating_mul(3));
+        let cap = download::download_byte_cap(pin, None, 3);
+        assert!(cap < forged_cl);
+        assert_eq!(cap, pin.saturating_mul(3));
     }
 }

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Dead-code / docs honesty sweep:** remove unused helpers
+  (`verify_cached_checksum`, `openrouter_caps_resolved`,
+  `ProviderBuildContext::api_key_exposed`, `DEFAULT_OPENROUTER_ORIGIN` alias,
+  unused partial helpers); CLI TTS `--emit-json` uses versioned `TtsMetaDto`;
+  refresh stale version pins and skill long-form STT (JOE-2212) claims.
+- **Download unification:** STT and TTS catalogue downloads both route through
+  shared `download_verified_request` (exclusive partials, reviewed size caps,
+  HF/GitHub redirect policy, verify-before-publish, durable rename).
+- **Disk pressure awareness:** downloads preflight free space against the hard
+  size budget + 64 MiB headroom (fail closed when probe works); `aurum doctor`
+  reports approximate free space and warns below 512 MiB.
+- **CLI ErrorDto:** machine JSON modes (`-o json`, `--json`, `--emit-json`, or
+  `AURUM_JSON_ERRORS=1`) print a versioned `ErrorDto` envelope on stderr.
+- **OpenRouterCleanup SecretString:** cleanup retains `SecretString` (not
+  plaintext `String`); CLI/batch stop calling `openrouter_api_key_exposed`
+  (removed).
+- **No legacy dual-paths:** drop config `[default]` / top-level `[openrouter]`
+  migration (canonical `[stt]` + `[providers.*]` only; unknown top-level
+  sections fail closed); drop OpenRouter `X-Title` header alias; rename cache
+  cheap-status `Legacy` → `Present`; sweep only `.aurum.partial` leftovers.
+- **Deeper greenfield strip:** `AURUM_ABI_MIN_VERSION = 2` (no ABI v1 lag);
+  remove `aurum cleanup` dual flag aliases (`--cleanup` / `--cleanup-provider` /
+  `--cleanup-model` on that subcommand only — STT still uses `--cleanup*`);
+  export `ConfigFile` instead of `RawConfig`; delete `migration-0.0.3.md`;
+  FFI capabilities `struct_size` mismatch fails closed.
+
 ### Added
 
 - **JOE-2212 — Remote STT chunk-and-stitch:** OpenAI, OpenRouter, and xAI STT
@@ -682,13 +710,21 @@ backlog (JOE-1652–1655).
 
 ### Notes
 
-- `aurum-core` API is experimental until `0.1.0`
+- `aurum-core` API is provisional on continuous **0.0.x** (not a 1.0 / 0.1.0 freeze claim)
 - ffmpeg is a required system dependency (not bundled)
-- OpenRouter path is LLM-assisted, not dedicated ASR
+- OpenRouter path is LLM-assisted or dedicated ASR depending on reviewed model route
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.12...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.20...HEAD
+[0.0.20]: https://github.com/joe-broadhead/aurum/compare/v0.0.19...v0.0.20
+[0.0.19]: https://github.com/joe-broadhead/aurum/compare/v0.0.18...v0.0.19
+[0.0.18]: https://github.com/joe-broadhead/aurum/compare/v0.0.17...v0.0.18
+[0.0.17]: https://github.com/joe-broadhead/aurum/compare/v0.0.16...v0.0.17
+[0.0.16]: https://github.com/joe-broadhead/aurum/compare/v0.0.15...v0.0.16
+[0.0.15]: https://github.com/joe-broadhead/aurum/compare/v0.0.14...v0.0.15
+[0.0.14]: https://github.com/joe-broadhead/aurum/compare/v0.0.13...v0.0.14
+[0.0.13]: https://github.com/joe-broadhead/aurum/compare/v0.0.12...v0.0.13
 [0.0.12]: https://github.com/joe-broadhead/aurum/compare/v0.0.11...v0.0.12
 [0.0.11]: https://github.com/joe-broadhead/aurum/compare/v0.0.10...v0.0.11
 [0.0.10]: https://github.com/joe-broadhead/aurum/compare/v0.0.9...v0.0.10

@@ -2,7 +2,7 @@
 //!
 //!   cargo run -p aurum-core --example basic -- path/to/audio.wav
 //!
-//! (example lives at workspace root; prefer depending on aurum-core directly)
+//! Example path: `crates/aurum-core/examples/basic.rs`
 
 use aurum_core::audio::load_audio;
 use aurum_core::config::Config;

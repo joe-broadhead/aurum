@@ -33,9 +33,9 @@ See also [compatibility.md](../development/compatibility.md) for 0.0.x classes.
 
 | DTO | `schema_version` | Freeze rule |
 |-----|------------------|-------------|
-| `SttResultDto` | **1** | Unsupported version → error; unknown fields ignored on read |
-| `TtsMetaDto` | **1** | Same |
-| `ErrorDto` | **1** | Category string ids stable (`ErrorCategory::as_str`) |
+| `SttResultDto` | **1** | Library + CLI STT JSON (`-o json`); unsupported version → error |
+| `TtsMetaDto` | **1** | Library honesty JSON; CLI `--emit-json` should use this DTO (includes `schema_version`) |
+| `ErrorDto` | **1** | Library + CLI structured errors: when `-o json` / `--json` / `--emit-json` (or `AURUM_JSON_ERRORS=1`) process exit still uses `ErrorCategory::exit_code` **and** stderr carries a full `ErrorDto` JSON envelope |
 
 Constants: `STT_RESULT_SCHEMA_VERSION`, `TTS_META_SCHEMA_VERSION`, `ERROR_SCHEMA_VERSION` in `aurum-core` dto module.
 
@@ -44,7 +44,7 @@ Constants: `STT_RESULT_SCHEMA_VERSION`, `TTS_META_SCHEMA_VERSION`, `ERROR_SCHEMA
 | Item | Value | Freeze rule |
 |------|-------|-------------|
 | `AURUM_ABI_VERSION` | **2** | Breaking C changes bump version + header |
-| `AURUM_ABI_MIN_VERSION` | **1** | Keep v1 blocking surface binary-compatible when practical |
+| `AURUM_ABI_MIN_VERSION` | **2** | Greenfield: equals current ABI (no dual-version lag) |
 | `AURUM_SAMPLE_RATE` | **16000** | PCM contract |
 | Jobs / cleanup / doctor / capabilities | Present in ABI v2 | Additive status codes preferred |
 

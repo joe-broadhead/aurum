@@ -36,13 +36,8 @@
 //! # api_key from XAI_API_KEY
 //! ```
 //!
-//! # Legacy compatibility
-//!
-//! `[default]` (STT) and `[openrouter]` continue to load with identical effective
-//! behaviour when the new sections are absent. When **both** old and new sections
-//! are present and disagree, load fails closed with [`UserError::InvalidConfig`].
-//! When only legacy is present, values are migrated into the canonical runtime
-//! fields during load (no silent behaviour change).
+//! Only the canonical sections above are accepted. There is no dual-path
+//! migration for older TOML layouts.
 //!
 //! A provider is **never** inferred merely because its API key is present.
 
@@ -69,16 +64,11 @@ pub const DEFAULT_TTS_TIMEOUT_MS: u64 = 120_000;
 pub const DEFAULT_TTS_SPEAKING_RATE: f32 = 1.0;
 pub const DEFAULT_OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
-/// On-disk configuration file schema.
+/// On-disk configuration file schema (canonical sections only).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ConfigFile {
-    /// Legacy STT section (`[default]`). Prefer `[stt]`.
-    #[serde(default)]
-    pub default: Option<DefaultSection>,
-    /// Legacy OpenRouter section. Prefer `[providers.openrouter]`.
-    #[serde(default)]
-    pub openrouter: Option<OpenRouterSection>,
-    /// Canonical STT direction section.
+    /// STT direction (`[stt]`).
     #[serde(default)]
     pub stt: Option<SttSection>,
     #[serde(default)]
@@ -99,31 +89,11 @@ pub struct SttSection {
     pub model: String,
     #[serde(default = "default_language")]
     pub language: String,
-}
-
-impl Default for SttSection {
-    fn default() -> Self {
-        Self {
-            provider: default_provider(),
-            model: default_local_model(),
-            language: default_language(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DefaultSection {
-    #[serde(default = "default_provider")]
-    pub provider: String,
-    #[serde(default = "default_local_model")]
-    pub model: String,
-    #[serde(default = "default_language")]
-    pub language: String,
     #[serde(default = "default_output")]
     pub output: String,
 }
 
-impl Default for DefaultSection {
+impl Default for SttSection {
     fn default() -> Self {
         Self {
             provider: default_provider(),
@@ -134,7 +104,7 @@ impl Default for DefaultSection {
     }
 }
 
-/// Legacy `[openrouter]` section (also the shape of `[providers.openrouter]` extras).
+/// `[providers.openrouter]` credentials and vendor options.
 #[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct OpenRouterSection {
@@ -380,10 +350,10 @@ fn default_tts_speaking_rate() -> f32 {
 
 /// Fully-resolved runtime configuration after merging all sources.
 ///
-/// STT direction uses `provider` / `model` / `language`. TTS uses `tts_*`.
-/// OpenRouter options remain on the historical `openrouter_*` fields (mirrors of
-/// `[providers.openrouter]` / legacy `[openrouter]`). Other vendors live under
-/// [`Config::providers`] so the flat surface does not grow per vendor.
+/// STT direction uses `provider` / `model` / `language` / `output`. TTS uses
+/// `tts_*`. OpenRouter options are mirrored onto the `openrouter_*` fields from
+/// `[providers.openrouter]`. Other vendors live under [`Config::providers`] so
+/// the flat surface does not grow per vendor.
 #[derive(Clone)]
 pub struct Config {
     /// STT provider id (`local`, `openrouter`, …). Never inferred from key presence.
@@ -652,13 +622,6 @@ impl Config {
         Ok(cfg)
     }
 
-    /// Expose the OpenRouter API key as a plain string for provider construction.
-    pub fn openrouter_api_key_exposed(&self) -> Option<String> {
-        self.openrouter_api_key
-            .as_ref()
-            .map(|s| s.expose().to_string())
-    }
-
     /// Provider-scoped secret for build-context construction (JOE-1935).
     pub fn provider_secret(&self, id: &ProviderId) -> Option<SecretString> {
         match id.as_str() {
@@ -731,8 +694,7 @@ impl Config {
                 return Err(UserError::InvalidConfig {
                     reason: format!(
                         "local_only=true rejects remote STT provider '{}'\n  \
-                         Hint: set [stt] provider = \"local\" (or [default] provider) \
-                         or unset local_only",
+                         Hint: set [stt] provider = \"local\" or unset local_only",
                         self.provider
                     ),
                 }
@@ -899,8 +861,8 @@ impl Config {
     fn from_parts(file: Option<ConfigFile>, config_path: Option<PathBuf>) -> Result<Self> {
         let file = file.unwrap_or_default();
 
-        let (provider, model, language, output) = merge_stt_and_default(&file)?;
-        let openrouter = merge_openrouter(&file)?;
+        let (provider, model, language, output) = resolve_stt(&file);
+        let openrouter = resolve_openrouter(&file);
 
         let openrouter_api_key = std::env::var("OPENROUTER_API_KEY")
             .ok()
@@ -1083,7 +1045,7 @@ impl Config {
     }
 }
 
-// --- Merge / migration helpers (JOE-1935) ------------------------------------
+// --- Config load helpers (JOE-1935) ------------------------------------------
 
 struct MergedOpenRouter {
     api_key: Option<SecretString>,
@@ -1094,123 +1056,47 @@ struct MergedOpenRouter {
     use_system_proxy: bool,
 }
 
-/// Merge `[stt]` with legacy `[default]`.
-fn merge_stt_and_default(file: &ConfigFile) -> Result<(String, String, String, String)> {
-    let legacy = file.default.as_ref();
-    let stt = file.stt.as_ref();
-
-    match (legacy, stt) {
-        (Some(d), Some(s)) => {
-            if d.provider != s.provider || d.model != s.model || d.language != s.language {
-                return Err(UserError::InvalidConfig {
-                    reason: format!(
-                        "conflicting [default] and [stt] sections\n  \
-                         [default]: provider={:?} model={:?} language={:?}\n  \
-                         [stt]:     provider={:?} model={:?} language={:?}\n  \
-                         Hint: keep only [stt] (preferred) or make both agree; \
-                         Aurum does not silently pick one",
-                        d.provider, d.model, d.language, s.provider, s.model, s.language
-                    ),
-                }
-                .into());
-            }
-            Ok((
-                s.provider.clone(),
-                s.model.clone(),
-                s.language.clone(),
-                d.output.clone(),
-            ))
-        }
-        (Some(d), None) => Ok((
-            d.provider.clone(),
-            d.model.clone(),
-            d.language.clone(),
-            d.output.clone(),
-        )),
-        (None, Some(s)) => Ok((
+/// Resolve `[stt]` (or built-in defaults).
+fn resolve_stt(file: &ConfigFile) -> (String, String, String, String) {
+    match file.stt.as_ref() {
+        Some(s) => (
             s.provider.clone(),
             s.model.clone(),
             s.language.clone(),
-            default_output(),
-        )),
-        (None, None) => Ok((
+            s.output.clone(),
+        ),
+        None => (
             default_provider(),
             default_local_model(),
             default_language(),
             default_output(),
-        )),
+        ),
     }
 }
 
-/// Merge legacy `[openrouter]` with `[providers.openrouter]`.
-fn merge_openrouter(file: &ConfigFile) -> Result<MergedOpenRouter> {
-    let legacy = file.openrouter.as_ref();
-    let neu = file.providers.openrouter.as_ref();
-
-    match (legacy, neu) {
-        (Some(a), Some(b)) => {
-            if openrouter_sections_disagree(a, b) {
-                return Err(UserError::InvalidConfig {
-                    reason: "conflicting [openrouter] and [providers.openrouter] sections\n  \
-                             Hint: keep only [providers.openrouter] (preferred) or make both \
-                             agree; Aurum does not silently merge disagreements"
-                        .into(),
-                }
-                .into());
-            }
-            Ok(merged_from_section(b))
-        }
-        (Some(a), None) => Ok(merged_from_section(a)),
-        (None, Some(b)) => Ok(merged_from_section(b)),
-        (None, None) => Ok(MergedOpenRouter {
+/// Resolve `[providers.openrouter]` (or empty defaults).
+fn resolve_openrouter(file: &ConfigFile) -> MergedOpenRouter {
+    match file.providers.openrouter.as_ref() {
+        Some(s) => MergedOpenRouter {
+            api_key: s.api_key.clone(),
+            model: s.model.clone(),
+            base_url: s.base_url.clone(),
+            allow_custom_endpoint: s.allow_custom_endpoint,
+            stt_mode: if s.stt_mode.trim().is_empty() {
+                default_stt_mode()
+            } else {
+                s.stt_mode.clone()
+            },
+            use_system_proxy: s.use_system_proxy,
+        },
+        None => MergedOpenRouter {
             api_key: None,
             model: None,
             base_url: None,
             allow_custom_endpoint: false,
             stt_mode: default_stt_mode(),
             use_system_proxy: false,
-        }),
-    }
-}
-
-fn merged_from_section(s: &OpenRouterSection) -> MergedOpenRouter {
-    MergedOpenRouter {
-        api_key: s.api_key.clone(),
-        model: s.model.clone(),
-        base_url: s.base_url.clone(),
-        allow_custom_endpoint: s.allow_custom_endpoint,
-        stt_mode: if s.stt_mode.trim().is_empty() {
-            default_stt_mode()
-        } else {
-            s.stt_mode.clone()
         },
-        use_system_proxy: s.use_system_proxy,
-    }
-}
-
-fn openrouter_sections_disagree(a: &OpenRouterSection, b: &OpenRouterSection) -> bool {
-    secrets_disagree(&a.api_key, &b.api_key)
-        || a.model != b.model
-        || a.base_url != b.base_url
-        || a.allow_custom_endpoint != b.allow_custom_endpoint
-        || normalize_stt_mode(&a.stt_mode) != normalize_stt_mode(&b.stt_mode)
-        || a.use_system_proxy != b.use_system_proxy
-}
-
-fn normalize_stt_mode(s: &str) -> String {
-    let t = s.trim();
-    if t.is_empty() {
-        default_stt_mode()
-    } else {
-        t.to_ascii_lowercase()
-    }
-}
-
-fn secrets_disagree(a: &Option<SecretString>, b: &Option<SecretString>) -> bool {
-    match (a, b) {
-        (None, None) => false,
-        (Some(x), Some(y)) => x.expose() != y.expose(),
-        (Some(_), None) | (None, Some(_)) => true,
     }
 }
 
@@ -1262,9 +1148,6 @@ fn validate_tts_provider(name: &str) -> Result<()> {
         .into()),
     }
 }
-
-/// On-disk / pre-merge configuration schema (raw).
-pub type RawConfig = ConfigFile;
 
 /// Configuration that has passed [`Config::validate`] (JOE-1779 / JOE-1654).
 #[derive(Clone)]
@@ -1422,18 +1305,13 @@ pub fn write_example_config(path: &Path) -> Result<()> {
 # TTS: AURUM_TTS_MODEL, AURUM_TTS_VOICE, AURUM_TTS_LANGUAGE override [tts].
 #
 # Provider is never inferred from key presence alone — omit STT/TTS provider to stay local.
+# Only canonical sections are accepted: [stt], [cleanup], [tts], [providers.*].
 
 [stt]
 provider = "local"
 model = "base"
 language = "auto"
-
-# Legacy STT section (still supported). Do not set conflicting values with [stt].
-# [default]
-# provider = "local"
-# model = "base"
-# language = "auto"
-# output = "txt"
+# output = "txt" # txt | srt | json
 
 [cleanup]
 # style = "raw" # raw | clean | bullets | professional | summary
@@ -1449,7 +1327,6 @@ provider = "local"
 # max_chars = 5000
 # timeout_ms = 120000
 
-# Preferred OpenRouter home (legacy [openrouter] still works if this is absent).
 # [providers.openrouter]
 # stt_mode = "auto"
 # model = "google/gemini-2.5-flash"
@@ -1518,13 +1395,13 @@ mod tests {
         writeln!(
             f,
             r#"
-[default]
+[stt]
 provider = "openrouter"
 model = "small"
 language = "en"
 output = "json"
 
-[openrouter]
+[providers.openrouter]
 api_key = "test-key"
 model = "google/gemini-2.5-flash"
 "#
@@ -1566,7 +1443,7 @@ model = "google/gemini-2.5-flash"
         fs::write(
             &path,
             r#"
-[default]
+[stt]
 provider = "local"
 model = "base"
 
@@ -1593,7 +1470,7 @@ openrouter_model = "google/gemini-2.5-flash"
         fs::write(
             &path,
             r#"
-[default]
+[stt]
 provider = "local"
 model = "base"
 language = "auto"
@@ -1708,6 +1585,26 @@ api_key = "sk-openai-present"
     }
 
     #[test]
+    fn unknown_top_level_section_fails() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        fs::write(
+            &path,
+            r#"
+[default]
+provider = "local"
+"#,
+        )
+        .unwrap();
+        let err = Config::load_from(&path).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("unknown") || msg.contains("default") || msg.contains("Invalid"),
+            "got: {msg}"
+        );
+    }
+
+    #[test]
     fn new_stt_section_loads() {
         let dir = tempdir().unwrap();
         let path = dir.path().join("config.toml");
@@ -1725,97 +1622,6 @@ language = "en"
         assert_eq!(cfg.provider, "openrouter");
         assert_eq!(cfg.model.as_deref(), Some("google/gemini-2.5-flash"));
         assert_eq!(cfg.language, "en");
-    }
-
-    #[test]
-    fn legacy_default_migrates_identically() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        fs::write(
-            &path,
-            r#"
-[default]
-provider = "openrouter"
-model = "base"
-language = "de"
-output = "srt"
-"#,
-        )
-        .unwrap();
-        let cfg = Config::load_from(&path).unwrap();
-        assert_eq!(cfg.provider, "openrouter");
-        assert_eq!(cfg.model.as_deref(), Some("base"));
-        assert_eq!(cfg.language, "de");
-        assert_eq!(cfg.output, "srt");
-    }
-
-    #[test]
-    fn conflicting_stt_and_default_fail_closed() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        fs::write(
-            &path,
-            r#"
-[default]
-provider = "local"
-model = "base"
-language = "auto"
-
-[stt]
-provider = "openrouter"
-model = "base"
-language = "auto"
-"#,
-        )
-        .unwrap();
-        let err = Config::load_from(&path).unwrap_err();
-        let msg = err.to_string();
-        assert!(msg.contains("conflicting"), "{msg}");
-        assert!(msg.contains("[stt]") || msg.contains("stt"), "{msg}");
-    }
-
-    #[test]
-    fn agreeing_stt_and_default_ok() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        fs::write(
-            &path,
-            r#"
-[default]
-provider = "local"
-model = "base"
-language = "auto"
-output = "json"
-
-[stt]
-provider = "local"
-model = "base"
-language = "auto"
-"#,
-        )
-        .unwrap();
-        let cfg = Config::load_from(&path).unwrap();
-        assert_eq!(cfg.provider, "local");
-        assert_eq!(cfg.output, "json");
-    }
-
-    #[test]
-    fn conflicting_openrouter_sections_fail_closed() {
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        fs::write(
-            &path,
-            r#"
-[openrouter]
-stt_mode = "chat"
-
-[providers.openrouter]
-stt_mode = "transcriptions"
-"#,
-        )
-        .unwrap();
-        let err = Config::load_from(&path).unwrap_err();
-        assert!(err.to_string().contains("conflicting"), "got: {err}");
     }
 
     #[test]

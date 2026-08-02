@@ -87,7 +87,7 @@ pub struct SynthesisResult {
     pub pcm_i16_mono: Vec<i16>,
     /// Actual sample rate of [`Self::pcm_i16_mono`] (always the adapter native rate).
     pub sample_rate_hz: u32,
-    /// Always 1 for MVP.
+    /// Always mono (1 channel) for Aurum synthesis results.
     pub channels: u16,
     pub backend_kind: BackendKind,
     pub provider: String,

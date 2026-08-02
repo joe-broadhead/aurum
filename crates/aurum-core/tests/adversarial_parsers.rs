@@ -23,10 +23,12 @@ const CONFIG_SEEDS: &[&[u8]] = &[
     b"\0\0\0",
     b"[[[[",
     b"provider = ",
-    b"[default]\nprovider = \"local\"\n[default]\nprovider = \"x\"",
+    b"[stt]\nprovider = \"local\"\n[stt]\nprovider = \"x\"",
+    b"[default]\nprovider = \"local\"", // unknown top-level section
     b"[tts]\nmax_chars = 0",
     b"[tts]\ntimeout_ms = 0",
-    b"[openrouter]\nbase_url = \"http://evil.example\"",
+    b"[providers.openrouter]\nbase_url = \"http://evil.example\"",
+    b"[openrouter]\napi_key = \"x\"",   // unknown top-level section
     b"[tts.custom_models]\nid = \"x\"", // wrong shape
     b"provider = \"not-a-real-provider\"\n",
     b"output = \"mp3\"\n",

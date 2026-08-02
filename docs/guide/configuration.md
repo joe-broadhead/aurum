@@ -35,13 +35,14 @@ Resolved via the `directories` crate (app name `aurum`):
 | Linux | `~/.config/aurum/config.toml` |
 | Windows | `%APPDATA%\aurum\config.toml` |
 
-### Canonical schema (preferred)
+### Canonical schema
 
 ```toml
 [stt]
 provider = "local"          # local | openrouter | openai | xai
 model = "base"
 language = "auto"
+# output = "txt"            # txt | srt | json
 
 [tts]
 provider = "local"          # local | openrouter | openai | elevenlabs | xai
@@ -85,24 +86,8 @@ provider = "rules"         # rules | openrouter
 # [providers.xai]
 ```
 
-### Legacy compatibility
-
-These sections still load with **identical effective behaviour** when the new sections are absent:
-
-```toml
-[default]
-provider = "local"
-model = "base"
-language = "auto"
-output = "txt"
-
-[openrouter]
-# api_key — prefer OPENROUTER_API_KEY
-# model = "google/gemini-2.5-flash-lite"
-# base_url = "https://openrouter.ai/api/v1"
-```
-
-**Conflict rule:** if both old and new sections are present and disagree (e.g. `[default]` vs `[stt]`, or `[openrouter]` vs `[providers.openrouter]`), Aurum fails closed with an actionable `InvalidConfig` error. It does not silently pick one. When values agree, load succeeds. Prefer migrating to `[stt]` and `[providers.*]` only.
+Only canonical sections are accepted: `[stt]`, `[cleanup]`, `[tts]`, `[providers.*]`.
+Unknown top-level sections (including old `[default]` / `[openrouter]`) fail closed.
 
 ### `local_only`
 
@@ -117,7 +102,7 @@ When `local_only` is set on the runtime/validated config (CLI offline flag and l
 | Max remote upload (STT) | ~24 MB compressed |
 | Max TTS characters | 5000 (`[tts].max_chars`) |
 | TTS timeout | 120000 ms (`[tts].timeout_ms`) |
-| TTS speaking rate | 1.0, allowed range (0, 4] |
+| TTS speaking rate | 1.0, allowed range `0.5..=2.0` (CLI clamps the same) |
 
 Whisper special tokens such as `[BLANK_AUDIO]` are stripped. Segment timestamps
 are clamped to audio duration.

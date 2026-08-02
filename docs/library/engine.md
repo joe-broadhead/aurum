@@ -68,15 +68,14 @@ let b = AurumEngine::load()?;
 a.shutdown(); // does not clear b's models
 ```
 
-Default `LocalWhisperProvider::new` / `LocalTtsProvider::new` still use
-**process-global** pools for CLI compatibility. Prefer:
+Default `LocalWhisperProvider::new` / `LocalTtsProvider::new` use
+**process-global** pools (CLI path). Library hosts should prefer:
 
 * `engine.stt_provider(&ProviderId::local())` / `engine.tts_provider(...)`
 * `engine.local_whisper()` / `engine.local_tts()` (local convenience)
 * `engine.clear_model_caches()` or `engine.shutdown()`
 
-Process-global cleanup (legacy CLI/Metal exit):
-`aurum_core::clear_context_cache()`.
+Process-global cleanup for CLI/Metal exit: `aurum_core::clear_context_cache()`.
 
 ## ValidatedConfig
 
@@ -90,8 +89,10 @@ let engine = AurumEngine::new(validated);
 
 ## Secrets
 
-`Config.openrouter_api_key` is `Option<SecretString>`. Use
-`Config::openrouter_api_key_exposed()` only when constructing a remote client.
+`Config.openrouter_api_key` is `Option<SecretString>`. Pass the secret through
+`Config::provider_secret(&ProviderId::openrouter())` or clone
+`openrouter_api_key` into providers/`OpenRouterCleanup` — never convert to a
+plaintext `String` for long-lived storage.
 
 ## Segment / result construction (JOE-1786)
 

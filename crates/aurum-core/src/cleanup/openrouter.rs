@@ -11,6 +11,7 @@ use crate::remote::{
     map_http_status, read_body_limited, HardenedHttpClient, RemoteBodyLimits, RemotePolicy,
 };
 use crate::runtime::OpContext;
+use crate::secret::SecretString;
 use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::json;
@@ -25,14 +26,23 @@ pub const REMOTE_SEGMENT_BATCH_SIZE: usize = 25;
 
 /// OpenRouter-backed text cleanup (explicit opt-in; not local-first).
 pub struct OpenRouterCleanup {
-    api_key: String,
+    api_key: SecretString,
     http: HardenedHttpClient,
     model: String,
 }
 
+impl std::fmt::Debug for OpenRouterCleanup {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OpenRouterCleanup")
+            .field("api_key", &self.api_key)
+            .field("model", &self.model)
+            .finish_non_exhaustive()
+    }
+}
+
 impl OpenRouterCleanup {
     pub fn new(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         model: Option<String>,
     ) -> Result<Self> {
@@ -40,14 +50,21 @@ impl OpenRouterCleanup {
     }
 
     pub fn with_policy(
-        api_key: Option<String>,
+        api_key: Option<SecretString>,
         base_url: Option<String>,
         model: Option<String>,
         mut policy: RemotePolicy,
     ) -> Result<Self> {
         let api_key = api_key
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
+            .filter(|s| !s.expose().trim().is_empty())
+            .map(|s| {
+                let trimmed = s.expose().trim();
+                if trimmed.len() == s.expose().len() {
+                    s
+                } else {
+                    SecretString::new(trimmed)
+                }
+            })
             .ok_or(UserError::MissingApiKey)?;
         if base_url
             .as_deref()
@@ -170,7 +187,11 @@ impl OpenRouterCleanup {
 
         let response = self
             .http
-            .request(reqwest::Method::POST, "chat/completions", &self.api_key)?
+            .request(
+                reqwest::Method::POST,
+                "chat/completions",
+                self.api_key.expose(),
+            )?
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -340,7 +361,11 @@ impl OpenRouterCleanup {
 
         let response = self
             .http
-            .request(reqwest::Method::POST, "chat/completions", &self.api_key)?
+            .request(
+                reqwest::Method::POST,
+                "chat/completions",
+                self.api_key.expose(),
+            )?
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
@@ -471,9 +496,9 @@ struct Msg {
 #[derive(Debug, Deserialize)]
 struct CleanupEnvelope {
     cleaned_text: String,
-    #[serde(default)]
-    #[allow(dead_code)]
-    warnings: Vec<String>,
+    /// Provider may return warnings; accepted and discarded.
+    #[serde(default, rename = "warnings")]
+    _warnings: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -545,7 +570,7 @@ mod tests {
             .await;
 
         let c = OpenRouterCleanup::new(
-            Some("k".into()),
+            Some(SecretString::new("k")),
             Some(server.uri()),
             Some("test-model".into()),
         )

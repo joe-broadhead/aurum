@@ -34,7 +34,7 @@ Default local path (no cloud keys) is prioritized over optional remote surfaces.
 ## Deprecation cadence
 
 * Prefer **one release** of deprecation notice before removing public Rust APIs.
-* C ABI: bump `AURUM_ABI_VERSION`; keep `AURUM_ABI_MIN_VERSION` guidance in header.
+* C ABI: bump `AURUM_ABI_VERSION` and set `AURUM_ABI_MIN_VERSION` to the same value on greenfield cuts.
 * During **RC freeze**, breaking changes reset the freeze ([rc-freeze.md](rc-freeze.md)).
 
 ## Incident response

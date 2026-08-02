@@ -5,20 +5,20 @@ Reusable **on-device speech I/O** library for [Aurum](https://github.com/joe-bro
 **Speech both ways. On-device by default.**
 
 - Local whisper.cpp STT (`whisper-rs`, Metal on macOS)
-- Local ONNX TTS (KittenTTS; feature `tts`, default on)
-- Optional OpenRouter (LLM-assisted ASR / cleanup)
+- Local ONNX TTS (KittenTTS / Kokoro; feature `tts`, default on)
+- Optional remote providers (OpenRouter / OpenAI / ElevenLabs / xAI)
 - PCM-first mic host API · partial-window helpers · cancel
 - Cleanup / flow (rules or OpenRouter)
 - Model download, pins, txt/srt/json
 
-**API status:** experimental until `0.1.0`. Pin a git `rev` or tag.
+**API status:** provisional on continuous **0.0.x** (next assurance cut **v0.0.21**, not 1.0). Pin a crates.io version or git tag.
 
 ## Depend
 
 ```toml
-aurum-core = "0.0.12"
+aurum-core = "0.0.20"
 # STT only (smaller): default-features = false
-# git: tag = "v0.0.12"
+# git: tag = "v0.0.20"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -38,24 +38,19 @@ let result = provider
         &TranscriptionOptions {
             model: "tiny-q5_1".into(),
             language: "en".into(),
-            timestamps: true,
+            timestamps: false,
             cancel: None,
         },
     )
     .await?;
-println!("{}", result.text);
+println!("{}", result.text());
 aurum_core::providers::local::clear_context_cache();
 # Ok(())
 # }
 ```
 
-Docs: <https://joe-broadhead.github.io/aurum/library/integration/>
-
-## Build requirements
-
-- **Build:** cmake + C/C++ toolchain  
-- **Runtime (STT files):** ffmpeg for non-16 kHz mono WAV  
-- **TTS:** ONNX Runtime via `ort` (feature `tts`)
+Prefer `AurumEngine` for long-lived hosts (owned pools, governor, registry). See
+the [integration guide](https://joe-broadhead.github.io/aurum/library/integration/).
 
 ## License
 

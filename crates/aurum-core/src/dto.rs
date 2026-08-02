@@ -165,6 +165,23 @@ impl ErrorDto {
             operation: None,
         }
     }
+
+    pub fn with_operation(mut self, operation: impl Into<String>) -> Self {
+        self.operation = Some(operation.into());
+        self
+    }
+
+    /// Pretty JSON that never emits NaN/Inf (finite-only fields).
+    pub fn to_json_pretty(&self) -> Result<String, TranscriptionError> {
+        serde_json::to_string_pretty(self)
+            .map_err(|e| TranscriptionError::internal(format!("ErrorDto serialize failed: {e}")))
+    }
+
+    /// Compact single-line JSON for machine consumers.
+    pub fn to_json(&self) -> Result<String, TranscriptionError> {
+        serde_json::to_string(self)
+            .map_err(|e| TranscriptionError::internal(format!("ErrorDto serialize failed: {e}")))
+    }
 }
 
 fn finite_or_zero(v: f64) -> f64 {
@@ -203,6 +220,18 @@ mod tests {
         r.set_duration_secs(f64::NAN);
         let dto = SttResultDto::from_result(&r);
         assert_eq!(dto.duration_secs, 0.0);
+    }
+
+    #[test]
+    fn error_dto_json_has_schema_and_exit_code() {
+        let err = crate::error::UserError::MissingApiKey.into();
+        let dto = ErrorDto::from_error(&err);
+        let json = dto.to_json_pretty().unwrap();
+        assert!(json.contains("schema_version"));
+        assert!(json.contains("exit_code"));
+        assert!(json.contains("category"));
+        assert_eq!(dto.schema_version, ERROR_SCHEMA_VERSION);
+        assert_eq!(dto.exit_code, err.exit_code());
     }
 
     #[cfg(feature = "tts")]

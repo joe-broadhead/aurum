@@ -15,7 +15,8 @@ pub enum VerifyState {
     SizeMismatch,
     DigestMismatch,
     Unpinned,
-    Legacy,
+    /// Present on disk; cheap inventory only (use `cache verify` for digests).
+    Present,
     Quarantined,
     Error,
 }
@@ -49,16 +50,16 @@ pub fn status_stt(cache_dir: &Path) -> Vec<CacheEntry> {
                     } else if let Some(exp) = model::pinned_exact_bytes(row.info.filename) {
                         if actual == exp {
                             // Present + size OK; full integrity is `aurum cache verify`.
-                            VerifyState::Legacy
+                            VerifyState::Present
                         } else {
                             VerifyState::SizeMismatch
                         }
                     } else {
-                        VerifyState::Legacy
+                        VerifyState::Present
                     };
                     (Some(actual), state)
                 }
-                Ok(m) if m.len() > 0 => (Some(m.len()), VerifyState::Legacy),
+                Ok(m) if m.len() > 0 => (Some(m.len()), VerifyState::Present),
                 _ => (None, VerifyState::Missing),
             };
             CacheEntry {

@@ -264,7 +264,7 @@ pub unsafe extern "C" fn aurum_engine_close(engine: *mut AurumEngine, timeout_ms
     }
 }
 
-/// Destroy an engine handle (void legacy API).
+/// Destroy an engine handle (void teardown for RAII hosts).
 ///
 /// **Contract (JOE-1647):** closes admission, cancels work, and waits up to 30s
 /// for exclusive blocking ops, export-boundary calls, and jobs. **Only frees on
@@ -272,7 +272,7 @@ pub unsafe extern "C" fn aurum_engine_close(engine: *mut AurumEngine, timeout_ms
 /// and the host must retry [`aurum_engine_close`] (or process shutdown). This
 /// avoids use-after-free of in-flight exported calls.
 ///
-/// Prefer [`aurum_engine_close`] for status-returning teardown.
+/// Prefer [`aurum_engine_close`] when the host can handle a status code.
 ///
 /// **Unsupported:** concurrent use of `engine` after a successful free; hosts
 /// must serialize destroy/close with all other calls on the same handle.
@@ -595,6 +595,13 @@ pub unsafe extern "C" fn aurum_capabilities(out: *mut AurumCapabilitiesC) -> i32
                 "unsupported capabilities struct_version {host_ver} (need 1)"
             )));
         }
+        // When host reports a size, require exact match (no dual-size lag).
+        if host_size != 0 && host_size != caps.struct_size {
+            return Err(FfiError::invalid_arg(format!(
+                "capabilities struct_size mismatch: host={host_size} library={}",
+                caps.struct_size
+            )));
+        }
         unsafe {
             (*out).struct_size = caps.struct_size;
             (*out).struct_version = caps.struct_version;
@@ -606,7 +613,6 @@ pub unsafe extern "C" fn aurum_capabilities(out: *mut AurumCapabilitiesC) -> i32
             (*out).has_jobs = caps.has_jobs;
             (*out).has_doctor = caps.has_doctor;
             (*out).sample_rate_hz = caps.sample_rate_hz;
-            let _ = host_size; // accepted for forward compat
         }
         Ok(())
     })

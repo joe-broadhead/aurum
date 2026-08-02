@@ -128,7 +128,7 @@ pub const OPENROUTER_DEFAULT_BASE: &str = "https://openrouter.ai/api/v1";
 ///
 /// `HTTP-Referer` is the primary app id in OpenRouter rankings; keep this URL stable.
 pub const OPENROUTER_APP_REFERER: &str = "https://github.com/joe-broadhead/aurum";
-/// Display name on openrouter.ai rankings / analytics (`X-OpenRouter-Title`; `X-Title` kept for compat).
+/// Display name on openrouter.ai rankings / analytics (`X-OpenRouter-Title`).
 pub const OPENROUTER_APP_TITLE: &str = "Aurum";
 /// Marketplace categories (max 2 per request; lowercase hyphen-separated).
 pub const OPENROUTER_APP_CATEGORIES: &str = "audio-gen,cli-agent";
@@ -159,8 +159,6 @@ impl ProviderHttpPolicy for OpenRouterHttpPolicy {
         // HTTP-Referer is required for rankings; title alone does not create an app page.
         req.header("HTTP-Referer", OPENROUTER_APP_REFERER)
             .header("X-OpenRouter-Title", OPENROUTER_APP_TITLE)
-            // Backwards-compatible alias still accepted by OpenRouter.
-            .header("X-Title", OPENROUTER_APP_TITLE)
             .header("X-OpenRouter-Categories", OPENROUTER_APP_CATEGORIES)
     }
 
@@ -309,7 +307,7 @@ mod tests {
             .collect();
         assert!(names.iter().any(|n| n == "http-referer" || n == "referer"));
         assert!(names.iter().any(|n| n == "x-openrouter-title"));
-        assert!(names.iter().any(|n| n == "x-title"));
+        assert!(!names.iter().any(|n| n == "x-title"));
         assert!(names.iter().any(|n| n == "x-openrouter-categories"));
 
         let referer = headers
@@ -322,10 +320,7 @@ mod tests {
             headers.get("X-OpenRouter-Title").unwrap().to_str().unwrap(),
             OPENROUTER_APP_TITLE
         );
-        assert_eq!(
-            headers.get("X-Title").unwrap().to_str().unwrap(),
-            OPENROUTER_APP_TITLE
-        );
+        assert!(headers.get("X-Title").is_none());
         assert_eq!(
             headers
                 .get("X-OpenRouter-Categories")

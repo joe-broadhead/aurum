@@ -6,6 +6,7 @@ use aurum_core::cleanup::{
     OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
 };
 use aurum_core::config::Config;
+use aurum_core::dto::ErrorDto;
 use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
 use aurum_core::output::{self, commit_text, CommitMode, OutputFormat};
@@ -14,6 +15,65 @@ use aurum_core::remote::RemotePolicy;
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// When true, [`report_error`] prints a versioned [`ErrorDto`] JSON envelope on stderr.
+static EMIT_JSON_ERRORS: AtomicBool = AtomicBool::new(false);
+
+/// Enable structured JSON errors for machine-readable CLI modes (`-o json`, `--json`, `--emit-json`).
+pub fn set_json_errors(on: bool) {
+    EMIT_JSON_ERRORS.store(on, Ordering::Relaxed);
+}
+
+fn json_errors_enabled() -> bool {
+    if EMIT_JSON_ERRORS.load(Ordering::Relaxed) {
+        return true;
+    }
+    // Escape hatch for wrappers that cannot set the process flag before run().
+    matches!(
+        std::env::var("AURUM_JSON_ERRORS").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+fn wants_json_errors(cli: &Cli) -> bool {
+    if let Some(out) = cli.transcribe.output.as_deref() {
+        if out.eq_ignore_ascii_case("json") {
+            return true;
+        }
+    }
+    match &cli.command {
+        Some(Commands::Transcribe(args)) => args
+            .output
+            .as_deref()
+            .is_some_and(|o| o.eq_ignore_ascii_case("json")),
+        Some(Commands::Cleanup(args)) => args
+            .output
+            .as_deref()
+            .is_some_and(|o| o.eq_ignore_ascii_case("json")),
+        Some(Commands::Tts(tts)) => match &tts.command {
+            Some(TtsCommands::Inspect { json, .. })
+            | Some(TtsCommands::Verify { json, .. })
+            | Some(TtsCommands::Add { json, .. }) => *json,
+            None => tts.synth.emit_json,
+            _ => false,
+        },
+        Some(Commands::Batch(batch)) => {
+            batch.json
+                || batch
+                    .output
+                    .as_deref()
+                    .is_some_and(|o| o.eq_ignore_ascii_case("json"))
+        }
+        Some(Commands::Cache(cache)) => cache.json,
+        Some(Commands::Doctor(doc)) => doc.json,
+        Some(Commands::SupportBundle(sb)) => sb.stdout,
+        Some(Commands::Models {
+            command: Some(ModelsCommands::Recommend { json, .. }),
+        }) => *json,
+        _ => false,
+    }
+}
 
 /// Aurum — on-device speech CLI (STT + TTS).
 #[derive(Debug, Parser)]
@@ -354,24 +414,13 @@ pub struct CleanupArgs {
     )]
     pub style: Option<String>,
 
-    /// Alias for --style (matches transcribe flag naming).
-    #[arg(long = "cleanup", value_name = "STYLE")]
-    pub cleanup: Option<String>,
-
     /// Cleanup backend: rules (default) or openrouter.
     #[arg(long = "provider", value_name = "rules|openrouter")]
     pub provider: Option<String>,
 
-    /// Alias for --provider.
-    #[arg(long = "cleanup-provider", value_name = "rules|openrouter")]
-    pub cleanup_provider: Option<String>,
-
     /// Model when provider is openrouter.
     #[arg(long = "model", value_name = "MODEL")]
     pub model: Option<String>,
-
-    #[arg(long = "cleanup-model", value_name = "MODEL")]
-    pub cleanup_model: Option<String>,
 
     /// Output format for structured result.
     #[arg(short = 'o', long = "output", value_name = "txt|json", value_parser = ["txt", "json"])]
@@ -386,6 +435,9 @@ pub struct CleanupArgs {
 
 /// Entry point used by `main`.
 pub async fn run(cli: Cli) -> Result<()> {
+    if wants_json_errors(&cli) {
+        set_json_errors(true);
+    }
     match cli.command {
         Some(Commands::Models { command: None }) => {
             init_tracing(false);
@@ -795,37 +847,19 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
 
     if cli.emit_json {
         let abs = std::fs::canonicalize(&output_file).unwrap_or(output_file.clone());
-        let mut payload = serde_json::json!({
-            "backend_kind": result.backend_kind.as_str(),
-            "provider": result.provider,
-            "model": result.model,
-            "voice": result.voice,
-            "language": result.language,
-            "output_path": abs.display().to_string(),
-            "format": "wav",
-            "sample_rate_hz": result.sample_rate_hz,
-            "channels": result.channels,
-            "duration_ms": result.duration_ms,
-            "text_chars": result.text_chars,
-            "text_truncated": result.text_truncated,
-            "chunk_count": result.chunk_count,
-            "synthesized_chars": result.synthesized_chars,
-        });
+        // Freeze surface: versioned TtsMetaDto (JOE-1896) plus CLI path fields.
+        let mut meta = aurum_core::dto::TtsMetaDto::from_result(&result);
+        if custom_provenance {
+            meta.provenance = Some("custom".to_string());
+        }
+        let mut payload = serde_json::to_value(&meta)
+            .map_err(|e| TranscriptionError::internal(format!("json: {e}")))?;
         if let Some(obj) = payload.as_object_mut() {
-            if let Some(a) = &result.adapter {
-                obj.insert("adapter".into(), serde_json::json!(a));
-            }
-            if let Some(t) = &result.trust {
-                obj.insert("trust".into(), serde_json::json!(t));
-            }
-            let provenance = if custom_provenance {
-                Some("custom".to_string())
-            } else {
-                result.provenance.clone()
-            };
-            if let Some(p) = provenance {
-                obj.insert("provenance".into(), serde_json::json!(p));
-            }
+            obj.insert(
+                "output_path".into(),
+                serde_json::json!(abs.display().to_string()),
+            );
+            obj.insert("format".into(), serde_json::json!("wav"));
         }
         let mut stdout = io::stdout().lock();
         writeln!(
@@ -1130,26 +1164,23 @@ async fn run_cleanup_cmd(cli: CleanupArgs) -> Result<()> {
     init_tracing(cli.verbose);
     let mut cfg = Config::load()?;
 
-    // Prefer explicit cleanup flags; style defaults to `clean` for this subcommand
-    // when neither CLI nor non-raw config is set — operators expect cleanup to do something.
-    let style_raw =
-        cli.style
-            .as_deref()
-            .or(cli.cleanup.as_deref())
-            .unwrap_or(if cfg.cleanup_style == "raw" {
-                "clean"
-            } else {
-                cfg.cleanup_style.as_str()
-            });
+    // Style defaults to `clean` for this subcommand when config is still `raw` —
+    // operators expect `aurum cleanup` to do something without extra flags.
+    let style_raw = cli
+        .style
+        .as_deref()
+        .unwrap_or(if cfg.cleanup_style == "raw" {
+            "clean"
+        } else {
+            cfg.cleanup_style.as_str()
+        });
     let provider_raw = cli
         .provider
         .as_deref()
-        .or(cli.cleanup_provider.as_deref())
         .unwrap_or(cfg.cleanup_provider.as_str());
     let model = cli
         .model
         .as_deref()
-        .or(cli.cleanup_model.as_deref())
         .map(|s| s.to_string())
         .or_else(|| cfg.cleanup_openrouter_model.clone());
 
@@ -1240,7 +1271,7 @@ fn build_cleanup_backend(cfg: &Config, kind: CleanupProviderKind) -> Result<Box<
                 ..Default::default()
             };
             Ok(Box::new(OpenRouterCleanup::with_policy(
-                cfg.openrouter_api_key_exposed(),
+                cfg.openrouter_api_key.clone(),
                 Some(cfg.openrouter_base_url.clone()),
                 cfg.cleanup_openrouter_model
                     .clone()
@@ -1381,12 +1412,37 @@ fn atty_stderr() -> bool {
 }
 
 /// Print a library error.
+///
+/// When JSON output was requested (`-o json`, `--json`, `--emit-json`, or
+/// `AURUM_JSON_ERRORS=1`), emits a versioned [`ErrorDto`] JSON envelope on
+/// stderr so machine consumers share the same schema as library embeds.
+/// Otherwise prints a human line plus optional MissingApiKey hints.
 pub fn report_error(err: &TranscriptionError) {
+    if json_errors_enabled() {
+        let dto = ErrorDto::from_error(err);
+        match dto.to_json_pretty() {
+            Ok(json) => eprintln!("{json}"),
+            Err(_) => {
+                // Last resort: never fail closed on the error path itself.
+                eprintln!(
+                    "{{\"schema_version\":{},\"category\":{},\"retryable\":{},\"message\":{},\"exit_code\":{}}}",
+                    dto.schema_version,
+                    serde_json::to_string(&dto.category).unwrap_or_else(|_| "\"error\"".into()),
+                    dto.retryable,
+                    serde_json::to_string(&dto.message).unwrap_or_else(|_| "\"error\"".into()),
+                    dto.exit_code,
+                );
+            }
+        }
+        return;
+    }
     eprintln!("error: {err}");
     if matches!(err, TranscriptionError::User(UserError::MissingApiKey)) {
         if let Some(path) = Config::default_config_path() {
             eprintln!(" Config file location: {}", path.display());
-            eprintln!(" Create it with a [openrouter] api_key, or export OPENROUTER_API_KEY.");
+            eprintln!(
+                " Create it with a [providers.openrouter] api_key, or export OPENROUTER_API_KEY."
+            );
         }
     }
 }

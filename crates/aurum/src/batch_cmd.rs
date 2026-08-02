@@ -364,7 +364,7 @@ async fn apply_cleanup_local(
                 ..Default::default()
             };
             Box::new(OpenRouterCleanup::with_policy(
-                cfg.openrouter_api_key_exposed(),
+                cfg.openrouter_api_key.clone(),
                 Some(cfg.openrouter_base_url.clone()),
                 cfg.cleanup_openrouter_model
                     .clone()

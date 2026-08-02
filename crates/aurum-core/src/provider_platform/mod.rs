@@ -12,6 +12,7 @@ mod builtin;
 mod conformance;
 mod context;
 mod descriptor;
+mod evidence;
 mod factory;
 mod id;
 mod listing;
@@ -29,6 +30,14 @@ pub use conformance::{
 pub use context::ProviderBuildContext;
 pub use descriptor::{
     NetworkRequirement, ProviderDescriptor, ProviderOperations, ProviderStability,
+};
+pub use evidence::{
+    detect_catalogue_drift, effective_provider_tier, evaluate_supported_evidence_gate,
+    load_evidence_dir, local_stt_evidence, local_tts_evidence, provider_tier_matrix,
+    tier_from_registry_stability, CatalogueDriftReport, EvidenceFailureCategory,
+    EvidenceGateFinding, EvidenceGateReport, EvidenceOperation, ProviderEvidenceIndex,
+    ProviderEvidenceRecord, SupportTier, SupportedRouteClaim, PROVIDER_EVIDENCE_SCHEMA_VERSION,
+    SUPPORTED_EVIDENCE_MAX_AGE_SECS,
 };
 
 /// Optional overrides when resolving a provider through [`crate::AurumEngine`] (JOE-1938).

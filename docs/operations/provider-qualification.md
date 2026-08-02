@@ -4,13 +4,27 @@ This document is the **release gate** for the local/remote speech provider
 platform (epic JOE-1932 / GitHub #59). It defines support tiers, deterministic
 CI expectations, protected integration evidence, and demotion/rollback rules.
 
-## Support tiers
+## Support tiers (JOE-2223)
 
 | Tier | Meaning | Default? |
 |------|---------|----------|
-| **supported** | Reviewed models, mock CI coverage, docs, operator path | No (except `local`) |
-| **experimental** | Implemented + mocks, limited real evidence | No |
-| **explicit-only** | Requires deliberate config; may be model-gated | No |
+| **supported** | Reviewed factory + mocks + **fresh (≤30d) protected inference evidence** | Local only until remote evidence lands |
+| **experimental** | Implemented + mocks; evidence missing/stale/limited | No |
+| **explicit-only** | Deliberate selection only; hidden from normal recommendations | No |
+
+**Entry rule:** a remote route may not be labelled `supported` without a
+versioned evidence record under `evals/provider-evidence/`. Release gate:
+
+```bash
+./scripts/check_provider_evidence.sh
+```
+
+Missing or stale evidence for a claimed supported remote **fails the release**.
+Remediation: restore the route, **demote** in index/docs/changelog, or remove
+the claim. No silent cloud fallback.
+
+Code: `aurum_core::provider_platform::evidence` (`SupportTier`,
+`ProviderEvidenceRecord`, `evaluate_supported_evidence_gate`).
 
 Current product defaults remain **on-device**:
 
@@ -23,18 +37,18 @@ Current product defaults remain **on-device**:
 Remote providers (`openrouter`, `openai`, `elevenlabs`, `xai` / alias `grok`)
 are **opt-in** only.
 
-### Provider tiers (2026-08-02)
+### Provider tiers (JOE-2223 evidence programme)
 
 | Provider | STT | TTS | Tier | Evidence notes |
 |----------|-----|-----|------|----------------|
-| `local` | yes | yes | **supported** | Full CI; no network |
-| `openrouter` | yes | yes | **STT supported** (reviewed); **TTS experimental** | TTS default `hexgrad/kokoro-82m` (PCM); live speech catalogue refresh 2026-08-02 after OpenAI-family pin removed upstream |
-| `openai` | yes | yes | **supported** (reviewed models) | Mocks; credentialed smoke optional |
-| `elevenlabs` | — | yes | **supported** (reviewed models) | Mocks; voice_id explicit |
-| `xai` | yes | yes | **experimental** | Official `/v1/stt` + `/v1/tts` (JOE-1976); mocks; protected smoke pending |
+| `local` | yes | yes | **supported** | Offline evidence in `evals/provider-evidence/` |
+| `openrouter` | yes | yes | **experimental** | Mocks + catalogue probe; protected smoke pending for promotion |
+| `openai` | yes | yes | **experimental** | Mocks; promote only with fresh protected evidence |
+| `elevenlabs` | — | yes | **experimental** | Mocks; voice_id explicit; protected smoke pending |
+| `xai` | yes | yes | **experimental** | Official `/v1/stt` + `/v1/tts`; mocks; protected smoke pending |
 
-Demote a remote model by removing it from the reviewed registry (fail closed)
-without touching local paths.
+Demote by removing the supported claim + evidence, updating the matrix, product
+contracts (`generate_product_contracts --write`), and changelog in one PR.
 
 ## Deterministic PR CI (required)
 
@@ -60,9 +74,23 @@ Real keys must **not** appear in ordinary PR CI or the repository.
 | ElevenLabs TTS | Short phrase + real voice_id | Protected Actions env |
 | xAI STT/TTS | Optional; else record deferral | Protected Actions env |
 
-Evidence record fields (redacted): provider, model, voice, UTC date, Aurum
-commit, latency_ms, encoded/decoded byte counts, result metadata, pass/fail.
-**Never** retain input text/audio, raw provider bodies, or keys.
+Evidence records are **versioned JSON** (`ProviderEvidenceRecord`, schema 1)
+under `evals/provider-evidence/`. Required fields: provider, operation, model,
+support tier, protocol contract, executed_at_unix, auth_ok, passed, failure
+category, optional latency/byte counts and backend/timestamp honesty.
+**Never** retain input text/audio, raw provider bodies, keys, or private voice
+IDs (public records use reviewed aliases).
+
+### Drift detection
+
+Compare reviewed model allowlists to vendor discovery with
+`detect_catalogue_drift` — discovery **never** auto-expands the trusted
+registry. A human review must approve new models/voices/origins.
+
+### Cost / retention guidance
+
+Aurum does not claim vendor zero-retention. Operators must read vendor privacy
+policies. Remote selection is deliberate; local remains the default.
 
 ## Engine remote admission (JOE-1975)
 

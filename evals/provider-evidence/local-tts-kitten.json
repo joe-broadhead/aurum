@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "provider_id": "local",
+  "operation": "tts",
+  "model_id": "kitten-nano-int8",
+  "voice_alias": "Luna",
+  "support_tier": "supported",
+  "aurum_version": "0.0.21",
+  "protocol_contract": "local_kitten_v1",
+  "executed_at_unix": 1785710389,
+  "workflow_run_id": "offline-ci",
+  "auth_ok": true,
+  "passed": true,
+  "failure_category": "none",
+  "sample_rate_hz": 24000,
+  "backend_kind": "local",
+  "timestamps_reliable": false,
+  "expires_at_unix": 1788302389,
+  "notes": "local TTS \u2014 no network evidence required"
+}

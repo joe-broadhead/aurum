@@ -8,6 +8,9 @@ cd "$ROOT"
 echo "== version sync =="
 ./scripts/version_check.sh
 
+echo "== provider evidence freshness (JOE-2223) =="
+./scripts/check_provider_evidence.sh
+
 echo "== action pins =="
 ./scripts/check_action_pins.sh
 

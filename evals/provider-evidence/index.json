@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "aurum_version": "0.0.21",
+  "supported_claims": [
+    {
+      "provider_id": "local",
+      "operation": "stt",
+      "model_id": "base",
+      "required_for_release": true
+    },
+    {
+      "provider_id": "local",
+      "operation": "tts",
+      "model_id": "kitten-nano-int8",
+      "voice_alias": "Luna",
+      "required_for_release": true
+    }
+  ],
+  "experimental_routes": [
+    "openrouter:stt",
+    "openrouter:tts",
+    "openai:stt",
+    "openai:tts",
+    "elevenlabs:tts",
+    "xai:stt",
+    "xai:tts"
+  ],
+  "notes": "JOE-2223: remote routes remain experimental until protected inference evidence is retained. Claiming a remote as supported without a fresh evidence file fails the release gate."
+}

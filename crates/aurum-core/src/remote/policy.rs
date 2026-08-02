@@ -124,6 +124,15 @@ fn path_allowed(path: &str, exact: &[&str], prefixes: &[&str]) -> bool {
 pub const OPENROUTER_ORIGIN: &str = "https://openrouter.ai";
 pub const OPENROUTER_DEFAULT_BASE: &str = "https://openrouter.ai/api/v1";
 
+/// OpenRouter [app attribution](https://openrouter.ai/docs/app-attribution) for Aurum.
+///
+/// `HTTP-Referer` is the primary app id in OpenRouter rankings; keep this URL stable.
+pub const OPENROUTER_APP_REFERER: &str = "https://github.com/joe-broadhead/aurum";
+/// Display name on openrouter.ai rankings / analytics (`X-OpenRouter-Title`; `X-Title` kept for compat).
+pub const OPENROUTER_APP_TITLE: &str = "Aurum";
+/// Marketplace categories (max 2 per request; lowercase hyphen-separated).
+pub const OPENROUTER_APP_CATEGORIES: &str = "audio-gen,cli-agent";
+
 /// OpenRouter HTTP policy (Bearer + attribution headers).
 #[derive(Debug, Default, Clone, Copy)]
 pub struct OpenRouterHttpPolicy;
@@ -146,8 +155,13 @@ impl ProviderHttpPolicy for OpenRouterHttpPolicy {
     }
 
     fn apply_extra_headers(&self, req: RequestBuilder) -> RequestBuilder {
-        req.header("HTTP-Referer", "https://github.com/joe-broadhead/aurum")
-            .header("X-Title", "Aurum")
+        // https://openrouter.ai/docs/app-attribution
+        // HTTP-Referer is required for rankings; title alone does not create an app page.
+        req.header("HTTP-Referer", OPENROUTER_APP_REFERER)
+            .header("X-OpenRouter-Title", OPENROUTER_APP_TITLE)
+            // Backwards-compatible alias still accepted by OpenRouter.
+            .header("X-Title", OPENROUTER_APP_TITLE)
+            .header("X-OpenRouter-Categories", OPENROUTER_APP_CATEGORIES)
     }
 
     fn allows_path(&self, path: &str) -> bool {
@@ -284,13 +298,6 @@ mod tests {
     use super::*;
     use reqwest::Client;
 
-    fn header_names(req: reqwest::Request) -> Vec<String> {
-        req.headers()
-            .keys()
-            .map(|k| k.as_str().to_ascii_lowercase())
-            .collect()
-    }
-
     #[test]
     fn openrouter_extra_headers_present() {
         let p = OpenRouterHttpPolicy;
@@ -298,9 +305,38 @@ mod tests {
             .apply_extra_headers(Client::new().get("https://openrouter.ai/api/v1/x"))
             .build()
             .unwrap();
-        let names = header_names(req);
+        let headers = req.headers();
+        let names: Vec<_> = headers
+            .keys()
+            .map(|k| k.as_str().to_ascii_lowercase())
+            .collect();
         assert!(names.iter().any(|n| n == "http-referer" || n == "referer"));
+        assert!(names.iter().any(|n| n == "x-openrouter-title"));
         assert!(names.iter().any(|n| n == "x-title"));
+        assert!(names.iter().any(|n| n == "x-openrouter-categories"));
+
+        let referer = headers
+            .get("HTTP-Referer")
+            .or_else(|| headers.get("Referer"))
+            .and_then(|v| v.to_str().ok())
+            .unwrap();
+        assert_eq!(referer, OPENROUTER_APP_REFERER);
+        assert_eq!(
+            headers.get("X-OpenRouter-Title").unwrap().to_str().unwrap(),
+            OPENROUTER_APP_TITLE
+        );
+        assert_eq!(
+            headers.get("X-Title").unwrap().to_str().unwrap(),
+            OPENROUTER_APP_TITLE
+        );
+        assert_eq!(
+            headers
+                .get("X-OpenRouter-Categories")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            OPENROUTER_APP_CATEGORIES
+        );
     }
 
     #[test]
@@ -314,6 +350,8 @@ mod tests {
             let n = name.as_str().to_ascii_lowercase();
             assert_ne!(n, "http-referer");
             assert_ne!(n, "x-title");
+            assert_ne!(n, "x-openrouter-title");
+            assert_ne!(n, "x-openrouter-categories");
             assert_ne!(n, "xi-api-key");
         }
     }
@@ -334,6 +372,8 @@ mod tests {
                 let n = name.as_str().to_ascii_lowercase();
                 assert_ne!(n, "http-referer");
                 assert_ne!(n, "x-title");
+                assert_ne!(n, "x-openrouter-title");
+                assert_ne!(n, "x-openrouter-categories");
             }
         }
     }

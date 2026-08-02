@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **OpenRouter app attribution:** all OpenRouter HTTP calls identify as **Aurum**
+  via `HTTP-Referer` (`https://github.com/joe-broadhead/aurum`), preferred
+  `X-OpenRouter-Title` (plus legacy `X-Title`), and `X-OpenRouter-Categories`
+  (`audio-gen,cli-agent`). Constants are exported from `aurum_core::remote`.
+
 ### Added
 
 - **JOE-1943:** provider platform qualification — support tiers, release-gate

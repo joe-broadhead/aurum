@@ -10,6 +10,7 @@ mod canary_matrix;
 mod client;
 mod interrupt;
 mod limits;
+mod long_form;
 mod openai_speech;
 mod policy;
 mod status;
@@ -24,6 +25,11 @@ pub use limits::{
     read_body_limited, validate_segments, validate_text_bounds, RemoteBodyLimits, TranscriptLimits,
     DEFAULT_CHAT_BODY_CAP, DEFAULT_CLEANUP_BODY_CAP, DEFAULT_STT_BODY_CAP,
 };
+pub use long_form::{
+    dedupe_overlap_text, derive_timestamps_reliable, plan_boundary_windows,
+    srt_requires_allow_approximate, stitch_text_with_overlap, BoundaryKind, LongFormPolicy,
+    PlannedWindow, TimestampSource, DEFAULT_BOUNDARY_SEARCH_SECS, DEFAULT_OVERLAP_SECS,
+};
 pub use openai_speech::{parse_pcm_content_type, OpenAiSpeechRequest, SpeechResponseFormat};
 pub use policy::{
     normalize_request_path, AuthScheme, ElevenLabsHttpPolicy, OpenAiHttpPolicy,
@@ -35,6 +41,7 @@ pub use policy::{
 pub use status::{public_network_reason, redact_secret, redact_secret_with};
 pub use stt_chunk::{
     effective_chunk_secs, needs_time_chunk, plan_chunk_windows, soft_split_text_segments,
-    stitch_chunk_results, transcribe_maybe_chunked, DEFAULT_REMOTE_STT_CHUNK_SECS,
+    stitch_chunk_results, stitch_chunk_results_with_overlaps, transcribe_maybe_chunked,
+    DEFAULT_REMOTE_STT_CHUNK_SECS,
 };
 pub use wire_format::{resolve_encoded_format, ExpectedWireFormat};

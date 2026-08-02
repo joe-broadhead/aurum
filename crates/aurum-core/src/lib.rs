@@ -81,6 +81,7 @@ pub mod partial;
 pub mod pcm;
 pub mod postprocess;
 pub mod prelude;
+pub mod product_contracts;
 pub mod profile;
 pub mod provider_platform;
 pub mod providers;
@@ -143,7 +144,10 @@ pub use eval::{
 };
 pub use model::{list_models, DownloadProgress, EnsureModelOptions, ModelInfo, ModelStatus};
 pub use observability::{
-    process_metrics, DiagnosticBundle, Metrics, MetricsSnapshot, SpanTimer, METRICS_SCHEMA_VERSION,
+    privacy_scan, process_metrics, BoundedEventSink, DiagnosticBundle, EventSink, Metrics,
+    MetricsScope, MetricsSnapshot, NoopEventSink, OpEvent, OpKind, OpStage, SpanTimer,
+    TerminalCategory, TerminalGuard, DEFAULT_EVENT_QUEUE_CAP, METRICS_SCHEMA_VERSION,
+    OP_EVENT_SCHEMA_VERSION, PRIVACY_CANARY_MARKERS,
 };
 pub use output::{
     commit_text, format_result, write_result, write_result_to_path, CommitMode, OutputFormat,
@@ -152,6 +156,10 @@ pub use output::{
 pub use partial::{PartialSession, PartialSessionConfig, PartialUpdate};
 pub use pcm::PcmBuffer;
 pub use postprocess::{normalize_result_with_report, NormalizationReport};
+pub use product_contracts::{
+    registered_stt_provider_ids, registered_tts_provider_ids, ProductContractsSnapshot,
+    ProductProviderRecord, PRODUCT_CONTRACTS_SCHEMA_VERSION,
+};
 pub use profile::{
     format_recommendation, resolve_profile, ProfileResolution, QualityProfile,
     PROFILE_EVIDENCE_VERSION,
@@ -192,8 +200,9 @@ pub use providers::{
     TranscriptionProvider, TranscriptionResult,
 };
 pub use remote::{
-    HardenedHttpClient, OpenAiSpeechRequest, OpenRouterHttpPolicy, ProviderHttpPolicy,
-    RemotePolicy, SpeechResponseFormat,
+    HardenedHttpClient, LongFormPolicy, OpenAiSpeechRequest, OpenRouterHttpPolicy,
+    ProviderHttpPolicy, RemotePolicy, SpeechResponseFormat, TimestampSource,
+    DEFAULT_REMOTE_STT_CHUNK_SECS,
 };
 pub use runtime::{
     GovernorConfig, Lifecycle, LifecycleState, OpContext, PermitKind, ResourceGovernor,

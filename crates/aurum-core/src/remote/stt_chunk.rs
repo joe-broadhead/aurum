@@ -1,16 +1,21 @@
-//! Time-based remote STT chunk-and-stitch (JOE-2212).
+//! Time-based remote STT chunk-and-stitch (JOE-2212 / JOE-2219).
 //!
 //! Long lectures can exceed [`TranscriptLimits::max_segment_chars`] when a vendor
 //! returns a single continuous segment, or truncate on full-file remote paths.
 //! Client-side audio chunking (~210s windows, dual-ref eval band) keeps each
 //! request small and stitches text/segments with time offsets.
 //!
-//! Local whisper is unchanged (handles full-file natively).
+//! JOE-2219 adds silence-aware boundaries, bounded overlap, deduplication, and
+//! timestamp provenance. Local whisper full-file behavior is unchanged.
 
 use crate::audio::AudioInput;
 use crate::error::{ProviderError, Result};
 use crate::providers::{Segment, TranscriptionOptions, TranscriptionResult};
 use crate::remote::limits::{validate_segments, validate_text_bounds, TranscriptLimits};
+use crate::remote::long_form::{
+    dedupe_segments_overlap, derive_timestamps_reliable, plan_boundary_windows,
+    stitch_text_with_overlap, LongFormPolicy, TimestampSource,
+};
 use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -35,6 +40,9 @@ pub struct ChunkWindow {
 }
 
 /// Plan non-overlapping PCM windows covering `[0, total_samples)`.
+///
+/// Legacy hard-cut planner retained for tests and explicit fixed-window fallback.
+/// Prefer [`plan_boundary_windows`] with PCM for production long-form.
 pub fn plan_chunk_windows(
     total_samples: usize,
     sample_rate: u32,
@@ -130,12 +138,21 @@ pub fn soft_split_text_segments(
         let piece: String = chars[c0..c1].iter().collect();
         let t0 = start + span * (c0 as f64 / chars.len() as f64);
         let t1 = start + span * (c1 as f64 / chars.len() as f64);
-        segs.push(Segment::from_parts_unchecked(t0, t1.max(t0), piece));
+        // Soft-split timing is interpolated, not provider-observed (JOE-2219).
+        segs.push(Segment::from_parts_with_source(
+            t0,
+            t1.max(t0),
+            piece,
+            TimestampSource::Interpolated,
+        ));
     }
     segs
 }
 
 /// Offset segments by `offset_secs` and soft-split any that still exceed limits.
+///
+/// Offset segments are marked [`TimestampSource::ChunkOffset`] unless they were
+/// already interpolated (soft-split).
 pub fn normalize_chunk_segments(
     segments: &[Segment],
     offset_secs: f64,
@@ -154,7 +171,25 @@ pub fn normalize_chunk_segments(
                 limits.max_segment_chars,
             ));
         } else {
-            out.push(Segment::from_parts_unchecked(start, end, text.to_string()));
+            let source = if matches!(
+                seg.timestamp_source(),
+                TimestampSource::Interpolated | TimestampSource::SyntheticSpan
+            ) {
+                seg.timestamp_source()
+            } else if offset_secs.abs() > f64::EPSILON {
+                TimestampSource::ChunkOffset
+            } else {
+                match seg.timestamp_source() {
+                    TimestampSource::Unavailable => TimestampSource::ProviderSegment,
+                    other => other,
+                }
+            };
+            out.push(Segment::from_parts_with_source(
+                start,
+                end,
+                text.to_string(),
+                source,
+            ));
         }
     }
     out
@@ -174,30 +209,115 @@ pub fn stitch_chunk_results(
         .into());
     }
 
-    let mut texts: Vec<String> = Vec::with_capacity(parts.len());
+    let mut text_parts: Vec<(String, f64)> = Vec::with_capacity(parts.len());
     let mut segments: Vec<Segment> = Vec::new();
-    let mut timestamps_reliable = true;
     let mut backend_kind = parts[0].1.backend_kind();
     let model = parts[0].1.model().to_string();
     let language = parts[0].1.language().map(|s| s.to_string());
     let provider_name = parts[0].1.provider().to_string();
+    let mut stitch_warnings: Vec<String> = Vec::new();
 
-    for (offset, r) in parts {
-        let t = r.text().trim();
-        if !t.is_empty() {
-            texts.push(t.to_string());
-        }
-        timestamps_reliable &= r.timestamps_reliable();
+    for (i, (offset, r)) in parts.iter().enumerate() {
         // Prefer ASR label if any chunk is dedicated ASR.
         if matches!(r.backend_kind(), crate::providers::BackendKind::Asr) {
             backend_kind = crate::providers::BackendKind::Asr;
         }
-        segments.extend(normalize_chunk_segments(r.segments(), *offset, limits));
+        let mut chunk_segs = normalize_chunk_segments(r.segments(), *offset, limits);
+        if i > 0 {
+            let prev_len = segments.len();
+            let earlier = if prev_len > 0 {
+                &segments[prev_len.saturating_sub(3)..]
+            } else {
+                &[]
+            };
+            // Overlap secs unknown at stitch layer when using legacy planner; 0 means no dedupe.
+            let (deduped, warn) = dedupe_segments_overlap(earlier, &chunk_segs, 0.0, *offset);
+            if let Some(w) = warn {
+                stitch_warnings.push(w);
+            }
+            chunk_segs = deduped;
+        }
+        let t = r.text().trim();
+        if !t.is_empty() {
+            text_parts.push((t.to_string(), 0.0));
+        }
+        segments.extend(chunk_segs);
     }
 
-    let text = join_transcript_parts(&texts);
+    let (text, text_warns) = stitch_text_with_overlap(&text_parts);
+    stitch_warnings.extend(text_warns);
     validate_text_bounds(&text, None, limits, provider)?;
     validate_segments(&segments, full_duration_secs, limits, provider)?;
+
+    let sources: Vec<_> = segments.iter().map(|s| s.timestamp_source()).collect();
+    let timestamps_reliable =
+        derive_timestamps_reliable(&sources) && parts.iter().all(|(_, r)| r.timestamps_reliable());
+
+    let mut result = TranscriptionResult::openrouter(
+        text,
+        segments,
+        language,
+        model,
+        full_duration_secs,
+        timestamps_reliable,
+    );
+    result.set_provider(if provider_name.is_empty() {
+        provider
+    } else {
+        provider_name.as_str()
+    });
+    result.set_backend_kind(backend_kind);
+    result.set_timestamps_reliable(timestamps_reliable);
+    result.validate_segments()?;
+    let _ = stitch_warnings; // reserved for progress/diagnostics (no payload)
+    Ok(result)
+}
+
+/// Stitch with explicit per-chunk overlap seconds (boundary-aware planner).
+pub fn stitch_chunk_results_with_overlaps(
+    parts: &[(f64, f64, TranscriptionResult)],
+    full_duration_secs: f64,
+    provider: &str,
+    limits: TranscriptLimits,
+) -> Result<TranscriptionResult> {
+    // Map to (offset, result) and re-run segment path with overlap-aware text.
+    if parts.is_empty() {
+        return Err(ProviderError::TranscriptionFailed {
+            reason: "remote STT chunk-and-stitch produced no chunks".into(),
+        }
+        .into());
+    }
+    let mut text_parts: Vec<(String, f64)> = Vec::with_capacity(parts.len());
+    let mut segments: Vec<Segment> = Vec::new();
+    let mut backend_kind = parts[0].2.backend_kind();
+    let model = parts[0].2.model().to_string();
+    let language = parts[0].2.language().map(|s| s.to_string());
+    let provider_name = parts[0].2.provider().to_string();
+
+    for (i, (offset, overlap_secs, r)) in parts.iter().enumerate() {
+        if matches!(r.backend_kind(), crate::providers::BackendKind::Asr) {
+            backend_kind = crate::providers::BackendKind::Asr;
+        }
+        let mut chunk_segs = normalize_chunk_segments(r.segments(), *offset, limits);
+        if i > 0 && *overlap_secs > 0.0 {
+            let earlier = segments.as_slice();
+            let (deduped, _) =
+                dedupe_segments_overlap(earlier, &chunk_segs, *overlap_secs, *offset);
+            chunk_segs = deduped;
+        }
+        let t = r.text().trim();
+        if !t.is_empty() {
+            text_parts.push((t.to_string(), if i == 0 { 0.0 } else { *overlap_secs }));
+        }
+        segments.extend(chunk_segs);
+    }
+
+    let (text, _) = stitch_text_with_overlap(&text_parts);
+    validate_text_bounds(&text, None, limits, provider)?;
+    validate_segments(&segments, full_duration_secs, limits, provider)?;
+    let sources: Vec<_> = segments.iter().map(|s| s.timestamp_source()).collect();
+    let timestamps_reliable = derive_timestamps_reliable(&sources)
+        && parts.iter().all(|(_, _, r)| r.timestamps_reliable());
 
     let mut result = TranscriptionResult::openrouter(
         text,
@@ -218,24 +338,11 @@ pub fn stitch_chunk_results(
     Ok(result)
 }
 
-fn join_transcript_parts(parts: &[String]) -> String {
-    let mut out = String::new();
-    for p in parts {
-        let p = p.trim();
-        if p.is_empty() {
-            continue;
-        }
-        if !out.is_empty() && !out.ends_with(|c: char| c.is_whitespace()) {
-            out.push(' ');
-        }
-        out.push_str(p);
-    }
-    out
-}
-
-/// Run `one_shot` once, or time-chunk + stitch when audio is longer than `chunk_secs`.
+/// Run `one_shot` once, or boundary-aware chunk + stitch when audio is longer
+/// than the policy target (JOE-2212 / JOE-2219).
 ///
 /// The callback receives **owned** inputs so futures do not borrow across awaits.
+/// One absolute cancel token from `options` is checked before every chunk.
 pub async fn transcribe_maybe_chunked<F, Fut>(
     input: &AudioInput,
     options: &TranscriptionOptions,
@@ -252,52 +359,76 @@ where
         return one_shot(input.clone(), options.clone()).await;
     }
 
-    let windows = plan_chunk_windows(input.len(), input.sample_rate(), chunk_secs);
+    let mut policy = LongFormPolicy::from_env_or_default();
+    if chunk_secs.is_finite() && chunk_secs > 0.0 {
+        policy.target_secs = chunk_secs;
+        policy.max_secs = policy.max_secs.max(chunk_secs);
+    }
+    // Fall back to fixed windows if boundary policy is invalid for this call.
+    let planned = match plan_boundary_windows(input.samples(), input.sample_rate(), &policy) {
+        Ok(p) => p,
+        Err(e) => {
+            tracing::warn!(
+                error = %e,
+                "long-form boundary planner failed; using fixed windows"
+            );
+            plan_chunk_windows(input.len(), input.sample_rate(), chunk_secs)
+                .into_iter()
+                .map(|w| crate::remote::long_form::PlannedWindow {
+                    window: w,
+                    kind: crate::remote::long_form::BoundaryKind::FixedFallback,
+                    overlap_secs: 0.0,
+                })
+                .collect()
+        }
+    };
+
     tracing::info!(
         provider,
         duration_secs = duration,
-        chunk_secs,
-        chunks = windows.len(),
-        "remote STT time-chunk-and-stitch (JOE-2212)"
+        chunk_secs = policy.target_secs,
+        chunks = planned.len(),
+        "remote STT boundary-aware chunk-and-stitch (JOE-2219)"
     );
 
-    let mut parts: Vec<(f64, TranscriptionResult)> = Vec::with_capacity(windows.len());
-    for (i, window) in windows.iter().enumerate() {
+    let mut parts: Vec<(f64, f64, TranscriptionResult)> = Vec::with_capacity(planned.len());
+    for (i, planned_w) in planned.iter().enumerate() {
         if let Some(flag) = options.cancel.as_ref() {
             if flag.is_cancelled() {
                 return Err(ProviderError::Cancelled.into());
             }
         }
-        let chunk_input = slice_audio_window(input, *window)?;
+        let window = planned_w.window;
+        let chunk_input = slice_audio_window(input, window)?;
         tracing::debug!(
             provider,
             chunk = i + 1,
-            of = windows.len(),
+            of = planned.len(),
             offset_secs = window.offset_secs,
             chunk_duration = chunk_input.duration_secs(),
+            boundary = ?planned_w.kind,
             "remote STT chunk"
         );
-        let result = one_shot(chunk_input, options.clone()).await.map_err(|e| {
-            // Surface which chunk failed for operator diagnostics (no secrets).
-            match e {
+        let result = one_shot(chunk_input, options.clone())
+            .await
+            .map_err(|e| match e {
                 crate::error::TranscriptionError::Provider(
                     ProviderError::TranscriptionFailed { reason },
                 ) => ProviderError::TranscriptionFailed {
                     reason: format!(
                         "chunk {}/{} (offset {:.1}s): {reason}",
                         i + 1,
-                        windows.len(),
+                        planned.len(),
                         window.offset_secs
                     ),
                 }
                 .into(),
                 other => other,
-            }
-        })?;
-        parts.push((window.offset_secs, result));
+            })?;
+        parts.push((window.offset_secs, planned_w.overlap_secs, result));
     }
 
-    stitch_chunk_results(&parts, duration, provider, TranscriptLimits::default())
+    stitch_chunk_results_with_overlaps(&parts, duration, provider, TranscriptLimits::default())
 }
 
 /// Effective chunk length: `AURUM_REMOTE_STT_CHUNK_SECS` if set and valid, else default.

@@ -9,7 +9,10 @@ use crate::providers::{BackendKind, Segment, TranscriptionResult};
 use serde::{Deserialize, Serialize};
 
 /// Current STT result schema version for `--emit-json` / library export.
-pub const STT_RESULT_SCHEMA_VERSION: u32 = 1;
+///
+/// v2: segment `timestamp_source` provenance (JOE-2219). Absent field deserializes
+/// as `unavailable`; legacy v1 payloads still parse.
+pub const STT_RESULT_SCHEMA_VERSION: u32 = 2;
 /// TTS metadata schema (PCM never included).
 pub const TTS_META_SCHEMA_VERSION: u32 = 1;
 /// Error envelope schema.
@@ -67,10 +70,11 @@ impl SttResultDto {
                 .segments()
                 .iter()
                 .map(|s| {
-                    Segment::from_parts_unchecked(
+                    Segment::from_parts_with_source(
                         finite_or_zero(s.start()),
                         finite_or_zero(s.end()),
                         s.text().to_string(),
+                        s.timestamp_source(),
                     )
                 })
                 .collect(),
@@ -211,7 +215,7 @@ mod tests {
         assert!(!json.contains("NaN"));
         let back: SttResultDto = serde_json::from_str(&json).unwrap();
         assert_eq!(back.text, "hi");
-        assert_eq!(back.schema_version, 1);
+        assert_eq!(back.schema_version, STT_RESULT_SCHEMA_VERSION);
     }
 
     #[test]

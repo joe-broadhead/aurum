@@ -333,7 +333,7 @@ mod tests {
         assert_eq!(v["timestamps_reliable"], true);
         assert_eq!(v["backend_kind"], "asr");
         assert_eq!(v["cleanup_style"], "raw");
-        assert_eq!(v["schema_version"], 1);
+        assert_eq!(v["schema_version"], crate::dto::STT_RESULT_SCHEMA_VERSION);
         assert!(v.get("cleanup_provider").is_none() || v["cleanup_provider"].is_null());
         assert!(v.get("original_text").is_none() || v["original_text"].is_null());
         assert!(v["segments"].as_array().unwrap().len() == 2);

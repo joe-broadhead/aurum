@@ -34,7 +34,7 @@ from pathlib import Path
 types = Path("crates/aurum-ffi/src/types.rs").read_text()
 dto = Path("crates/aurum-core/src/dto.rs").read_text()
 assert "AURUM_ABI_VERSION: u32 = 2" in types or "pub const AURUM_ABI_VERSION: u32 = 2" in types
-assert "STT_RESULT_SCHEMA_VERSION: u32 = 1" in dto
+assert "STT_RESULT_SCHEMA_VERSION: u32 = 2" in dto
 assert "TTS_META_SCHEMA_VERSION: u32 = 1" in dto
 assert "ERROR_SCHEMA_VERSION: u32 = 1" in dto
 print("schema/ABI constant spot-check OK")

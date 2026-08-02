@@ -32,7 +32,7 @@ use aurum_core::error::ErrorCategory;
 use aurum_core::providers::Segment;
 
 fn main() {
-    assert_eq!(STT_RESULT_SCHEMA_VERSION, 1);
+    assert_eq!(STT_RESULT_SCHEMA_VERSION, 2);
     let _ = SampleRateHz::try_new(16_000).expect("rate");
     let _ = FiniteDurationSecs::try_new(1.0).expect("dur");
     let _ = ModelId::try_new("tiny-q5_1").expect("id");

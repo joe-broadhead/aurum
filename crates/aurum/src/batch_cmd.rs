@@ -358,7 +358,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
             let mut result = provider.transcribe(&audio, &options).await?;
 
             if matches!(format, OutputFormat::Srt)
-                && !result.timestamps_reliable()
+                && (!result.timestamps_reliable() || result.has_approximate_timestamps())
                 && !cli.allow_unreliable_timestamps
             {
                 return Err(UserError::Other {

@@ -9,11 +9,8 @@ use aurum_core::config::Config;
 use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
 use aurum_core::output::{self, commit_text, CommitMode, OutputFormat};
-use aurum_core::providers::{
-    BackendKind, OpenRouterProvider, OpenRouterSttMode, TranscriptionOptions, TranscriptionProvider,
-};
+use aurum_core::providers::{OpenRouterSttMode, TranscriptionOptions};
 use aurum_core::remote::RemotePolicy;
-use aurum_core::SynthesisProvider;
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
@@ -209,8 +206,8 @@ pub struct TranscribeArgs {
     #[arg(value_name = "AUDIO_FILE")]
     pub audio_file: Option<PathBuf>,
 
-    /// Transcription provider.
-    #[arg(long, value_name = "local|openrouter", value_parser = ["local", "openrouter"])]
+    /// Transcription provider (registry id; default `local`).
+    #[arg(long, value_name = "PROVIDER")]
     pub provider: Option<String>,
 
     /// Local model name (tiny-q5_1, base, …) or OpenRouter model id.
@@ -281,8 +278,8 @@ pub struct TtsArgs {
     #[arg(long = "input-file", value_name = "PATH")]
     pub input_file: Option<PathBuf>,
 
-    /// TTS provider (only `local` in MVP).
-    #[arg(long, value_name = "local", value_parser = ["local"])]
+    /// TTS provider (registry id; default `local`).
+    #[arg(long, value_name = "PROVIDER")]
     pub provider: Option<String>,
 
     /// TTS model id (default from config / kitten-nano-int8).
@@ -627,12 +624,7 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         .as_deref()
         .unwrap_or(cfg.tts_provider.as_str())
         .to_ascii_lowercase();
-    if provider_name != "local" {
-        return Err(UserError::InvalidProvider {
-            provider: provider_name,
-        }
-        .into());
-    }
+    let provider_id = aurum_core::ProviderId::parse(&provider_name)?;
 
     if let Some(fmt) = cli.output.as_deref() {
         if fmt != "wav" {
@@ -712,16 +704,29 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
     let timeout_ms = cli.timeout.unwrap_or(cfg.tts_timeout_ms);
 
     if cli.verbose || atty_stderr() {
-        eprintln!("aurum: tts provider=local model={model} voice={voice} …");
+        eprintln!(
+            "aurum: tts provider={} model={model} voice={voice} …",
+            provider_id.as_str()
+        );
     }
 
-    // Prefer engine-owned TTS pool + governor (JOE-1795).
+    // Engine-owned TTS pool + registry resolution (JOE-1795 / JOE-1938).
     let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
-    let provider = engine
-        .local_tts()?
-        .with_progress(true)
-        .with_local_only(cli.local_only)
-        .with_max_chars(cfg.tts_max_chars);
+    aurum_core::preflight_tts_with_registry(
+        engine.registry(),
+        &provider_id,
+        &model,
+        &language,
+        cli.local_only || cfg.local_only,
+    )?;
+    let provider = engine.tts_provider_with(
+        &provider_id,
+        aurum_core::ProviderResolveOptions {
+            show_progress: true,
+            local_only: Some(cli.local_only || cfg.local_only),
+            ..Default::default()
+        },
+    )?;
 
     let pack_dir = cli.pack_dir.clone().or_else(|| cfg.tts_pack_dir.clone());
     // Custom model id → pack_dir resolution (JOE-1620). Case-insensitive match.
@@ -953,6 +958,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         cfg.resolve_model(false)?
     };
     let provider_name = cfg.provider.to_ascii_lowercase();
+    let provider_id = aurum_core::ProviderId::parse(&provider_name)?;
     let format = OutputFormat::parse(&cfg.output)?;
 
     // SRT always needs timestamps.
@@ -988,6 +994,25 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         .into());
     }
 
+    // Registry resolution + preflight before decode/network (JOE-1938).
+    let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
+    aurum_core::preflight_stt_with_registry(
+        engine.registry(),
+        &provider_id,
+        &model,
+        matches!(format, OutputFormat::Srt),
+        cfg.local_only,
+        stt_mode,
+    )?;
+    let provider = engine.stt_provider_with(
+        &provider_id,
+        aurum_core::ProviderResolveOptions {
+            show_progress: true,
+            stt_mode: Some(stt_mode),
+            local_only: Some(cfg.local_only),
+        },
+    )?;
+
     if cli.verbose || atty_stderr() {
         eprintln!("aurum: loading audio …");
     }
@@ -1009,7 +1034,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
     }
 
     // First-run tip when local model is not cached yet.
-    if provider_name == "local" {
+    if provider_id.as_str() == "local" {
         if let Ok(info) = model::lookup_model(&model) {
             let path = model::model_path(&cfg.cache_dir, info);
             if !path.exists() && atty_stderr() {
@@ -1030,51 +1055,14 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         cancel: None,
     };
 
-    let mut result = match provider_name.as_str() {
-        "local" => {
-            // Prefer engine-owned STT pool + governor (JOE-1795).
-            let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
-            let provider = engine.local_whisper()?.with_progress(true);
-            if cli.verbose {
-                eprintln!(
-                    "aurum: provider=local model={model} backend={:?} (engine pool)",
-                    BackendKind::Asr
-                );
-            }
-            let out = provider.transcribe(&audio, &options).await?;
-            engine.shutdown();
-            out
-        }
-        "openrouter" => {
-            let policy = RemotePolicy {
-                allow_custom_credentialed_endpoint: cfg.openrouter_allow_custom_endpoint,
-                use_system_proxy: cfg.openrouter_use_system_proxy,
-                allow_loopback_http: cfg.openrouter_base_url.contains("127.0.0.1")
-                    || cfg.openrouter_base_url.contains("localhost"),
-                ..Default::default()
-            };
-            let provider = OpenRouterProvider::with_policy(
-                cfg.openrouter_api_key_exposed(),
-                Some(cfg.openrouter_base_url.clone()),
-                policy,
-                stt_mode,
-            )?;
-            if cli.verbose {
-                let path = provider.resolve_path(&model)?;
-                eprintln!(
-                    "aurum: provider=openrouter model={model} stt_mode={} path={path:?}",
-                    stt_mode.as_str(),
-                );
-            }
-            provider.transcribe(&audio, &options).await?
-        }
-        other => {
-            return Err(UserError::InvalidProvider {
-                provider: other.to_string(),
-            }
-            .into());
-        }
-    };
+    if cli.verbose {
+        eprintln!(
+            "aurum: provider={} model={model} (engine registry)",
+            provider_id.as_str()
+        );
+    }
+    let mut result = provider.transcribe(&audio, &options).await?;
+    engine.shutdown();
 
     // SRT requires reliable timings unless explicitly overridden.
     if matches!(format, OutputFormat::Srt)

@@ -1,21 +1,26 @@
 # AurumEngine (library hosts)
 
 `AurumEngine` is the preferred **owned** entry point for Rust library hosts
-(JOE-1654 / JOE-1782 / JOE-1784 / JOE-1787). It holds:
+(JOE-1654 / JOE-1782 / JOE-1784 / JOE-1787 / **JOE-1938**). It holds:
 
 * validated configuration
 * engine-local resource governor
 * engine-local metrics
 * **engine-local STT context pool** and (with `tts`) **TTS session pool**
+* immutable **provider registry** (builtin factories)
 
 ```rust
-use aurum_core::{AurumEngine, TranscriptionOptions};
+use aurum_core::{AurumEngine, ProviderId, ProviderResolveOptions, TranscriptionOptions};
 
 let engine = AurumEngine::load()?;
 let report = engine.doctor();
 let bundle = engine.support_bundle(None);
 
-// High-level STT (uses this engine's pool + governor + metrics)
+// Registry resolution (same path as CLI)
+let stt = engine.stt_provider(&ProviderId::local())?;
+// let remote = engine.stt_provider(&ProviderId::openrouter())?; // needs key
+
+// High-level STT routes via config `provider` (default local)
 let opts = TranscriptionOptions {
     model: "tiny-q5_1".into(),
     language: "en".into(),
@@ -36,7 +41,21 @@ engine.shutdown(); // closes + clears idle model residency in *this* engine
 | `Metrics` | Engine-local `Arc` |
 | `SttContextPool` | Engine-local `Arc` (JOE-1784) |
 | `TtsSessionPool` | Engine-local `Arc` when feature `tts` |
+| `ProviderRegistry` | Engine-local `Arc` (JOE-1938) |
 | Lifecycle `closed` flag | Engine |
+
+## Provider resolution (JOE-1938)
+
+| API | Behaviour |
+|-----|-----------|
+| `engine.registry()` | Builtin local STT/TTS + OpenRouter STT factories |
+| `engine.stt_provider(id)` / `tts_provider(id)` | Build via factory + single-id secret scope |
+| `engine.transcribe` / `synthesize` | Use config `provider` / `tts_provider` |
+| `local_whisper` / `local_tts` | Convenience local paths (still valid) |
+
+Build context never receives a multi-vendor secret bag — only
+`config.provider_secret(id)`. CLI `aurum` / `aurum tts` / `aurum batch` use the
+same APIs (no growing `match` on provider names).
 
 ## Isolation (JOE-1784)
 
@@ -52,8 +71,8 @@ a.shutdown(); // does not clear b's models
 Default `LocalWhisperProvider::new` / `LocalTtsProvider::new` still use
 **process-global** pools for CLI compatibility. Prefer:
 
-* `engine.local_whisper()` / `engine.local_tts()`
-* `LocalWhisperProvider::with_runtime(dir, pool, governor)`
+* `engine.stt_provider(&ProviderId::local())` / `engine.tts_provider(...)`
+* `engine.local_whisper()` / `engine.local_tts()` (local convenience)
 * `engine.clear_model_caches()` or `engine.shutdown()`
 
 Process-global cleanup (legacy CLI/Metal exit):

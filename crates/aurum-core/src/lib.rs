@@ -141,7 +141,8 @@ pub use profile::{
 pub use provider_platform::{
     capabilities_for, check_builtin_conformance, list_provider_summaries,
     preflight_stt_with_registry, preflight_tts_with_registry, provider_list, ProviderBuildContext,
-    ProviderId, ProviderList, ProviderRegistry, ProviderSummary, PROVIDER_LIST_SCHEMA_VERSION,
+    ProviderId, ProviderList, ProviderRegistry, ProviderResolveOptions, ProviderSummary,
+    PROVIDER_LIST_SCHEMA_VERSION,
 };
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
 pub use providers::{

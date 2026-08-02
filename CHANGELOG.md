@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1938:** `AurumEngine` owns the provider registry and resolves STT/TTS via
+  `stt_provider` / `tts_provider` (scoped secrets, engine pools/governor/metrics).
+  CLI `aurum` / `aurum tts` / `aurum batch` use the same path (no per-vendor
+  `match` growth). Defaults remain local; remote still requires deliberate
+  selection + key.
 - **JOE-1937:** bounded remote-audio normalization (`normalize_remote_audio`) for
   remote TTS wire formats (PCM s16le / WAV in-process, MP3 via supervised FFmpeg)
   producing mono `i16` PCM under encoded/decoded caps; TTS `BackendKind::Remote`

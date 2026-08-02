@@ -13,9 +13,7 @@ use aurum_core::config::Config;
 use aurum_core::error::{Result, UserError};
 use aurum_core::output::{self, CommitMode, OutputFormat};
 use aurum_core::profile::{resolve_profile, QualityProfile};
-use aurum_core::providers::{
-    OpenRouterProvider, OpenRouterSttMode, TranscriptionOptions, TranscriptionProvider,
-};
+use aurum_core::providers::{OpenRouterSttMode, TranscriptionOptions};
 use aurum_core::remote::RemotePolicy;
 use clap::Parser;
 use std::io::{self, IsTerminal};
@@ -206,38 +204,30 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
         return Ok(());
     }
 
-    let local = if provider_name == "local" {
-        Some({
-            // Engine-owned STT pool for batch (JOE-1795). Process exit still clears
-            // process-global cache for any residual shared path.
-            let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
-            engine.local_whisper()?.with_progress(cli.verbose)
-        })
-    } else {
-        None
-    };
-    let openrouter = if provider_name == "openrouter" {
-        let stt_mode_raw = cli
-            .openrouter_stt_mode
-            .as_deref()
-            .unwrap_or(cfg.openrouter_stt_mode.as_str());
-        let stt_mode = OpenRouterSttMode::parse(stt_mode_raw)?;
-        let policy = RemotePolicy {
-            allow_custom_credentialed_endpoint: cfg.openrouter_allow_custom_endpoint,
-            use_system_proxy: cfg.openrouter_use_system_proxy,
-            allow_loopback_http: cfg.openrouter_base_url.contains("127.0.0.1")
-                || cfg.openrouter_base_url.contains("localhost"),
-            ..Default::default()
-        };
-        Some(OpenRouterProvider::with_policy(
-            cfg.openrouter_api_key_exposed(),
-            Some(cfg.openrouter_base_url.clone()),
-            policy,
-            stt_mode,
-        )?)
-    } else {
-        None
-    };
+    let provider_id = aurum_core::ProviderId::parse(&provider_name)?;
+    let stt_mode_raw = cli
+        .openrouter_stt_mode
+        .as_deref()
+        .unwrap_or(cfg.openrouter_stt_mode.as_str());
+    let stt_mode = OpenRouterSttMode::parse(stt_mode_raw)?;
+    // Engine-owned registry path for the whole batch (JOE-1795 / JOE-1938).
+    let engine = aurum_core::AurumEngine::from_config(cfg.clone())?;
+    aurum_core::preflight_stt_with_registry(
+        engine.registry(),
+        &provider_id,
+        &model,
+        matches!(format, OutputFormat::Srt),
+        cfg.local_only,
+        stt_mode,
+    )?;
+    let provider = engine.stt_provider_with(
+        &provider_id,
+        aurum_core::ProviderResolveOptions {
+            show_progress: cli.verbose,
+            stt_mode: Some(stt_mode),
+            local_only: Some(cfg.local_only),
+        },
+    )?;
 
     let cleanup_style = CleanupStyle::parse(&cfg.cleanup_style)?;
     let cleanup_kind = CleanupProviderKind::parse(&cfg.cleanup_provider)?;
@@ -283,28 +273,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
                 timestamps: want_timestamps,
                 cancel: None,
             };
-            let mut result = match provider_name.as_str() {
-                "local" => {
-                    local
-                        .as_ref()
-                        .expect("local provider")
-                        .transcribe(&audio, &options)
-                        .await?
-                }
-                "openrouter" => {
-                    openrouter
-                        .as_ref()
-                        .expect("openrouter provider")
-                        .transcribe(&audio, &options)
-                        .await?
-                }
-                other => {
-                    return Err(UserError::InvalidProvider {
-                        provider: other.to_string(),
-                    }
-                    .into());
-                }
-            };
+            let mut result = provider.transcribe(&audio, &options).await?;
 
             if matches!(format, OutputFormat::Srt)
                 && !result.timestamps_reliable()
@@ -352,6 +321,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
 
     let summary = manifest.summary();
     print_summary(&manifest, &summary, cli.json)?;
+    engine.shutdown();
 
     if summary.failed > 0 {
         return Err(UserError::Other {

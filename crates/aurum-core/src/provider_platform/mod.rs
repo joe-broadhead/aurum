@@ -29,6 +29,17 @@ pub use context::ProviderBuildContext;
 pub use descriptor::{
     NetworkRequirement, ProviderDescriptor, ProviderOperations, ProviderStability,
 };
+
+/// Optional overrides when resolving a provider through [`crate::AurumEngine`] (JOE-1938).
+#[derive(Debug, Clone, Default)]
+pub struct ProviderResolveOptions {
+    /// When true, local STT/TTS may emit progress on stderr.
+    pub show_progress: bool,
+    /// Override OpenRouter STT mode; default parses config.
+    pub stt_mode: Option<crate::providers::OpenRouterSttMode>,
+    /// Override `local_only`; default uses config.
+    pub local_only: Option<bool>,
+}
 #[cfg(feature = "tts")]
 pub use factory::SynthesisProviderFactory;
 pub use factory::TranscriptionProviderFactory;

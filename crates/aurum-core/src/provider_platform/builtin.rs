@@ -12,7 +12,7 @@ use crate::capabilities::{
 };
 use crate::error::{Result, UserError};
 use crate::providers::local::LocalWhisperProvider;
-use crate::providers::openrouter::{OpenRouterProvider, OpenRouterSttMode};
+use crate::providers::openrouter::OpenRouterProvider;
 use crate::providers::TranscriptionProvider;
 use crate::remote::RemotePolicy;
 use std::sync::Arc;
@@ -70,7 +70,7 @@ impl TranscriptionProviderFactory for LocalSttFactory {
             ),
             _ => LocalWhisperProvider::new(ctx.cache_dir().to_path_buf()),
         }
-        .with_progress(false)
+        .with_progress(ctx.show_progress())
         .with_local_only(ctx.local_only());
         Ok(Arc::new(provider))
     }
@@ -130,13 +130,16 @@ impl TranscriptionProviderFactory for OpenRouterSttFactory {
         let policy = RemotePolicy {
             allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
             use_system_proxy: ctx.use_system_proxy(),
+            allow_loopback_http: ctx
+                .base_url()
+                .is_some_and(|u| u.contains("127.0.0.1") || u.contains("localhost")),
             ..RemotePolicy::default()
         };
         let provider = OpenRouterProvider::with_policy(
             key,
             ctx.base_url().map(|s| s.to_string()),
             policy,
-            OpenRouterSttMode::Auto,
+            ctx.stt_mode(),
         )?;
         Ok(Arc::new(provider))
     }
@@ -182,7 +185,7 @@ impl SynthesisProviderFactory for LocalTtsFactory {
     }
 
     fn build(&self, ctx: &ProviderBuildContext) -> Result<Arc<dyn SynthesisProvider>> {
-        let provider = match (ctx.tts_pool(), ctx.governor()) {
+        let mut provider = match (ctx.tts_pool(), ctx.governor()) {
             (Some(pool), Some(gov)) => LocalTtsProvider::with_runtime(
                 ctx.cache_dir().to_path_buf(),
                 Arc::clone(pool),
@@ -190,7 +193,11 @@ impl SynthesisProviderFactory for LocalTtsFactory {
             ),
             _ => LocalTtsProvider::new(ctx.cache_dir().to_path_buf()),
         }
-        .with_progress(false);
+        .with_progress(ctx.show_progress())
+        .with_local_only(ctx.local_only());
+        if let Some(n) = ctx.tts_max_chars() {
+            provider = provider.with_max_chars(n);
+        }
         Ok(Arc::new(provider))
     }
 }

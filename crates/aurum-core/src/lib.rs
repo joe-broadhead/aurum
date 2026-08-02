@@ -145,6 +145,14 @@ pub use provider_platform::{
     PROVIDER_LIST_SCHEMA_VERSION,
 };
 pub use providers::local::{clear_context_cache, process_global_stt_pool, SttContextPool};
+pub use providers::{
+    lookup_openai_stt, OpenAiSttProvider, DEFAULT_OPENAI_STT_MODEL, OPENAI_STT_REGISTRY,
+};
+#[cfg(feature = "tts")]
+pub use providers::{
+    lookup_openai_tts, OpenAiTtsProvider, DEFAULT_OPENAI_TTS_MODEL, DEFAULT_OPENAI_TTS_VOICE,
+    OPENAI_TTS_REGISTRY,
+};
 #[cfg(feature = "tts")]
 pub use providers::{
     lookup_openrouter_tts, OpenRouterTtsProvider, DEFAULT_OPENROUTER_TTS_MODEL,

@@ -215,14 +215,29 @@ mod tests {
     #[test]
     fn capabilities_for_unknown_provider_fails() {
         let reg = ProviderRegistry::builtin().unwrap();
+        // elevenlabs is TTS-only; STT factory missing.
         let err = capabilities_for(
+            &reg,
+            &ProviderId::must("elevenlabs"),
+            CapabilityOperation::Stt,
+            "scribe_v1",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("elevenlabs") || err.to_string().contains("Invalid"));
+    }
+
+    #[test]
+    fn capabilities_for_openai_stt() {
+        let reg = ProviderRegistry::builtin().unwrap();
+        let caps = capabilities_for(
             &reg,
             &ProviderId::must("openai"),
             CapabilityOperation::Stt,
             "whisper-1",
         )
-        .unwrap_err();
-        assert!(err.to_string().contains("openai") || err.to_string().contains("Invalid"));
+        .unwrap();
+        assert_eq!(caps.provider, "openai");
+        assert!(caps.timestamps_reliable);
     }
 
     #[test]

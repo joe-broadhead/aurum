@@ -486,6 +486,20 @@ pub use openrouter_tts::{
     DEFAULT_OPENROUTER_TTS_MODEL, DEFAULT_OPENROUTER_TTS_VOICE, OPENROUTER_TTS_REGISTRY,
 };
 
+pub mod openai_stt;
+pub use openai_stt::{
+    lookup_openai_stt, OpenAiSttProvider, OpenAiSttRecord, DEFAULT_OPENAI_STT_MODEL,
+    OPENAI_STT_REGISTRY,
+};
+
+#[cfg(feature = "tts")]
+pub mod openai_tts;
+#[cfg(feature = "tts")]
+pub use openai_tts::{
+    lookup_openai_tts, OpenAiTtsProvider, OpenAiTtsRecord, DEFAULT_OPENAI_TTS_MODEL,
+    DEFAULT_OPENAI_TTS_VOICE, OPENAI_TTS_REGISTRY,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;

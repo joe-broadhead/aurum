@@ -504,12 +504,21 @@ mod tests {
     #[test]
     fn registry_unknown_stt_fails_closed() {
         let e = AurumEngine::load().unwrap();
-        // openai may be a config id but has no STT factory until JOE-1940.
-        let err = match e.stt_provider(&ProviderId::must("openai")) {
+        // elevenlabs is TTS-only; no STT factory.
+        let err = match e.stt_provider(&ProviderId::must("elevenlabs")) {
             Ok(_) => panic!("expected unknown STT factory error"),
             Err(e) => e,
         };
-        assert!(err.to_string().contains("openai") || err.to_string().contains("provider"));
+        assert!(err.to_string().contains("elevenlabs") || err.to_string().contains("provider"));
+    }
+
+    #[test]
+    fn openai_stt_builds_with_key() {
+        let mut cfg = Config::load().unwrap();
+        cfg.providers.openai.api_key = Some(crate::secret::SecretString::new("sk-test-openai-key"));
+        let e = AurumEngine::from_config(cfg).unwrap();
+        let p = e.stt_provider(&ProviderId::must("openai")).unwrap();
+        assert_eq!(p.name(), "openai");
     }
 
     #[test]

@@ -487,6 +487,85 @@ pub fn local_tts_capabilities(model: &str) -> ProviderCapabilities {
     caps
 }
 
+/// First-party OpenAI STT capabilities (JOE-1940). Fail closed for unknown models.
+pub fn openai_stt_capabilities(model: &str) -> Result<ProviderCapabilities> {
+    use crate::providers::openai_stt::lookup_openai_stt;
+    let rec = lookup_openai_stt(model).ok_or_else(|| UnsupportedCapability {
+        provider: "openai".into(),
+        model: model.into(),
+        reason: "model is not in the reviewed OpenAI STT registry".into(),
+        hint: "use whisper-1, gpt-4o-mini-transcribe, or gpt-4o-transcribe".into(),
+    })?;
+    let mut caps = ProviderCapabilities::with_core("openai", rec.model, CapabilityOperation::Stt);
+    caps.stt_backend = Some(SttBackendClass::Asr);
+    caps.timestamps_reliable = rec.timestamps_supported;
+    caps.languages = vec!["auto".into(), "en".into()];
+    caps.max_upload_bytes = Some(rec.max_upload_bytes as u64);
+    caps.supports_cancellation = true;
+    caps.requires_network = true;
+    caps.local_only_ok = false;
+    caps.output_formats = vec!["txt".into(), "json".into(), "srt".into()];
+    caps.accepted_audio_formats = vec!["wav".into(), "mp3".into(), "m4a".into()];
+    caps.descriptor_freshness = DescriptorFreshness::Reviewed;
+    caps.notes = vec![
+        "OpenAI first-party multipart /audio/transcriptions.".into(),
+        "Audio leaves the machine only when provider=openai is selected.".into(),
+        if rec.timestamps_supported {
+            "verbose_json segment timestamps available when requested.".into()
+        } else {
+            "JSON text only; SRT/timestamps not reliable for this model.".into()
+        },
+    ];
+    Ok(caps)
+}
+
+/// First-party OpenAI TTS capabilities (JOE-1940).
+pub fn openai_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
+    #[cfg(feature = "tts")]
+    {
+        use crate::providers::openai_tts::lookup_openai_tts;
+        let rec = lookup_openai_tts(model).ok_or_else(|| UnsupportedCapability {
+            provider: "openai".into(),
+            model: model.into(),
+            reason: "model is not in the reviewed OpenAI TTS registry".into(),
+            hint: "use tts-1, tts-1-hd, or gpt-4o-mini-tts".into(),
+        })?;
+        let mut caps =
+            ProviderCapabilities::with_core("openai", rec.model, CapabilityOperation::Tts);
+        caps.languages = vec!["en".into(), "auto".into()];
+        caps.max_text_chars = Some(rec.max_text_chars);
+        caps.supports_cancellation = true;
+        caps.requires_network = true;
+        caps.local_only_ok = false;
+        caps.output_formats = vec!["wav".into(), "json".into()];
+        caps.voice_model = Some(VoiceModel::ProviderVoiceIds);
+        caps.supports_voice_ids = true;
+        caps.output_audio_formats = vec!["pcm_s16le".into(), "mp3".into()];
+        caps.direct_pcm = true;
+        caps.sample_rates_hz = vec![rec.default_sample_rate_hz];
+        caps.supports_speaking_rate = true;
+        caps.speaking_rate_min = Some(rec.rate_min);
+        caps.speaking_rate_max = Some(rec.rate_max);
+        caps.streaming_advertised = false;
+        caps.streaming_implemented_by_aurum = false;
+        caps.descriptor_freshness = DescriptorFreshness::Reviewed;
+        caps.notes = vec![
+            "OpenAI first-party /audio/speech.".into(),
+            "Text is transmitted to OpenAI when provider=openai.".into(),
+            format!("Reviewed voices: {}.", rec.voices.join(", ")),
+        ];
+        Ok(caps)
+    }
+    #[cfg(not(feature = "tts"))]
+    {
+        let _ = model;
+        Err(UserError::Other {
+            message: "TTS support is not compiled into this build (feature `tts`)".into(),
+        }
+        .into())
+    }
+}
+
 /// OpenRouter remote TTS capabilities (JOE-1939). Fail closed when model is unknown.
 pub fn openrouter_tts_capabilities(model: &str) -> Result<ProviderCapabilities> {
     #[cfg(feature = "tts")]
@@ -583,6 +662,29 @@ pub fn preflight_stt(
             }
             Ok(caps)
         }
+        "openai" => {
+            if local_only {
+                return Err(UnsupportedCapability {
+                    provider: provider.into(),
+                    model: model.into(),
+                    reason: "OpenAI requires network access".into(),
+                    hint: "unset local_only or use provider=local with a cached model".into(),
+                }
+                .into());
+            }
+            let caps = openai_stt_capabilities(model)?;
+            if want_srt && !caps.timestamps_reliable {
+                return Err(UnsupportedCapability {
+                    provider: provider.into(),
+                    model: model.into(),
+                    reason: "SRT requires reliable timestamps; this OpenAI model is text-only JSON"
+                        .into(),
+                    hint: "use whisper-1 with timestamps, or output txt/json".into(),
+                }
+                .into());
+            }
+            Ok(caps)
+        }
         other => Err(UserError::InvalidProvider {
             provider: other.into(),
         }
@@ -652,6 +754,29 @@ pub fn preflight_tts_for(
                 openrouter_tts_capabilities(
                     crate::providers::openrouter_tts::DEFAULT_OPENROUTER_TTS_MODEL,
                 )
+            }
+            #[cfg(not(feature = "tts"))]
+            {
+                let _ = (provider, language, local_only);
+                Err(UserError::Other {
+                    message: "TTS support is not compiled into this build (feature `tts`)".into(),
+                }
+                .into())
+            }
+        }
+        "openai" => {
+            #[cfg(feature = "tts")]
+            {
+                if local_only {
+                    return Err(UnsupportedCapability {
+                        provider: provider.as_str().into(),
+                        model: "*".into(),
+                        reason: "OpenAI TTS requires network access".into(),
+                        hint: "unset local_only or use provider=local".into(),
+                    }
+                    .into());
+                }
+                openai_tts_capabilities(crate::providers::openai_tts::DEFAULT_OPENAI_TTS_MODEL)
             }
             #[cfg(not(feature = "tts"))]
             {

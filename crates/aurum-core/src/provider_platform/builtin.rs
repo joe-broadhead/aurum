@@ -19,8 +19,14 @@ use std::sync::Arc;
 
 #[cfg(feature = "tts")]
 use super::factory::SynthesisProviderFactory;
+use crate::capabilities::openai_stt_capabilities;
 #[cfg(feature = "tts")]
-use crate::capabilities::{local_tts_capabilities, openrouter_tts_capabilities};
+use crate::capabilities::{
+    local_tts_capabilities, openai_tts_capabilities, openrouter_tts_capabilities,
+};
+use crate::providers::openai_stt::OpenAiSttProvider;
+#[cfg(feature = "tts")]
+use crate::providers::openai_tts::OpenAiTtsProvider;
 #[cfg(feature = "tts")]
 use crate::providers::openrouter_tts::OpenRouterTtsProvider;
 #[cfg(feature = "tts")]
@@ -268,14 +274,140 @@ impl SynthesisProviderFactory for OpenRouterTtsFactory {
     }
 }
 
-/// Product built-in registry: local STT, OpenRouter STT/TTS, local TTS (when enabled).
+// ── OpenAI STT ──────────────────────────────────────────────────────────────
+
+pub struct OpenAiSttFactory {
+    descriptor: ProviderDescriptor,
+}
+
+impl OpenAiSttFactory {
+    pub fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::new(
+                ProviderId::must("openai"),
+                "OpenAI STT",
+                ProviderOperations::STT_ONLY,
+                NetworkRequirement::RequiresNetwork,
+                ProviderStability::Stable,
+            ),
+        }
+    }
+}
+
+impl Default for OpenAiSttFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TranscriptionProviderFactory for OpenAiSttFactory {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn capabilities(&self, model: &str) -> Result<ProviderCapabilities> {
+        openai_stt_capabilities(model)
+    }
+
+    fn build(&self, ctx: &ProviderBuildContext) -> Result<Arc<dyn TranscriptionProvider>> {
+        if ctx.local_only() {
+            return Err(UserError::UnsupportedCapability {
+                provider: "openai".into(),
+                model: "*".into(),
+                reason: "remote STT is disabled under local_only".into(),
+                hint: "unset local_only or use provider=local".into(),
+            }
+            .into());
+        }
+        let key = ctx.api_key_exposed();
+        let policy = RemotePolicy {
+            allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
+            use_system_proxy: ctx.use_system_proxy(),
+            allow_loopback_http: ctx
+                .base_url()
+                .is_some_and(|u| u.contains("127.0.0.1") || u.contains("localhost")),
+            ..RemotePolicy::default()
+        };
+        let provider =
+            OpenAiSttProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+        Ok(Arc::new(provider))
+    }
+}
+
+// ── OpenAI TTS ──────────────────────────────────────────────────────────────
+
+#[cfg(feature = "tts")]
+pub struct OpenAiTtsFactory {
+    descriptor: ProviderDescriptor,
+}
+
+#[cfg(feature = "tts")]
+impl OpenAiTtsFactory {
+    pub fn new() -> Self {
+        Self {
+            descriptor: ProviderDescriptor::new(
+                ProviderId::must("openai"),
+                "OpenAI TTS",
+                ProviderOperations::TTS_ONLY,
+                NetworkRequirement::RequiresNetwork,
+                ProviderStability::Stable,
+            ),
+        }
+    }
+}
+
+#[cfg(feature = "tts")]
+impl Default for OpenAiTtsFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(feature = "tts")]
+impl SynthesisProviderFactory for OpenAiTtsFactory {
+    fn descriptor(&self) -> &ProviderDescriptor {
+        &self.descriptor
+    }
+
+    fn capabilities(&self, model: &str) -> Result<ProviderCapabilities> {
+        openai_tts_capabilities(model)
+    }
+
+    fn build(&self, ctx: &ProviderBuildContext) -> Result<Arc<dyn SynthesisProvider>> {
+        if ctx.local_only() {
+            return Err(UserError::UnsupportedCapability {
+                provider: "openai".into(),
+                model: "*".into(),
+                reason: "remote TTS is disabled under local_only".into(),
+                hint: "unset local_only or use provider=local".into(),
+            }
+            .into());
+        }
+        let key = ctx.api_key_exposed();
+        let policy = RemotePolicy {
+            allow_custom_credentialed_endpoint: ctx.allow_custom_endpoint(),
+            use_system_proxy: ctx.use_system_proxy(),
+            allow_loopback_http: ctx
+                .base_url()
+                .is_some_and(|u| u.contains("127.0.0.1") || u.contains("localhost")),
+            ..RemotePolicy::default()
+        };
+        let provider =
+            OpenAiTtsProvider::with_policy(key, ctx.base_url().map(|s| s.to_string()), policy)?;
+        Ok(Arc::new(provider))
+    }
+}
+
+/// Product built-in registry: local, OpenRouter, OpenAI STT/TTS (when enabled).
 pub fn build_builtin_registry() -> Result<ProviderRegistry> {
     let b = ProviderRegistryBuilder::default()
         .register_stt(Arc::new(LocalSttFactory::new()))?
-        .register_stt(Arc::new(OpenRouterSttFactory::new()))?;
+        .register_stt(Arc::new(OpenRouterSttFactory::new()))?
+        .register_stt(Arc::new(OpenAiSttFactory::new()))?;
     #[cfg(feature = "tts")]
     let b = b
         .register_tts(Arc::new(LocalTtsFactory::new()))?
-        .register_tts(Arc::new(OpenRouterTtsFactory::new()))?;
+        .register_tts(Arc::new(OpenRouterTtsFactory::new()))?
+        .register_tts(Arc::new(OpenAiTtsFactory::new()))?;
     Ok(b.build())
 }

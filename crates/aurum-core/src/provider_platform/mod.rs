@@ -142,8 +142,8 @@ mod tests {
         assert_eq!(caps.provider, "local");
         assert!(!caps.requires_network || caps.local_only_ok);
 
-        let unknown = ProviderId::must("openai");
-        assert!(reg.stt_factory(&unknown).is_err());
+        assert!(reg.stt_factory(&ProviderId::must("openai")).is_ok());
+        assert!(reg.stt_factory(&ProviderId::must("elevenlabs")).is_err());
     }
 
     #[test]
@@ -152,10 +152,10 @@ mod tests {
         let reg = ProviderRegistry::builtin().unwrap();
         let local = ProviderId::local();
         assert!(reg.tts_factory(&local).is_ok());
-        // OpenRouter remote TTS (JOE-1939).
+        // OpenRouter remote TTS (JOE-1939) + first-party OpenAI (JOE-1940).
         assert!(reg.tts_factory(&ProviderId::openrouter()).is_ok());
-        // Still no first-party OpenAI factory until JOE-1940.
-        assert!(reg.tts_factory(&ProviderId::must("openai")).is_err());
+        assert!(reg.tts_factory(&ProviderId::must("openai")).is_ok());
+        assert!(reg.stt_factory(&ProviderId::must("openai")).is_ok());
     }
 
     #[test]

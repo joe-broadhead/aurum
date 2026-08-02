@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1940:** first-party OpenAI STT (`whisper-1` / gpt-4o-*-transcribe) and
+  TTS (`tts-1` / `tts-1-hd` / `gpt-4o-mini-tts`) via `OPENAI_API_KEY` and
+  `OpenAiHttpPolicy` (no OpenRouter headers). Reviewed model registries; PCM
+  speech normalize via JOE-1937.
 - **JOE-1939:** OpenAI-compatible speech protocol (`OpenAiSpeechRequest`) and
   OpenRouter remote TTS (`/audio/speech`, reviewed model registry, PCM normalize
   via JOE-1937). `openrouter` registers for STT **and** TTS factories.

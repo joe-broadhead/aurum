@@ -8,6 +8,7 @@
 
 mod canary_matrix;
 mod client;
+mod interrupt;
 mod limits;
 mod openai_speech;
 mod policy;
@@ -17,6 +18,7 @@ pub use client::{
     map_http_status, validate_endpoint, HardenedHttpClient, RemoteEndpoint, RemotePolicy,
     DEFAULT_OPENROUTER_ORIGIN,
 };
+pub use interrupt::{read_body_limited_with_op, send_with_op};
 pub use limits::{
     read_body_limited, validate_segments, validate_text_bounds, RemoteBodyLimits, TranscriptLimits,
     DEFAULT_CHAT_BODY_CAP, DEFAULT_CLEANUP_BODY_CAP, DEFAULT_STT_BODY_CAP,

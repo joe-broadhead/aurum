@@ -11,7 +11,10 @@
 //!
 //! [`GovernorConfig::default`] is a conservative desktop profile. Use
 //! [`GovernorConfig::mobile`] or [`GovernorConfig::server`] for known deployments.
-//! Process-global defaults live on [`ResourceGovernor::process_global`].
+//! Process-global defaults live on [`ResourceGovernor::process_global`] for
+//! convenience constructors only. **Engine-bound** remote providers must use the
+//! engine-local governor from [`crate::provider_platform::ProviderBuildContext`]
+//! (JOE-1975) so concurrent engines do not share remote admission.
 
 pub mod governor;
 pub mod lifecycle;

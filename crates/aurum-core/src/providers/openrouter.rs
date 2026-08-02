@@ -16,14 +16,16 @@ use crate::audio::{self, AudioInput, DEFAULT_FFMPEG_TIMEOUT, DEFAULT_MAX_UPLOAD_
 use crate::error::{ProviderError, Result, UserError};
 use crate::postprocess;
 use crate::remote::{
-    map_http_status, read_body_limited, validate_segments, validate_text_bounds,
-    HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
+    map_http_status, read_body_limited_with_op, send_with_op, validate_segments,
+    validate_text_bounds, HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
 };
+use crate::runtime::{PermitKind, ResourceGovernor};
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 const PROVIDER_NAME: &str = "openrouter";
 
@@ -65,11 +67,16 @@ impl OpenRouterSttMode {
 }
 
 /// OpenRouter provider with dual STT paths.
+///
+/// Holds an engine-local [`ResourceGovernor`] when built via the registry/engine.
+/// Convenience constructors use [`ResourceGovernor::process_global`] only when no
+/// governor is supplied (documented process-global path, not engine isolation).
 pub struct OpenRouterProvider {
     api_key: String,
     http: HardenedHttpClient,
     max_upload_bytes: usize,
     stt_mode: OpenRouterSttMode,
+    governor: Arc<ResourceGovernor>,
 }
 
 impl std::fmt::Debug for OpenRouterProvider {
@@ -119,7 +126,15 @@ impl OpenRouterProvider {
             http,
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
             stt_mode,
+            // Process-global only when not attached via factory/engine (JOE-1975).
+            governor: ResourceGovernor::process_global(),
         })
+    }
+
+    /// Bind an engine-local governor (preferred for long-lived hosts).
+    pub fn with_governor(mut self, governor: Arc<ResourceGovernor>) -> Self {
+        self.governor = governor;
+        self
     }
 
     pub fn with_stt_mode(mut self, mode: OpenRouterSttMode) -> Self {
@@ -175,8 +190,7 @@ impl TranscriptionProvider for OpenRouterProvider {
         let op = crate::runtime::OpContext::from_optional_cancel(options.cancel.clone());
         op.check()?;
         op.emit("stt", "admit");
-        let gov = crate::runtime::ResourceGovernor::process_global();
-        let _permit = gov.acquire(crate::runtime::PermitKind::Remote, Some(&op))?;
+        let _permit = self.governor.acquire(PermitKind::Remote, Some(&op))?;
         op.check()?;
         op.emit("stt", "route");
         let path = self.resolve_path(&options.model)?;
@@ -279,16 +293,14 @@ impl OpenRouterProvider {
             "openrouter dedicated STT request"
         );
 
-        let response = self
-            .http
-            .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
-            .multipart(form)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network {
-                provider: PROVIDER_NAME.into(),
-                reason: e.to_string(),
-            })?;
+        let response = send_with_op(
+            self.http
+                .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
+                .multipart(form),
+            op,
+            PROVIDER_NAME,
+        )
+        .await?;
 
         // Body no longer needs the on-disk artifact.
         drop(cleanup);
@@ -296,7 +308,8 @@ impl OpenRouterProvider {
         op.emit("stt", "read_body");
 
         let status = response.status();
-        let body = read_body_limited(response, PROVIDER_NAME, RemoteBodyLimits::stt()).await?;
+        let body =
+            read_body_limited_with_op(response, PROVIDER_NAME, RemoteBodyLimits::stt(), op).await?;
         let body_text = String::from_utf8_lossy(&body).into_owned();
         map_http_status(PROVIDER_NAME, status, &body_text)?;
 
@@ -452,24 +465,23 @@ impl OpenRouterProvider {
             "openrouter LLM-assisted STT request"
         );
 
-        let response = self
-            .http
-            .request(reqwest::Method::POST, "chat/completions", &self.api_key)?
-            .header("Content-Type", "application/json")
-            .json(&body)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network {
-                provider: PROVIDER_NAME.into(),
-                reason: e.to_string(),
-            })?;
+        let response = send_with_op(
+            self.http
+                .request(reqwest::Method::POST, "chat/completions", &self.api_key)?
+                .header("Content-Type", "application/json")
+                .json(&body),
+            op,
+            PROVIDER_NAME,
+        )
+        .await?;
         drop(body);
         op.check()?;
         op.emit("stt", "read_body");
 
         let status = response.status();
         let body_bytes =
-            read_body_limited(response, PROVIDER_NAME, RemoteBodyLimits::chat()).await?;
+            read_body_limited_with_op(response, PROVIDER_NAME, RemoteBodyLimits::chat(), op)
+                .await?;
         let body_text = String::from_utf8_lossy(&body_bytes).into_owned();
         map_http_status(PROVIDER_NAME, status, &body_text)?;
 

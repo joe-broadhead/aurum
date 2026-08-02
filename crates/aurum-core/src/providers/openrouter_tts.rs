@@ -8,13 +8,14 @@ use crate::audio::{
 };
 use crate::error::{ProviderError, Result, UserError};
 use crate::remote::{
-    map_http_status, parse_pcm_content_type, read_body_limited, HardenedHttpClient,
-    OpenAiSpeechRequest, RemoteBodyLimits, RemotePolicy, SpeechResponseFormat,
+    map_http_status, parse_pcm_content_type, read_body_limited_with_op, send_with_op,
+    HardenedHttpClient, OpenAiSpeechRequest, RemoteBodyLimits, RemotePolicy, SpeechResponseFormat,
 };
-use crate::runtime::OpContext;
+use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
 use crate::tts::validate::{clamp_speaking_rate, SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
 use async_trait::async_trait;
+use std::sync::Arc;
 use std::time::Duration;
 
 const PROVIDER_NAME: &str = "openrouter";
@@ -73,6 +74,7 @@ pub fn lookup_openrouter_tts(model: &str) -> Option<&'static OpenRouterTtsRecord
 pub struct OpenRouterTtsProvider {
     api_key: String,
     http: HardenedHttpClient,
+    governor: Arc<ResourceGovernor>,
 }
 
 impl std::fmt::Debug for OpenRouterTtsProvider {
@@ -103,7 +105,17 @@ impl OpenRouterTtsProvider {
         }
 
         let http = HardenedHttpClient::openrouter(base_url.as_deref(), policy)?;
-        Ok(Self { api_key, http })
+        Ok(Self {
+            api_key,
+            http,
+            governor: ResourceGovernor::process_global(),
+        })
+    }
+
+    /// Bind an engine-local governor (preferred for long-lived hosts).
+    pub fn with_governor(mut self, governor: Arc<ResourceGovernor>) -> Self {
+        self.governor = governor;
+        self
     }
 
     fn resolve_model_voice(
@@ -212,6 +224,9 @@ impl SynthesisProvider for OpenRouterTtsProvider {
         let op =
             OpContext::from_optional_cancel(opts.cancel.clone()).with_deadline_from_now(timeout);
         op.check()?;
+        op.emit("tts", "admit");
+        let _permit = self.governor.acquire(PermitKind::Remote, Some(&op))?;
+        op.check()?;
         op.emit("tts", "request");
 
         let body = OpenAiSpeechRequest::new(
@@ -225,17 +240,15 @@ impl SynthesisProvider for OpenRouterTtsProvider {
             message: format!("speech request serialize: {e}"),
         })?;
 
-        let response = self
-            .http
-            .request(reqwest::Method::POST, "audio/speech", &self.api_key)?
-            .header("Content-Type", "application/json")
-            .body(json)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network {
-                provider: PROVIDER_NAME.into(),
-                reason: e.to_string(),
-            })?;
+        let response = send_with_op(
+            self.http
+                .request(reqwest::Method::POST, "audio/speech", &self.api_key)?
+                .header("Content-Type", "application/json")
+                .body(json),
+            &op,
+            PROVIDER_NAME,
+        )
+        .await?;
 
         op.check()?;
         let status = response.status();
@@ -252,12 +265,13 @@ impl SynthesisProvider for OpenRouterTtsProvider {
         } else {
             64 * 1024
         };
-        let bytes = read_body_limited(
+        let bytes = read_body_limited_with_op(
             response,
             PROVIDER_NAME,
             RemoteBodyLimits {
                 max_bytes: body_cap,
             },
+            &op,
         )
         .await?;
         op.check()?;

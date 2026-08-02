@@ -10,13 +10,16 @@ use crate::audio::{self, AudioInput, DEFAULT_FFMPEG_TIMEOUT, DEFAULT_MAX_UPLOAD_
 use crate::error::{ProviderError, Result, UserError};
 use crate::postprocess;
 use crate::remote::{
-    map_http_status, read_body_limited, validate_segments, validate_text_bounds,
-    HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits, XaiHttpPolicy,
+    map_http_status, read_body_limited_with_op, send_with_op, validate_segments,
+    validate_text_bounds, HardenedHttpClient, RemoteBodyLimits, RemotePolicy, TranscriptLimits,
+    XaiHttpPolicy,
 };
+use crate::runtime::{PermitKind, ResourceGovernor};
 use async_trait::async_trait;
 use reqwest::multipart::{Form, Part};
 use serde::Deserialize;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 const PROVIDER_NAME: &str = "xai";
 
@@ -58,6 +61,7 @@ pub struct XaiSttProvider {
     api_key: String,
     http: HardenedHttpClient,
     max_upload_bytes: usize,
+    governor: Arc<ResourceGovernor>,
 }
 
 impl std::fmt::Debug for XaiSttProvider {
@@ -93,7 +97,14 @@ impl XaiSttProvider {
             api_key,
             http,
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES.min(25 * 1024 * 1024),
+            governor: ResourceGovernor::process_global(),
         })
+    }
+
+    /// Bind an engine-local governor (preferred for long-lived hosts).
+    pub fn with_governor(mut self, governor: Arc<ResourceGovernor>) -> Self {
+        self.governor = governor;
+        self
     }
 }
 
@@ -128,6 +139,9 @@ impl TranscriptionProvider for XaiSttProvider {
             })?;
 
         let op = crate::runtime::OpContext::from_optional_cancel(options.cancel.clone());
+        op.check()?;
+        op.emit("stt", "admit");
+        let _permit = self.governor.acquire(PermitKind::Remote, Some(&op))?;
         op.check()?;
         op.emit("stt", "encode");
 
@@ -190,22 +204,21 @@ impl TranscriptionProvider for XaiSttProvider {
             form = form.text("response_format", "json");
         }
 
-        let response = self
-            .http
-            .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
-            .multipart(form)
-            .send()
-            .await
-            .map_err(|e| ProviderError::Network {
-                provider: PROVIDER_NAME.into(),
-                reason: e.to_string(),
-            })?;
+        let response = send_with_op(
+            self.http
+                .request(reqwest::Method::POST, "audio/transcriptions", &self.api_key)?
+                .multipart(form),
+            &op,
+            PROVIDER_NAME,
+        )
+        .await?;
         drop(cleanup);
         op.check()?;
         op.emit("stt", "read_body");
 
         let status = response.status();
-        let body = read_body_limited(response, PROVIDER_NAME, RemoteBodyLimits::stt()).await?;
+        let body = read_body_limited_with_op(response, PROVIDER_NAME, RemoteBodyLimits::stt(), &op)
+            .await?;
         let body_text = String::from_utf8_lossy(&body).into_owned();
         map_http_status(PROVIDER_NAME, status, &body_text)?;
 

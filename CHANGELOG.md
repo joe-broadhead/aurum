@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **JOE-1975 (High):** engine-bound remote STT/TTS acquire `PermitKind::Remote` from
+  the **engine-local** governor (not `process_global`), and HTTP `.send()` / body
+  reads race cancel + absolute deadline via `send_with_op` /
+  `read_body_limited_with_op`. Independent engines isolate remote admission;
+  short op deadlines interrupt before the long client timeout.
+
 ### Changed
 
 - **OpenRouter app attribution:** all OpenRouter HTTP calls identify as **Aurum**

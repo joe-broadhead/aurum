@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-2212 — Remote STT chunk-and-stitch:** OpenAI, OpenRouter, and xAI STT
+  automatically split long audio into ~210s windows, transcribe each chunk with
+  cancel checks, and stitch text/segments with time offsets. Short files stay
+  single-request. Override with `AURUM_REMOTE_STT_CHUNK_SECS`. Soft-splits rare
+  overlong single segments past the 8k char bound. Local whisper unchanged.
 - **JOE-2213 — Provider catalogue probe:** offline/live probe for reviewed STT/TTS
   registries and product defaults (`scripts/probe_provider_catalogues.sh`,
   example `probe_provider_catalogues`, workflow_dispatch CI job). Fail closed if

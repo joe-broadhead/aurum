@@ -44,12 +44,14 @@ can fail. Re-probe catalogues after policy changes:
 Expected for **llm_assisted** (chat multimodal) routes. Prefer dedicated ASR models
 from the reviewed registry for SRT, or use `-o txt` / `-o json`.
 
-## Remote STT: segment too long / truncated long files
+## Remote STT long-form (JOE-2212)
 
-First-party OpenAI/xAI paths reject a single segment when transcript text exceeds
-the max segment bound (~8k characters). Very long lectures may need external
-chunking until automatic chunk-and-stitch lands (tracked for v0.0.21). Prefer
-local whisper for full long-form offline, or shorter remote segments.
+OpenAI, OpenRouter, and xAI automatically **time-chunk** audio longer than ~210s
+and stitch text/segments with offsets. Short files stay single-request.
+
+- Override window: `AURUM_REMOTE_STT_CHUNK_SECS` (positive seconds)
+- Cancel is checked between chunks
+- Local whisper is unchanged (full-file offline)
 
 ## Other remote providers
 
@@ -58,6 +60,15 @@ local whisper for full long-form offline, or shorter remote segments.
 | `openai` | Missing `OPENAI_API_KEY`; use reviewed STT/TTS model ids |
 | `elevenlabs` | TTS only; requires explicit `voice_id` (not Kitten aliases) |
 | `xai` | Experimental; official `/v1/stt` + `/v1/tts` only; voices `eve\|ara\|leo\|rex\|sal` |
+
+## Remote STT long-form (JOE-2212)
+
+OpenAI, OpenRouter, and xAI automatically **time-chunk** audio longer than ~210s
+and stitch text/segments with offsets. Short files stay single-request.
+
+- Override window: `AURUM_REMOTE_STT_CHUNK_SECS` (positive seconds)
+- Cancel is checked between chunks
+- Local whisper is unchanged (full-file offline)
 
 ## Metal / abort on process exit (library)
 

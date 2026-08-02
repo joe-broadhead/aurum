@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.21] - 2026-08-02
+
+Production-assurance cut (**JOE-1655**): long-form remote STT, provider catalogue
+probe, greenfield docs/skills, dead-code residual closeout, and agent-ready local
+smoke. Continuous **0.0.x** (not 1.0).
+
 ### Fixed
 
 - **Dead-code / docs honesty sweep:** remove unused helpers
@@ -716,7 +722,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.20...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.21...HEAD
+[0.0.21]: https://github.com/joe-broadhead/aurum/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/joe-broadhead/aurum/compare/v0.0.19...v0.0.20
 [0.0.19]: https://github.com/joe-broadhead/aurum/compare/v0.0.18...v0.0.19
 [0.0.18]: https://github.com/joe-broadhead/aurum/compare/v0.0.17...v0.0.18

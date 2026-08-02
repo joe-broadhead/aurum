@@ -25,8 +25,8 @@ Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 | TTS | local Kitten/Kokoro + remote OpenRouter / OpenAI / ElevenLabs / xAI (feature `tts`, default on) |
 
 ```toml
-aurum-core = "0.0.20"
-# or git tag = "v0.0.20"
+aurum-core = "0.0.21"
+# or git tag = "v0.0.21"
 ```
 
 See [Integration](integration.md) and [AurumEngine](engine.md).
@@ -45,6 +45,6 @@ narrow; remote providers are **not** exposed on the FFI. See [Native embeds](ffi
 
 | Package | Install / depend |
 |---------|------------------|
-| `aurum-core` | `aurum-core = "0.0.20"` (default features include TTS; use `default-features = false` for STT-only) |
+| `aurum-core` | `aurum-core = "0.0.21"` (default features include TTS; use `default-features = false` for STT-only) |
 | `aurum-stt` | `cargo install aurum-stt` → runs `aurum` |
-| `aurum-ffi` | `aurum-ffi = "0.0.20"` or build from source (`libaurum_ffi` + `aurum.h`) |
+| `aurum-ffi` | `aurum-ffi = "0.0.21"` or build from source (`libaurum_ffi` + `aurum.h`) |

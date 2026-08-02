@@ -35,7 +35,7 @@ See also [compatibility.md](../development/compatibility.md) for 0.0.x classes.
 |-----|------------------|-------------|
 | `SttResultDto` | **1** | Library + CLI STT JSON (`-o json`); unsupported version → error |
 | `TtsMetaDto` | **1** | Library honesty JSON; CLI `--emit-json` should use this DTO (includes `schema_version`) |
-| `ErrorDto` | **1** | **Library DTO** for structured errors; CLI process exit still uses `ErrorCategory::exit_code` (not a full ErrorDto wire envelope) |
+| `ErrorDto` | **1** | Library + CLI structured errors: when `-o json` / `--json` / `--emit-json` (or `AURUM_JSON_ERRORS=1`) process exit still uses `ErrorCategory::exit_code` **and** stderr carries a full `ErrorDto` JSON envelope |
 
 Constants: `STT_RESULT_SCHEMA_VERSION`, `TTS_META_SCHEMA_VERSION`, `ERROR_SCHEMA_VERSION` in `aurum-core` dto module.
 

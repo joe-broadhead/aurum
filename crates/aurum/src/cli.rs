@@ -6,6 +6,7 @@ use aurum_core::cleanup::{
     OpenRouterCleanup, RulesCleanup, SegmentCleanupPolicy, TextCleanup,
 };
 use aurum_core::config::Config;
+use aurum_core::dto::ErrorDto;
 use aurum_core::error::{Result, TranscriptionError, UserError};
 use aurum_core::model;
 use aurum_core::output::{self, commit_text, CommitMode, OutputFormat};
@@ -14,6 +15,65 @@ use aurum_core::remote::RemotePolicy;
 use clap::{Parser, Subcommand};
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+
+/// When true, [`report_error`] prints a versioned [`ErrorDto`] JSON envelope on stderr.
+static EMIT_JSON_ERRORS: AtomicBool = AtomicBool::new(false);
+
+/// Enable structured JSON errors for machine-readable CLI modes (`-o json`, `--json`, `--emit-json`).
+pub fn set_json_errors(on: bool) {
+    EMIT_JSON_ERRORS.store(on, Ordering::Relaxed);
+}
+
+fn json_errors_enabled() -> bool {
+    if EMIT_JSON_ERRORS.load(Ordering::Relaxed) {
+        return true;
+    }
+    // Escape hatch for wrappers that cannot set the process flag before run().
+    matches!(
+        std::env::var("AURUM_JSON_ERRORS").as_deref(),
+        Ok("1") | Ok("true") | Ok("yes")
+    )
+}
+
+fn wants_json_errors(cli: &Cli) -> bool {
+    if let Some(out) = cli.transcribe.output.as_deref() {
+        if out.eq_ignore_ascii_case("json") {
+            return true;
+        }
+    }
+    match &cli.command {
+        Some(Commands::Transcribe(args)) => args
+            .output
+            .as_deref()
+            .is_some_and(|o| o.eq_ignore_ascii_case("json")),
+        Some(Commands::Cleanup(args)) => args
+            .output
+            .as_deref()
+            .is_some_and(|o| o.eq_ignore_ascii_case("json")),
+        Some(Commands::Tts(tts)) => match &tts.command {
+            Some(TtsCommands::Inspect { json, .. })
+            | Some(TtsCommands::Verify { json, .. })
+            | Some(TtsCommands::Add { json, .. }) => *json,
+            None => tts.synth.emit_json,
+            _ => false,
+        },
+        Some(Commands::Batch(batch)) => {
+            batch.json
+                || batch
+                    .output
+                    .as_deref()
+                    .is_some_and(|o| o.eq_ignore_ascii_case("json"))
+        }
+        Some(Commands::Cache(cache)) => cache.json,
+        Some(Commands::Doctor(doc)) => doc.json,
+        Some(Commands::SupportBundle(sb)) => sb.stdout,
+        Some(Commands::Models {
+            command: Some(ModelsCommands::Recommend { json, .. }),
+        }) => *json,
+        _ => false,
+    }
+}
 
 /// Aurum — on-device speech CLI (STT + TTS).
 #[derive(Debug, Parser)]
@@ -386,6 +446,9 @@ pub struct CleanupArgs {
 
 /// Entry point used by `main`.
 pub async fn run(cli: Cli) -> Result<()> {
+    if wants_json_errors(&cli) {
+        set_json_errors(true);
+    }
     match cli.command {
         Some(Commands::Models { command: None }) => {
             init_tracing(false);
@@ -803,7 +866,10 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         let mut payload = serde_json::to_value(&meta)
             .map_err(|e| TranscriptionError::internal(format!("json: {e}")))?;
         if let Some(obj) = payload.as_object_mut() {
-            obj.insert("output_path".into(), serde_json::json!(abs.display().to_string()));
+            obj.insert(
+                "output_path".into(),
+                serde_json::json!(abs.display().to_string()),
+            );
             obj.insert("format".into(), serde_json::json!("wav"));
         }
         let mut stdout = io::stdout().lock();
@@ -1219,7 +1285,7 @@ fn build_cleanup_backend(cfg: &Config, kind: CleanupProviderKind) -> Result<Box<
                 ..Default::default()
             };
             Ok(Box::new(OpenRouterCleanup::with_policy(
-                cfg.openrouter_api_key_exposed(),
+                cfg.openrouter_api_key.clone(),
                 Some(cfg.openrouter_base_url.clone()),
                 cfg.cleanup_openrouter_model
                     .clone()
@@ -1360,7 +1426,30 @@ fn atty_stderr() -> bool {
 }
 
 /// Print a library error.
+///
+/// When JSON output was requested (`-o json`, `--json`, `--emit-json`, or
+/// `AURUM_JSON_ERRORS=1`), emits a versioned [`ErrorDto`] JSON envelope on
+/// stderr so machine consumers share the same schema as library embeds.
+/// Otherwise prints a human line plus optional MissingApiKey hints.
 pub fn report_error(err: &TranscriptionError) {
+    if json_errors_enabled() {
+        let dto = ErrorDto::from_error(err);
+        match dto.to_json_pretty() {
+            Ok(json) => eprintln!("{json}"),
+            Err(_) => {
+                // Last resort: never fail closed on the error path itself.
+                eprintln!(
+                    "{{\"schema_version\":{},\"category\":{},\"retryable\":{},\"message\":{},\"exit_code\":{}}}",
+                    dto.schema_version,
+                    serde_json::to_string(&dto.category).unwrap_or_else(|_| "\"error\"".into()),
+                    dto.retryable,
+                    serde_json::to_string(&dto.message).unwrap_or_else(|_| "\"error\"".into()),
+                    dto.exit_code,
+                );
+            }
+        }
+        return;
+    }
     eprintln!("error: {err}");
     if matches!(err, TranscriptionError::User(UserError::MissingApiKey)) {
         if let Some(path) = Config::default_config_path() {

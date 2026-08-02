@@ -652,13 +652,6 @@ impl Config {
         Ok(cfg)
     }
 
-    /// Expose the OpenRouter API key as a plain string for provider construction.
-    pub fn openrouter_api_key_exposed(&self) -> Option<String> {
-        self.openrouter_api_key
-            .as_ref()
-            .map(|s| s.expose().to_string())
-    }
-
     /// Provider-scoped secret for build-context construction (JOE-1935).
     pub fn provider_secret(&self, id: &ProviderId) -> Option<SecretString> {
         match id.as_str() {

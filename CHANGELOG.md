@@ -13,8 +13,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`verify_cached_checksum`, `openrouter_caps_resolved`,
   `ProviderBuildContext::api_key_exposed`, `DEFAULT_OPENROUTER_ORIGIN` alias,
   unused partial helpers); CLI TTS `--emit-json` uses versioned `TtsMetaDto`;
-  download module docs no longer claim full catalogue unification; refresh
-  stale version pins and skill long-form STT (JOE-2212) claims.
+  refresh stale version pins and skill long-form STT (JOE-2212) claims.
+- **Download unification:** STT and TTS catalogue downloads both route through
+  shared `download_verified_request` (exclusive partials, reviewed size caps,
+  HF/GitHub redirect policy, verify-before-publish, durable rename).
+- **Disk pressure awareness:** downloads preflight free space against the hard
+  size budget + 64 MiB headroom (fail closed when probe works); `aurum doctor`
+  reports approximate free space and warns below 512 MiB.
+- **CLI ErrorDto:** machine JSON modes (`-o json`, `--json`, `--emit-json`, or
+  `AURUM_JSON_ERRORS=1`) print a versioned `ErrorDto` envelope on stderr.
+- **OpenRouterCleanup SecretString:** cleanup retains `SecretString` (not
+  plaintext `String`); CLI/batch stop calling `openrouter_api_key_exposed`
+  (removed).
 
 ### Added
 

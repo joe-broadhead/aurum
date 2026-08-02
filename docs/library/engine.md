@@ -90,8 +90,10 @@ let engine = AurumEngine::new(validated);
 
 ## Secrets
 
-`Config.openrouter_api_key` is `Option<SecretString>`. Use
-`Config::openrouter_api_key_exposed()` only when constructing a remote client.
+`Config.openrouter_api_key` is `Option<SecretString>`. Pass the secret through
+`Config::provider_secret(&ProviderId::openrouter())` or clone
+`openrouter_api_key` into providers/`OpenRouterCleanup` — never convert to a
+plaintext `String` for long-lived storage.
 
 ## Segment / result construction (JOE-1786)
 

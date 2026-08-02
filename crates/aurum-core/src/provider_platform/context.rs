@@ -190,7 +190,6 @@ impl ProviderBuildContext {
     pub fn has_api_key(&self) -> bool {
         self.api_key.is_some()
     }
-
 }
 
 impl std::fmt::Debug for ProviderBuildContext {

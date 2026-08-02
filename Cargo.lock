@@ -105,6 +105,7 @@ dependencies = [
  "hex",
  "hound",
  "indicatif",
+ "libc",
  "misaki-rs",
  "once_cell",
  "ort",

@@ -1,11 +1,10 @@
 //! Local whisper.cpp model management: resolve, download, cache, list.
 
+use crate::download::{self, DownloadOptions, DownloadRequest};
 use crate::error::{EnvironmentError, ProviderError, Result, UserError};
-use futures_util::StreamExt;
-use indicatif::{ProgressBar, ProgressStyle};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -501,132 +500,8 @@ async fn download_model(
     show_progress: bool,
     on_progress: Option<&DownloadProgressCallback>,
 ) -> Result<()> {
-    let url = format!("{HF_BASE}/{}?download=true", info.filename);
-    tracing::info!(model = info.name, %url, "downloading model");
-
-    // JOE-1918: exclusive create_new partial (unpredictable name, no clobber).
-    let partial = exclusive_stt_partial(dest)?;
-
-    // Bound total download time so a stalled transfer can't hold the lock forever.
-    // Follow redirects only onto known HuggingFace CDN hosts (HF always 302s resolve/
-    // URLs). Credentialed OpenRouter traffic stays on HardenedHttpClient (no redirects).
-    let client = reqwest::Client::builder()
-        .user_agent(concat!("aurum-core/", env!("CARGO_PKG_VERSION")))
-        .connect_timeout(std::time::Duration::from_secs(30))
-        .timeout(std::time::Duration::from_secs(30 * 60))
-        .redirect(reqwest::redirect::Policy::custom(hf_redirect_policy))
-        .build()
-        .map_err(|e| ProviderError::ModelDownload {
-            model: info.name.to_string(),
-            reason: format!("http client error: {e}"),
-        })?;
-
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| ProviderError::ModelDownload {
-            model: info.name.to_string(),
-            reason: format!("request failed: {e}"),
-        })?;
-
-    if !response.status().is_success() {
-        return Err(ProviderError::ModelDownload {
-            model: info.name.to_string(),
-            reason: format!("HTTP {}", response.status()),
-        }
-        .into());
-    }
-
-    let total = response.content_length().unwrap_or(info.approx_bytes);
-
-    let pb = if show_progress {
-        let pb = ProgressBar::new(total);
-        pb.set_style(
-            ProgressStyle::with_template(
-                "{msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})",
-            )
-            .unwrap_or_else(|_| ProgressStyle::default_bar())
-            .progress_chars("=>-"),
-        );
-        pb.set_message(format!("Downloading {}", info.name));
-        Some(pb)
-    } else {
-        None
-    };
-
-    let mut file = OpenOptions::new().write(true).open(&partial).map_err(|e| {
-        EnvironmentError::DirectoryAccess {
-            path: partial.display().to_string(),
-            reason: e.to_string(),
-        }
-    })?;
-
-    let mut stream = response.bytes_stream();
-    let mut hasher = Sha256::new();
-    let mut downloaded: u64 = 0;
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| ProviderError::ModelDownload {
-            model: info.name.to_string(),
-            reason: format!("stream error: {e}"),
-        })?;
-        file.write_all(&chunk)
-            .map_err(|e| EnvironmentError::DiskSpace {
-                path: partial.display().to_string(),
-                reason: e.to_string(),
-            })?;
-        hasher.update(&chunk);
-        downloaded += chunk.len() as u64;
-        // Hard cap from reviewed metadata only (JOE-1591). Content-Length cannot raise it.
-        let max_allowed = crate::download::download_byte_cap(
-            info.approx_bytes,
-            pinned_exact_bytes(info.filename),
-            3,
-        );
-        if downloaded > max_allowed {
-            let _ = fs::remove_file(&partial);
-            return Err(ProviderError::ModelDownload {
-                model: info.name.to_string(),
-                reason: format!(
-                    "download exceeded size cap ({downloaded} > {max_allowed} bytes) — aborting"
-                ),
-            }
-            .into());
-        }
-        if let Some(pb) = &pb {
-            pb.set_position(downloaded.min(total));
-        }
-        if let Some(cb) = on_progress {
-            cb(DownloadProgress {
-                model: info.name.to_string(),
-                downloaded_bytes: downloaded,
-                total_bytes: total,
-            });
-        }
-    }
-
-    file.flush().map_err(|e| EnvironmentError::DiskSpace {
-        path: partial.display().to_string(),
-        reason: e.to_string(),
-    })?;
-    file.sync_all().map_err(|e| EnvironmentError::DiskSpace {
-        path: partial.display().to_string(),
-        reason: format!("sync partial download: {e}"),
-    })?;
-    drop(file);
-
-    let digest = hex::encode(hasher.finalize());
-    tracing::info!(
-        model = info.name,
-        sha256 = %digest,
-        bytes = downloaded,
-        "model download complete (pre-publish)"
-    );
-
-    // Verify-before-publish (JOE-1591 / JOE-1645): every trusted model requires a pin.
+    // Verify-before-publish requires a reviewed pin (JOE-1591 / JOE-1645).
     let Some(expected) = pinned_sha256(info.filename) else {
-        let _ = fs::remove_file(&partial);
         return Err(ProviderError::ModelDownload {
             model: info.name.to_string(),
             reason: format!(
@@ -636,148 +511,38 @@ async fn download_model(
         }
         .into());
     };
-    if digest != expected {
-        let _ = fs::remove_file(&partial);
-        return Err(ProviderError::ModelDownload {
-            model: info.name.to_string(),
-            reason: format!(
-                "sha256 mismatch (got {digest}, expected {expected}) — refusing to publish"
-            ),
-        }
-        .into());
-    }
-    if let Some(exact) = pinned_exact_bytes(info.filename) {
-        if downloaded != exact {
-            let _ = fs::remove_file(&partial);
-            return Err(ProviderError::ModelDownload {
-                model: info.name.to_string(),
-                reason: format!(
-                    "size mismatch (got {downloaded}, expected {exact}) — refusing to publish"
-                ),
-            }
-            .into());
-        }
+
+    let url = format!("{HF_BASE}/{}?download=true", info.filename);
+    let req = DownloadRequest {
+        id: info.name,
+        filename: info.filename,
+        sha256: expected,
+        exact_bytes: pinned_exact_bytes(info.filename),
+        approx_bytes: info.approx_bytes,
+        url: &url,
+    };
+
+    let mut opts = DownloadOptions {
+        show_progress,
+        ..DownloadOptions::default()
+    };
+    if let Some(cb) = on_progress {
+        let model = info.name.to_string();
+        let cb = Arc::clone(cb);
+        opts.on_progress = Some(Arc::new(move |downloaded, total| {
+            cb(DownloadProgress {
+                model: model.clone(),
+                downloaded_bytes: downloaded,
+                total_bytes: total,
+            });
+        }));
     }
 
-    // Durable publish after verification (no pre-delete availability gap when possible).
-    if let Err(e) = publish_stt_partial(&partial, dest) {
-        let _ = fs::remove_file(&partial);
-        return Err(e);
-    }
-
-    if let Some(pb) = pb {
-        pb.finish_with_message(format!("Downloaded {} ({downloaded} bytes)", info.name));
-    }
-
-    let checksum_path = dest.with_extension("bin.sha256");
-    // Best-effort sidecar; authenticity is the pin check above.
-    let _ = fs::write(&checksum_path, format!("{digest}  {}\n", info.filename));
+    download::download_verified_request(&req, dest, &opts).await?;
 
     // Best-effort cleanup of orphaned partials from prior crashed runs.
     sweep_stale_partials(dest.parent().unwrap_or_else(|| Path::new(".")));
-
     Ok(())
-}
-
-fn exclusive_stt_partial(dest: &Path) -> Result<PathBuf> {
-    let parent = dest.parent().unwrap_or_else(|| Path::new("."));
-    fs::create_dir_all(parent).map_err(|e| EnvironmentError::DirectoryAccess {
-        path: parent.display().to_string(),
-        reason: e.to_string(),
-    })?;
-    for _ in 0..32 {
-        let name = format!(
-            ".{}.{}-{}.aurum.partial",
-            dest.file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("model.bin"),
-            std::process::id(),
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_nanos())
-                .unwrap_or(0)
-        );
-        let path = parent.join(name);
-        match OpenOptions::new().write(true).create_new(true).open(&path) {
-            Ok(f) => {
-                drop(f);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = fs::set_permissions(&path, fs::Permissions::from_mode(0o600));
-                }
-                return Ok(path);
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
-            Err(e) => {
-                return Err(EnvironmentError::DirectoryAccess {
-                    path: parent.display().to_string(),
-                    reason: format!("exclusive partial create failed: {e}"),
-                }
-                .into());
-            }
-        }
-    }
-    Err(EnvironmentError::DirectoryAccess {
-        path: parent.display().to_string(),
-        reason: "could not allocate exclusive STT partial path".into(),
-    }
-    .into())
-}
-
-fn publish_stt_partial(tmp: &Path, dest: &Path) -> Result<()> {
-    match fs::rename(tmp, dest) {
-        Ok(()) => Ok(()),
-        Err(e) if dest.exists() => {
-            let backup = dest.with_extension(format!(
-                "aurum.bak.{}-{}",
-                std::process::id(),
-                std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos())
-                    .unwrap_or(0)
-            ));
-            fs::rename(dest, &backup).map_err(|re| EnvironmentError::DirectoryAccess {
-                path: dest.display().to_string(),
-                reason: format!("stage previous model: {re} (after rename: {e})"),
-            })?;
-            match fs::rename(tmp, dest) {
-                Ok(()) => {
-                    let _ = fs::remove_file(&backup);
-                    Ok(())
-                }
-                Err(re) => {
-                    let _ = fs::rename(&backup, dest);
-                    Err(EnvironmentError::DirectoryAccess {
-                        path: dest.display().to_string(),
-                        reason: format!("publish verified model: {re}"),
-                    }
-                    .into())
-                }
-            }
-        }
-        Err(e) => Err(EnvironmentError::DirectoryAccess {
-            path: dest.display().to_string(),
-            reason: e.to_string(),
-        }
-        .into()),
-    }
-}
-
-/// Allow HuggingFace CDN redirects; stop on anything else.
-fn hf_redirect_policy(attempt: reqwest::redirect::Attempt<'_>) -> reqwest::redirect::Action {
-    let url = attempt.url();
-    let host = url.host_str().unwrap_or("").to_ascii_lowercase();
-    let allowed = host == "huggingface.co"
-        || host.ends_with(".huggingface.co")
-        || host.ends_with(".hf.co")
-        || host == "hf.co"
-        || host.ends_with(".cdn.hf.co");
-    if allowed && attempt.previous().len() < 8 {
-        attempt.follow()
-    } else {
-        attempt.stop()
-    }
 }
 
 /// Independently reviewed SHA-256 digests (JOE-1590 / JOE-1645).

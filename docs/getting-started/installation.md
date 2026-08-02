@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/joe-broadhead/aurum/master/scripts/
 
 # Or from a clone:
 ./scripts/install.sh --from-release
-AURUM_VERSION=v0.0.20 ./scripts/install.sh --from-release
+AURUM_VERSION=v0.0.21 ./scripts/install.sh --from-release
 ```
 
 Default install directory: `~/.local/bin` (`AURUM_INSTALL_DIR` to override).
@@ -55,7 +55,7 @@ Package name is `aurum-stt` (the `aurum` crate name is already taken on crates.i
 Library:
 
 ```toml
-aurum-core = "0.0.20"
+aurum-core = "0.0.21"
 ```
 
 ## From source

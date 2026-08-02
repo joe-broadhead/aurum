@@ -53,7 +53,7 @@ explicit** — never the default. Local whisper + Kitten remain zero-key default
 See [provider matrix](docs/guide/provider-matrix.md) and
 [qualification](docs/operations/provider-qualification.md).
 
-> **v0.0.20** — post–security-sign-off product cut (provider platform + OpenRouter TTS catalogue refresh). Library API remains provisional on the **0.0.x** line. Next assurance cut is **v0.0.21** (not 1.0).
+> **v0.0.21** — production-assurance cut (JOE-1655): long-form remote STT, catalogue probe, greenfield docs/skills, residual closeout. Library API remains provisional on the continuous **0.0.x** line (not 1.0).
 
 ## Highlights
 
@@ -102,8 +102,8 @@ Agent skills for coding agents: [`skills/`](skills/) — start with
 
 ```toml
 # Prefer crates.io when published, or pin a git tag
-aurum-core = "0.0.20"
-# aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.20" }
+aurum-core = "0.0.21"
+# aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.21" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).

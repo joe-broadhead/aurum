@@ -76,7 +76,7 @@ flowchart LR
 
 ## Status
 
-**v0.0.20** (current published tip) — post–security-sign-off product cut: multi-provider speech platform, OpenRouter TTS catalogue refresh, provider-aware remote TTS defaults.
+**v0.0.21** (current published tip) — production-assurance cut: multi-provider speech platform, long-form remote STT (JOE-2212), catalogue probe (JOE-2213), greenfield residual closeout, agent skills.
 
 **Next programme cut: v0.0.21** — production-assurance package (formerly labelled “1.0”). Aurum stays on the **0.0.x** iteration line; a major `1.0.0` is **not** planned for this programme.
 

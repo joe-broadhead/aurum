@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **JOE-1943:** provider platform qualification — support tiers, release-gate
+  checklist, provider matrix, privacy/data-flow summary, cross-provider isolation
+  tests, long-lived `engine_providers` example; FFI docs restate remote
+  unsupported on C ABI.
 - **JOE-1942:** xAI REST STT/TTS (`xai`, config alias `grok`) via `XAI_API_KEY` and
   `XaiHttpPolicy`; OpenAI-compatible speech request shape; reviewed `grok-asr*` /
   `grok-tts*` catalogues; realtime streaming not implemented (fail closed).

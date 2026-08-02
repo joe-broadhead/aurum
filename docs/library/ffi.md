@@ -3,8 +3,10 @@
 C ABI façade over `aurum-core` for Swift, Kotlin, C, C#, and other hosts that
 should not shell out to the CLI.
 
-**On-device only** in this crate: no OpenRouter, no mic capture, no streaming loop.
-Partials and hold-to-talk UX stay in the host.
+**On-device only** in this crate: no remote providers (OpenRouter/OpenAI/ElevenLabs/xAI),
+no mic capture, no streaming loop. Remote speech stays in Rust `AurumEngine` /
+CLI until a separate FFI ABI design lands (JOE-1943). Partials and hold-to-talk
+UX stay in the host.
 
 | | |
 |--|--|

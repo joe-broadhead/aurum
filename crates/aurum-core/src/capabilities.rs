@@ -637,20 +637,30 @@ pub fn preflight_tts_for(
             Ok(caps)
         }
         "openrouter" => {
-            if local_only {
-                return Err(UnsupportedCapability {
-                    provider: provider.as_str().into(),
-                    model: "*".into(),
-                    reason: "OpenRouter TTS requires network access".into(),
-                    hint: "unset local_only or use provider=local".into(),
+            #[cfg(feature = "tts")]
+            {
+                if local_only {
+                    return Err(UnsupportedCapability {
+                        provider: provider.as_str().into(),
+                        model: "*".into(),
+                        reason: "OpenRouter TTS requires network access".into(),
+                        hint: "unset local_only or use provider=local".into(),
+                    }
+                    .into());
                 }
-                .into());
+                // Model-specific checks run at synthesize; gate network here.
+                openrouter_tts_capabilities(
+                    crate::providers::openrouter_tts::DEFAULT_OPENROUTER_TTS_MODEL,
+                )
             }
-            // Model-specific preflight uses factory capabilities with the request model.
-            // Here we only gate network; detailed model/voice checks run at synthesize.
-            openrouter_tts_capabilities(
-                crate::providers::openrouter_tts::DEFAULT_OPENROUTER_TTS_MODEL,
-            )
+            #[cfg(not(feature = "tts"))]
+            {
+                let _ = (provider, language, local_only);
+                Err(UserError::Other {
+                    message: "TTS support is not compiled into this build (feature `tts`)".into(),
+                }
+                .into())
+            }
         }
         other => Err(UserError::InvalidProvider {
             provider: other.into(),

@@ -6,8 +6,10 @@
 use super::descriptor::NetworkRequirement;
 use super::id::ProviderId;
 use super::registry::ProviderRegistry;
+#[cfg(feature = "tts")]
+use crate::capabilities::preflight_tts_for;
 use crate::capabilities::{
-    apply_stt_request_gates, openrouter_stt_capabilities, preflight_stt_for, preflight_tts_for,
+    apply_stt_request_gates, openrouter_stt_capabilities, preflight_stt_for,
     resolve_openrouter_stt_path, CapabilityOperation, ProviderCapabilities, UnsupportedCapability,
 };
 use crate::error::{Result, UserError};

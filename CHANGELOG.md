@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Engine observability (P1d):** STT/TTS engine paths use `TerminalGuard`, emit
   Start/Inference/Terminal events, and record decoded-bytes and TTS char/chunk
   counters.
+- **Parent OpContext (v0.0.23 A):** providers and long-form chunking share one
+  cancel/deadline/progress context from the engine instead of minting
+  cancel-only contexts per hop.
+- **Native SDK consumer matrix (v0.0.23 B):** CMake `Aurum::aurum_ffi` declares
+  platform system libs (including Windows); packages ship CMake on all Tier A
+  hosts; qualify exercises CMake consumer + pkg-config and MSVC link when
+  available.
 
 ### Added
 

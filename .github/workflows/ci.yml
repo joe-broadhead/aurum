@@ -496,6 +496,32 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # JOE-2229: dry-run protected evidence schema + canary (no network).
+  provider-smoke-dry-run:
+    name: provider smoke dry-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Dry-run protected smoke schema
+        env:
+          AURUM_SMOKE_SKIP_RELEASE_GATE: "1"
+        run: |
+          set -euo pipefail
+          chmod +x scripts/protected_provider_smoke.sh
+          ./scripts/protected_provider_smoke.sh --dry-run --out dist/provider-smoke
+      - name: Upload dry-run evidence
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: provider-smoke-dry-run
+          path: |
+            dist/provider-smoke/SMOKE_SUMMARY.md
+            dist/provider-smoke/records/
+          if-no-files-found: error
+          retention-days: 7
+
   # Pure-Rust Miri suite (JOE-1889) — curated filters only; see qe-depth.md.
   miri:
     name: miri (pure filters)

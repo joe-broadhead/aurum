@@ -155,6 +155,29 @@ optional `live=true` with repository secrets).
 - **Live FAIL on a default** → open a demotion PR; do not ship.
 - OpenRouter TTS remains **experimental** until protected smoke (JOE-1978).
 
+### Protected inference smoke (JOE-2229)
+
+Catalogue probe proves list membership. **Inference smoke** proves a short
+synthetic STT/TTS call still succeeds on the reviewed route.
+
+```bash
+# CI-safe: evidence schema + canary only (no network)
+./scripts/protected_provider_smoke.sh --dry-run --out dist/provider-smoke
+
+# Operator / protected Actions: short synthetic smokes when secrets are set
+OPENAI_API_KEY=… OPENROUTER_API_KEY=… \
+  ./scripts/protected_provider_smoke.sh --live --out dist/provider-smoke
+```
+
+GitHub Actions: workflow **Provider protected smoke** (`workflow_dispatch`;
+`live=true` for credentialed runs). Artifacts are redacted records only —
+no audio, transcripts, or keys.
+
+**Promotion is human-gated:** a passing live record does **not** auto-edit
+`evals/provider-evidence/index.json` or product surfaces. Copy reviewed JSON
+into the evidence pack, mark the route `supported`, regenerate contracts, and
+ship demotion surfaces in one PR.
+
 ## Release gate checklist
 
 Before publishing a release that includes provider-platform changes:

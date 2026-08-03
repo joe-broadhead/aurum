@@ -617,10 +617,7 @@ mod tests {
             .all(|s| s.timestamp_source() == TimestampSource::Interpolated));
         let single = soft_split_text_segments("short", 0.0, 1.0, 100);
         assert_eq!(single.len(), 1);
-        assert_eq!(
-            single[0].timestamp_source(),
-            TimestampSource::SyntheticSpan
-        );
+        assert_eq!(single[0].timestamp_source(), TimestampSource::SyntheticSpan);
     }
 
     #[tokio::test]

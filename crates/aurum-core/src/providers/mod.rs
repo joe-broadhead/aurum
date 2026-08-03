@@ -837,7 +837,8 @@ mod tests {
             "hello",
             crate::remote::TimestampSource::NativeModel,
         )];
-        let r = TranscriptionResult::local("hello".into(), segs, Some("en".into()), "base".into(), 1.0);
+        let r =
+            TranscriptionResult::local("hello".into(), segs, Some("en".into()), "base".into(), 1.0);
         assert!(r.timestamps_reliable());
         assert!(!r.has_approximate_timestamps());
         // CLI SRT gate condition: both must pass.
@@ -852,14 +853,8 @@ mod tests {
             crate::remote::TimestampSource::ChunkOffset,
         ] {
             let segs = vec![Segment::from_parts_with_source(0.0, 1.0, "x", source)];
-            let mut r = TranscriptionResult::openrouter(
-                "x".into(),
-                segs,
-                None,
-                "m".into(),
-                1.0,
-                true,
-            );
+            let mut r =
+                TranscriptionResult::openrouter("x".into(), segs, None, "m".into(), 1.0, true);
             r.set_backend_kind(BackendKind::Asr);
             r.set_timestamps_reliable(true);
             assert!(

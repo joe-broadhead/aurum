@@ -791,8 +791,8 @@ impl SynthesisProvider for LocalTtsProvider {
             // Same soft-deadline contract as built-in path (JOE-1830): outer
             // timeout returns DeadlineExceeded while the blocking job retains
             // the permit/pin until native work returns.
-            let op = OpContext::from_optional_cancel(opts.cancel.clone())
-                .with_deadline_from_now(timeout);
+            // resolve_op_context already applies timeout_ms; keep wall sleep budget.
+            let op = opts.resolve_op_context();
             op.check()?;
             op.emit("tts", "pack_synth");
             let text_owned = prepared.text.clone();
@@ -855,8 +855,7 @@ impl SynthesisProvider for LocalTtsProvider {
         } else {
             opts.timeout_ms
         });
-        let op =
-            OpContext::from_optional_cancel(opts.cancel.clone()).with_deadline_from_now(timeout);
+        let op = opts.resolve_op_context();
         op.check()?;
         op.emit("tts", "builtin_synth");
 

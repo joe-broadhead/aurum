@@ -503,6 +503,7 @@ impl JobController {
                 language,
                 timestamps: opts.timestamps,
                 cancel: Some(cancel),
+                op: None,
             };
             let res = provider.transcribe_pcm(&samples, &options).await;
             match res {
@@ -593,6 +594,7 @@ impl JobController {
                 speaking_rate: req.speaking_rate,
                 timeout_ms: 120_000,
                 cancel: Some(job_c.inner.cancel.clone()),
+                op: None,
                 local_only: req.local_only,
                 pack_dir: None,
                 allow_unverified: false,

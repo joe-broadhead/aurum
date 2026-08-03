@@ -34,9 +34,12 @@ aurum-sdk-<ver>-<triple>/
 ./scripts/qualify_native_sdk_bundle.sh --archive dist/native-sdk/aurum-sdk-*.tar.gz
 ```
 
-Checks: no path traversal/symlinks, manifest digests, ABI constants, C11 (and
-C++17) compile/link/run using **only** bundle paths. Fails if the header
-mentions remote provider surfaces.
+Checks: no path traversal/symlinks, manifest digests, ABI constants, CMake
+package content (system link deps), C11 (and C++17) compile/link/run using
+**only** bundle paths, optional CMake consumer (`Aurum::aurum_ffi`), and
+pkg-config on Unix. On Windows, MSVC `cl` is used when available; otherwise
+layout + CMake package validation still run. Fails if the header mentions
+remote provider surfaces.
 
 ## Install / upgrade / uninstall
 

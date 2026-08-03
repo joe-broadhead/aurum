@@ -156,6 +156,7 @@ impl TranscriptionRequest {
             language: self.language,
             timestamps: self.timestamps,
             cancel: Some(ctx.cancel.clone()),
+            op: Some(ctx.clone()),
         };
         (options, ctx)
     }
@@ -233,6 +234,7 @@ impl SynthesisRequest {
             language: self.language,
             speaking_rate: self.speaking_rate,
             cancel: Some(ctx.cancel.clone()),
+            op: Some(ctx.clone()),
             ..Default::default()
         };
         (options, ctx)

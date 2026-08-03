@@ -356,7 +356,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
             .into());
         }
 
-        let op = OpContext::from_optional_cancel(options.cancel.clone());
+        let op = options.resolve_op_context();
         op.check()?;
         op.emit("stt", "ensure_model");
 
@@ -364,6 +364,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
         let language = options.language.clone();
         let timestamps = options.timestamps;
         let cancel = op.cancel.clone();
+        let deadline = op.deadline();
         let samples: Arc<[f32]> = Arc::clone(input.samples());
         let duration_secs = input.duration_secs();
         let cache_dir = self.cache_dir.clone();
@@ -379,7 +380,10 @@ impl TranscriptionProvider for LocalWhisperProvider {
         let result = tokio::task::spawn_blocking(move || {
             // Admission inside the worker so queue wait does not occupy a Tokio worker.
             let n_threads = gov.recommend_stt_threads();
-            let op_inner = OpContext::with_cancel(cancel.clone());
+            let mut op_inner = OpContext::with_cancel(cancel.clone());
+            if let Some(d) = deadline {
+                op_inner = op_inner.with_absolute_deadline(d);
+            }
             let _permit = gov.acquire_stt(n_threads, 0, Some(&op_inner))?;
             // Re-check after queue wait so late work does not start after cancel.
             op_inner.check()?;

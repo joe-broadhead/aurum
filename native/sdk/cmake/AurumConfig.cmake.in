@@ -1,5 +1,10 @@
-# Aurum native SDK CMake package (JOE-2225).
+# Aurum native SDK CMake package (JOE-2225 / v0.0.23 B).
 # Generated into each platform SDK archive as cmake/AurumConfig.cmake.
+#
+# Consumers:
+#   list(APPEND CMAKE_PREFIX_PATH "/path/to/aurum-sdk-...")
+#   include("${CMAKE_PREFIX_PATH}/cmake/AurumConfig.cmake")  # or find_package after install
+#   target_link_libraries(app PRIVATE Aurum::aurum_ffi)
 
 @PACKAGE_INIT@
 
@@ -16,11 +21,17 @@ if(NOT TARGET Aurum::aurum_ffi)
     IMPORTED_LOCATION "${AURUM_LIB_DIR}/@AURUM_STATIC_LIB@"
     INTERFACE_INCLUDE_DIRECTORIES "${AURUM_INCLUDE_DIR}"
   )
+  # System / runtime link deps required by the Rust staticlib.
   if(APPLE)
     target_link_libraries(Aurum::aurum_ffi INTERFACE
       "-framework Security" "-framework CoreFoundation"
       "-framework Metal" "-framework Foundation" "-framework Accelerate"
       pthread dl m c++)
+  elseif(WIN32)
+    # MSVC / Windows GNU: common Rust std + crypto + networking deps.
+    target_link_libraries(Aurum::aurum_ffi INTERFACE
+      ws2_32 userenv ntdll bcrypt advapi32 kernel32 shell32 ole32 uuid
+      synchronization ntdll)
   elseif(UNIX)
     target_link_libraries(Aurum::aurum_ffi INTERFACE pthread dl m stdc++)
   endif()

@@ -29,6 +29,11 @@ pub struct TranscriptionOptions {
     pub timestamps: bool,
     /// Optional cooperative cancel flag (honoured by local whisper decode).
     pub cancel: Option<crate::cancel::CancelFlag>,
+    /// Full operation context when supplied by the engine (deadline / progress /
+    /// request id). Providers must prefer this over synthesizing a fresh context
+    /// from [`Self::cancel`] alone so one parent deadline is shared across
+    /// long-form chunks (v0.0.23 A).
+    pub op: Option<crate::runtime::OpContext>,
 }
 
 impl Default for TranscriptionOptions {
@@ -38,6 +43,7 @@ impl Default for TranscriptionOptions {
             language: crate::config::DEFAULT_LANGUAGE.to_string(),
             timestamps: false,
             cancel: None,
+            op: None,
         }
     }
 }
@@ -46,6 +52,51 @@ impl TranscriptionOptions {
     pub fn with_cancel(mut self, flag: crate::cancel::CancelFlag) -> Self {
         self.cancel = Some(flag);
         self
+    }
+
+    pub fn with_op(mut self, op: crate::runtime::OpContext) -> Self {
+        self.cancel = Some(op.cancel.clone());
+        self.op = Some(op);
+        self
+    }
+
+    /// Resolve the operation context for this request.
+    ///
+    /// Prefer the engine-supplied [`Self::op`] (shared cancel + absolute deadline
+    /// + progress). Fall back to a fresh context from [`Self::cancel`].
+    pub fn resolve_op_context(&self) -> crate::runtime::OpContext {
+        if let Some(ref op) = self.op {
+            return op.clone();
+        }
+        crate::runtime::OpContext::from_optional_cancel(self.cancel.clone())
+    }
+}
+
+#[cfg(test)]
+mod op_context_tests {
+    use super::*;
+    use crate::runtime::OpContext;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn resolve_prefers_parent_deadline_over_cancel_only() {
+        let parent =
+            OpContext::new().with_absolute_deadline(Instant::now() + Duration::from_secs(30));
+        let opts = TranscriptionOptions {
+            op: Some(parent.clone()),
+            cancel: Some(parent.cancel.clone()),
+            ..Default::default()
+        };
+        let resolved = opts.resolve_op_context();
+        assert!(resolved.deadline().is_some());
+        assert_eq!(resolved.request_id, parent.request_id);
+    }
+
+    #[test]
+    fn resolve_falls_back_to_cancel_only() {
+        let opts = TranscriptionOptions::default();
+        let resolved = opts.resolve_op_context();
+        assert!(resolved.deadline().is_none());
     }
 }
 

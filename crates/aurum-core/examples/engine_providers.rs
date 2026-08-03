@@ -46,6 +46,7 @@ async fn main() -> aurum_core::Result<()> {
         language: "en".into(),
         timestamps: false,
         cancel: Some(cancel.clone()),
+        op: None,
     };
 
     let result = provider.transcribe(&audio, &opts).await?;

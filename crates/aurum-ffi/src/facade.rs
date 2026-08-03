@@ -499,6 +499,7 @@ impl Engine {
             language,
             timestamps: opts.timestamps,
             cancel: Some(cancel),
+            op: None,
         };
 
         // Synchronous block_on: no *extra* FFI-side buffer copy. Core still copies once

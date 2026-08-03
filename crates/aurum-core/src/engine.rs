@@ -383,7 +383,11 @@ impl AurumEngine {
             self.finish_guard(&mut guard, &e);
             return Err(e);
         }
-        let out = provider.transcribe(input, options).await;
+        // Inject the parent OpContext so remote/long-form paths share one deadline.
+        let mut options = options.clone();
+        options.op = Some(op.clone());
+        options.cancel = Some(op.cancel.clone());
+        let out = provider.transcribe(input, &options).await;
         match &out {
             Ok(_) => {
                 guard.finish(TerminalCategory::Completed, false);
@@ -431,19 +435,11 @@ impl AurumEngine {
         text: &str,
         options: &SynthesisOptions,
     ) -> Result<SynthesisResult> {
-        use crate::sdk::SynthesisRequest;
-        let mut op = OperationOptions::new();
-        if let Some(ref c) = options.cancel {
-            op = op.with_cancel(c.clone());
+        let mut options = options.clone();
+        if options.op.is_none() {
+            options.op = Some(OpContext::from_optional_cancel(options.cancel.clone()));
         }
-        let request = SynthesisRequest {
-            model: options.model.clone(),
-            voice: options.voice.clone(),
-            language: options.language.clone(),
-            speaking_rate: options.speaking_rate,
-            operation: op,
-        };
-        self.synthesize_request(text, request).await
+        self.run_tts(text, options).await
     }
 
     /// TTS via the typed request contract (JOE-2221 / v0.0.23 P1c).
@@ -455,7 +451,23 @@ impl AurumEngine {
     ) -> Result<SynthesisResult> {
         self.ensure_open()?;
         request.validate()?;
-        let (options, op) = request.into_options_and_context();
+        let (options, _op) = request.into_options_and_context();
+        self.run_tts(text, options).await
+    }
+
+    #[cfg(feature = "tts")]
+    async fn run_tts(&self, text: &str, mut options: SynthesisOptions) -> Result<SynthesisResult> {
+        self.ensure_open()?;
+        // Propagate engine local_only and ensure OpContext is present.
+        if self.config.as_ref().local_only {
+            options.local_only = true;
+        }
+        if options.op.is_none() {
+            options.op = Some(OpContext::from_optional_cancel(options.cancel.clone()));
+        }
+        let op = options.resolve_op_context();
+        options.op = Some(op.clone());
+        options.cancel = Some(op.cancel.clone());
         op.check()?;
 
         let id = self.tts_provider_id()?;
@@ -484,11 +496,6 @@ impl AurumEngine {
         if let Err(e) = op.check() {
             self.finish_guard(&mut guard, &e);
             return Err(e);
-        }
-        // Propagate local_only from engine config when request left defaults.
-        let mut options = options;
-        if self.config.as_ref().local_only {
-            options.local_only = true;
         }
         let out = provider.synthesize(text, &options).await;
         match &out {

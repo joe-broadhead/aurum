@@ -102,18 +102,13 @@ else
   fi
 fi
 
-# CMake + pkg-config (Unix)
-if [[ "$OS" != "windows" ]]; then
-  sed -e "s/@AURUM_VERSION@/${VERSION}/g" \
-      -e "s/@AURUM_ABI_VERSION@/2/g" \
-      -e "s/@AURUM_ABI_MIN_VERSION@/2/g" \
-      -e "s/@AURUM_STATIC_LIB@/${STATIC_LIB}/g" \
-      -e "s/@PACKAGE_INIT@//g" \
-      -e "s|\${PACKAGE_PREFIX_DIR}|${prefix:-REPLACE_ME}|g" \
-      native/sdk/cmake/AurumConfig.cmake.in > "${PREFIX}/cmake/AurumConfig.cmake.in"
-  # Portable imported target without configure_package_config_file.
-  cat > "${PREFIX}/cmake/AurumConfig.cmake" <<EOF
-# Aurum native SDK (JOE-2225) — path-relative to this file's ../../
+# CMake package for all Tier A platforms (includes system link deps — v0.0.23 B).
+cp native/sdk/cmake/AurumConfig.cmake.in "${PREFIX}/cmake/AurumConfig.cmake.in"
+cp native/sdk/examples/CMakeLists.txt "${PREFIX}/examples/CMakeLists.txt" 2>/dev/null || true
+# Portable imported target without configure_package_config_file.
+# Path-relative to this file's parent (SDK root).
+cat > "${PREFIX}/cmake/AurumConfig.cmake" <<EOF
+# Aurum native SDK (JOE-2225 / v0.0.23 B) — path-relative to this file's ..
 get_filename_component(AURUM_SDK_ROOT "\${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 set(AURUM_VERSION "${VERSION}")
 set(AURUM_ABI_VERSION 2)
@@ -126,11 +121,28 @@ if(NOT TARGET Aurum::aurum_ffi)
     IMPORTED_LOCATION "\${AURUM_LIB_DIR}/${STATIC_LIB}"
     INTERFACE_INCLUDE_DIRECTORIES "\${AURUM_INCLUDE_DIR}"
   )
+  if(APPLE)
+    target_link_libraries(Aurum::aurum_ffi INTERFACE
+      "-framework Security" "-framework CoreFoundation"
+      "-framework Metal" "-framework Foundation" "-framework Accelerate"
+      pthread dl m c++)
+  elseif(WIN32)
+    target_link_libraries(Aurum::aurum_ffi INTERFACE
+      ws2_32 userenv ntdll bcrypt advapi32 kernel32 shell32 ole32 uuid
+      synchronization)
+  elseif(UNIX)
+    target_link_libraries(Aurum::aurum_ffi INTERFACE pthread dl m stdc++)
+  endif()
 endif()
 EOF
-  LIBS_PRIVATE="-lpthread -ldl -lm"
-  [[ "$OS" == "macos" ]] && LIBS_PRIVATE="-lpthread -ldl -lm -lc++"
-  [[ "$OS" == "linux" ]] && LIBS_PRIVATE="-lpthread -ldl -lm -lstdc++"
+
+# pkg-config (Unix); Windows consumers use CMake / MSVC flags from BUILD.md
+if [[ "$OS" != "windows" ]]; then
+  if [[ "$OS" == "macos" ]]; then
+    LIBS_PRIVATE="-lpthread -ldl -lm -lc++ -framework Security -framework CoreFoundation -framework Metal -framework Foundation -framework Accelerate"
+  else
+    LIBS_PRIVATE="-lpthread -ldl -lm -lstdc++"
+  fi
   sed -e "s|@PREFIX@|/usr/local|g" \
       -e "s|@AURUM_VERSION@|${VERSION}|g" \
       -e "s|@LIBS_PRIVATE@|${LIBS_PRIVATE}|g" \
@@ -139,7 +151,7 @@ fi
 
 # Build instructions
 cat > "${PREFIX}/BUILD.md" <<EOF
-# Building examples from this SDK (JOE-2225)
+# Building examples from this SDK (JOE-2225 / v0.0.23 B)
 
 Version: ${VERSION}
 Triple: ${TRIPLE}
@@ -163,12 +175,32 @@ cc -std=c11 -I include examples/job_cleanup.c lib/${STATIC_LIB} \\
   -lpthread -ldl -lm -lstdc++ -o /tmp/aurum_job_cleanup
 \`\`\`
 
-C++17 RAII example: compile \`examples/engine_raii.cpp\` with \`c++ -std=c++17\` and the same libs.
+### Windows (MSVC, x64 Developer Command Prompt)
+\`\`\`bat
+cl /std:c11 /I include examples\\job_cleanup.c /link lib\\${STATIC_LIB} ^
+  ws2_32.lib userenv.lib ntdll.lib bcrypt.lib advapi32.lib shell32.lib ole32.lib uuid.lib ^
+  /OUT:aurum_job_cleanup.exe
+\`\`\`
+
+C++17 RAII example: compile \`examples/engine_raii.cpp\` with the same libs.
 
 ## CMake
+\`\`\`bash
+cmake -S examples -B /tmp/aurum-sdk-build -DAURUM_SDK_ROOT="\$PWD"
+cmake --build /tmp/aurum-sdk-build
+\`\`\`
+
+Or:
 \`\`\`cmake
-list(APPEND CMAKE_PREFIX_PATH "\${CMAKE_CURRENT_LIST_DIR}") # SDK root
-# or: include(\${SDK}/cmake/AurumConfig.cmake)
+include(\${SDK}/cmake/AurumConfig.cmake)
+target_link_libraries(app PRIVATE Aurum::aurum_ffi)
+\`\`\`
+
+## pkg-config (Unix)
+\`\`\`bash
+export PKG_CONFIG_PATH="\$PWD/pkg-config:\${PKG_CONFIG_PATH:-}"
+# aurum.pc uses prefix=/usr/local by default — override for local extract:
+#   pkg-config --define-variable=prefix=\$PWD --libs --cflags aurum
 \`\`\`
 
 ## Runtime

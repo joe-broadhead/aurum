@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "kind": "stt_e2e_wall",
+  "profile": "apple_silicon_metal",
+  "model": "tiny-q5_1",
+  "fixture": "tests/fixtures/sample.wav",
+  "host": "maintainer-profile-host",
+  "os": "macOS-26.6-arm64-arm-64bit",
+  "samples_ms": [
+    371.405,
+    407.465,
+    620.213
+  ],
+  "p50_ms": 407.465,
+  "p95_ms": 620.213,
+  "mean_ms": 466.361,
+  "warm": true,
+  "notes": "Operator Tier-A macOS arm64 smoke (JOE-2319 residual). 3 warm wall-clock samples on tiny-q5_1; not full concurrency matrix or 3-platform baseline.",
+  "evidence_version": "0.0.22-perf-v1"
+}

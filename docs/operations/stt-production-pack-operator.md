@@ -1,9 +1,11 @@
-# STT production pack — operator path (JOE-2231)
+# STT production pack — operator path (JOE-2231 / JOE-2318)
 
 The redistributable **core** corpus runs in CI. The **production** pack
 (≥60 minutes, multi-speaker, multi-accent, long-form) is assembled on an
 operator machine from **licensed open sources** documented in
 `evals/observatory/corpus.production.manifest.json`.
+
+Audio under `evals/observatory/cache/` is **gitignored** and not redistributed.
 
 ## Quick commands
 
@@ -16,21 +18,33 @@ operator machine from **licensed open sources** documented in
 ./scripts/eval/prepare_stt_observatory_corpus.sh \
   --dry-run-production --cache-dir /tmp/aurum-obs-cache
 
-# Operator machine — per slot
-./scripts/eval/prepare_stt_observatory_corpus.sh --slot librispeech_clean_subset
-# 1) download licensed sources for that slot only
-# 2) write cache/<slot>/SHA256SUMS
-# 3) assemble fixture rows into evals/observatory/cache/corpus.production.json
+# Operator machine — automated real fetch (JOE-2318)
+./scripts/eval/prepare_stt_observatory_corpus.sh --fetch-slot all-auto
+./scripts/eval/prepare_stt_observatory_corpus.sh --assemble-production
 ./scripts/eval/prepare_stt_observatory_corpus.sh --production
+
+# Score a capped real-speech subset (local model must be cached)
+./scripts/eval/prepare_stt_observatory_corpus.sh --score-subset \
+  --model tiny-q5_1 --profile apple_silicon_metal --max-fixtures 24
+
+# Per-slot recipe only (no download)
+./scripts/eval/prepare_stt_observatory_corpus.sh --slot librispeech_clean_subset
 ```
+
+Automated slots today: `librispeech_clean_subset` (OpenSLR-12 test-clean),
+`controls_silence_nonspeech`, `musan_noise_mix` (ffmpeg overlay; disk-friendly),
+`long_form_assemblies`, and best-effort `common_voice_accents` (requires
+`pip install datasets` + HF network). TED-LIUM and multilingual remain
+recipe-documented until automated fetch is added.
 
 ## Operator sequence
 
 1. `./scripts/eval/prepare_stt_observatory_corpus.sh --recipe-check`
-2. For each `asset_slot`: `--slot <id>` → fetch licensed audio → lockfile digests
-3. Assemble `evals/observatory/cache/corpus.production.json` (not committed if license forbids)
-4. `./scripts/eval/prepare_stt_observatory_corpus.sh --production`
-5. Run local model matrix; retain redacted reports under `evals/reports/stt/`
+2. `--fetch-slot all-auto` (or per-slot) → writes `cache/<slot>/` + digests
+3. `--assemble-production` → `cache/corpus.production.json`
+4. `--production` → enforce coverage minima (fail closed if incomplete)
+5. `--score-subset` and/or full local matrix; retain redacted reports under
+   `evals/reports/stt/`
 6. Link reviewed reports on the release evidence index (no private paths/payloads)
 
 ## Honesty rules

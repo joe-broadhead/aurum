@@ -50,7 +50,16 @@ Prepare the full production pack (operator machine; verifies digests):
 
 ```bash
 ./scripts/eval/prepare_stt_observatory_corpus.sh --help
+# Real licensed fetch (JOE-2318) — audio stays under cache/ (gitignored):
+./scripts/eval/prepare_stt_observatory_corpus.sh --fetch-slot all-auto
+./scripts/eval/prepare_stt_observatory_corpus.sh --assemble-production
+./scripts/eval/prepare_stt_observatory_corpus.sh --production
+./scripts/eval/prepare_stt_observatory_corpus.sh --score-subset --model tiny-q5_1
 ```
+
+Helper: `scripts/eval/fetch_production_slots.py`. Operator notes:
+`docs/operations/stt-production-pack-operator.md` and
+`docs/operations/product-proof-residuals.md`.
 
 ## Profile evidence
 

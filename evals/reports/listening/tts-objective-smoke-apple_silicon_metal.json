@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "kind": "tts_objective",
+  "hardware_profile": "apple_silicon_metal",
+  "host": "maintainer-profile-host",
+  "os": "macOS-26.6-arm64-arm-64bit",
+  "machine": "arm64",
+  "aurum_version": "0.0.23",
+  "commit": "fb49b27b0f41182c84591fca7d1f33857459928a",
+  "model": "kitten-nano-int8",
+  "notes": "Operator objective smoke (JOE-2317 residual). Not a 3-listener study. Full pack remains open.",
+  "samples": [
+    {
+      "file": "hello.wav",
+      "adapter": "kitten",
+      "ok": true,
+      "channels": 1,
+      "sample_rate": 24000,
+      "duration_ms": 3493.0,
+      "peak": 0.8198,
+      "silent": false,
+      "clipped": false,
+      "bytes": 167706
+    },
+    {
+      "file": "numbers.wav",
+      "adapter": "kitten",
+      "ok": true,
+      "channels": 1,
+      "sample_rate": 24000,
+      "duration_ms": 3763.7,
+      "peak": 0.6116,
+      "silent": false,
+      "clipped": false,
+      "bytes": 180702
+    }
+  ],
+  "all_passed": true
+}

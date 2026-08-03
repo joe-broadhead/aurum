@@ -659,8 +659,10 @@ mod tests {
 
     #[test]
     fn min_silence_zero_rejected() {
-        let mut p = LongFormPolicy::default();
-        p.min_silence_secs = 0.0;
+        let p = LongFormPolicy {
+            min_silence_secs: 0.0,
+            ..Default::default()
+        };
         assert!(p.validate().is_err());
     }
 

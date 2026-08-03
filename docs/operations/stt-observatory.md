@@ -22,6 +22,8 @@ consume this observatory.
 | Retained real-model reports | `evals/reports/stt/` |
 | Compare tool | `scripts/eval/compare_stt_budget.py` |
 | Prepare / validate | `scripts/eval/prepare_stt_observatory_corpus.sh` |
+| Real slot fetch / assemble / subset score | `scripts/eval/fetch_production_slots.py` (via prepare script) |
+| Product-proof residual tracker | `docs/operations/product-proof-residuals.md` |
 
 The redistributable **core** is synthetic/control text and in-repo silence/tone
 audio. It is sufficient for schema, scorecard, and budget **negative tests**.

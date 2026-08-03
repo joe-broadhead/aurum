@@ -20,3 +20,7 @@ release-assets/
 release-notes.md
 # Operator scratch under evals/reports/_local/ stays untracked
 evals/reports/_local/
+
+# Operator-fetched production STT audio (licensed; not redistributed)
+evals/observatory/cache/
+__pycache__/

@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Prepare / validate the STT quality observatory corpus (JOE-2216 / JOE-2231).
+# Prepare / validate the STT quality observatory corpus (JOE-2216 / JOE-2231 / JOE-2318).
 #
 # - Default: validate the redistributable core only (safe for CI / clean checkout).
 # - --production: require a previously fetched production pack under
 #   evals/observatory/cache/ and enforce coverage minima.
 # - --slot NAME: document the fetch recipe for a production asset slot.
+# - --fetch-slot NAME: actually download/assemble a slot (operator; uses Python helper).
+# - --assemble-production: merge slot fixtures → cache/corpus.production.json
+# - --score-subset: score a capped production subset with local aurum (real WER path)
 # - --recipe-check: CI-safe integrity of production manifest recipes (no audio).
 # - --dry-run-production: write a synthetic pack that meets minima to prove the
 #   coverage checker (NOT real speech quality evidence).
@@ -17,19 +20,31 @@ ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CORE="${ROOT}/evals/observatory/corpus.core.json"
 PROD_MANIFEST="${ROOT}/evals/observatory/corpus.production.manifest.json"
 CACHE_DIR="${ROOT}/evals/observatory/cache"
+FETCH_PY="${ROOT}/scripts/eval/fetch_production_slots.py"
 MODE="core"
 SLOT=""
+SCORE_MODEL="tiny-q5_1"
+SCORE_PROFILE="apple_silicon_metal"
+SCORE_MAX=24
+AURUM_BIN="${AURUM_BIN:-aurum}"
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--core|--production|--slot NAME|--recipe-check|--dry-run-production] [--cache-dir DIR]
+Usage: $(basename "$0") [MODE] [--cache-dir DIR]
 
-  --core               Validate redistributable core corpus (default)
-  --production         Validate production pack presence + coverage (operator machine)
-  --slot NAME          Print fetch recipe for a production asset slot
-  --recipe-check       CI-safe: every asset slot has fetch/license/min_duration (JOE-2231)
-  --dry-run-production Generate synthetic pack under cache/ that satisfies minima (not real speech)
-  --cache-dir D        Override cache directory (default: evals/observatory/cache)
+  --core                 Validate redistributable core corpus (default)
+  --production           Validate production pack presence + coverage (operator machine)
+  --slot NAME            Print fetch recipe for a production asset slot
+  --fetch-slot NAME      Download/assemble a real slot (or "all-auto")
+  --assemble-production  Merge slot fixtures into cache/corpus.production.json
+  --score-subset         Run local STT on a capped production subset (real speech)
+  --recipe-check         CI-safe: every asset slot has fetch/license/min_duration
+  --dry-run-production   Generate synthetic pack under cache/ (NOT real speech evidence)
+  --cache-dir D          Override cache directory (default: evals/observatory/cache)
+  --model NAME           Model for --score-subset (default: tiny-q5_1)
+  --profile NAME         Hardware profile label for --score-subset
+  --max-fixtures N       Cap for --score-subset (default: 24)
+  --aurum PATH           aurum binary for --score-subset
 EOF
 }
 
@@ -38,9 +53,16 @@ while [[ $# -gt 0 ]]; do
     --core) MODE="core"; shift ;;
     --production) MODE="production"; shift ;;
     --slot) SLOT="$2"; MODE="slot"; shift 2 ;;
+    --fetch-slot) SLOT="$2"; MODE="fetch-slot"; shift 2 ;;
+    --assemble-production) MODE="assemble-production"; shift ;;
+    --score-subset) MODE="score-subset"; shift ;;
     --recipe-check) MODE="recipe-check"; shift ;;
     --dry-run-production) MODE="dry-run-production"; shift ;;
     --cache-dir) CACHE_DIR="$2"; shift 2 ;;
+    --model) SCORE_MODEL="$2"; shift 2 ;;
+    --profile) SCORE_PROFILE="$2"; shift 2 ;;
+    --max-fixtures) SCORE_MAX="$2"; shift 2 ;;
+    --aurum) AURUM_BIN="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown: $1" >&2; usage; exit 2 ;;
   esac
@@ -255,10 +277,39 @@ PY
   check_production
 }
 
+fetch_slot() {
+  need_file "$FETCH_PY"
+  if [[ -z "$SLOT" ]]; then
+    echo "--fetch-slot requires a slot name or all-auto" >&2
+    exit 2
+  fi
+  mkdir -p "$CACHE_DIR"
+  python3 "$FETCH_PY" --cache-dir "$CACHE_DIR" --repo-root "$ROOT" fetch "$SLOT"
+}
+
+assemble_production() {
+  need_file "$FETCH_PY"
+  mkdir -p "$CACHE_DIR"
+  python3 "$FETCH_PY" --cache-dir "$CACHE_DIR" --repo-root "$ROOT" assemble
+}
+
+score_subset() {
+  need_file "$FETCH_PY"
+  python3 "$FETCH_PY" --cache-dir "$CACHE_DIR" --repo-root "$ROOT" score-subset \
+    --model "$SCORE_MODEL" \
+    --profile "$SCORE_PROFILE" \
+    --max-fixtures "$SCORE_MAX" \
+    --aurum "$AURUM_BIN" \
+    --out-dir "${ROOT}/evals/reports/stt"
+}
+
 case "$MODE" in
   core) validate_core_json ;;
   production) check_production ;;
   slot) print_slot_recipe ;;
+  fetch-slot) fetch_slot ;;
+  assemble-production) assemble_production ;;
+  score-subset) score_subset ;;
   recipe-check) recipe_check ;;
   dry-run-production) dry_run_production ;;
   *) echo "bad mode" >&2; exit 2 ;;

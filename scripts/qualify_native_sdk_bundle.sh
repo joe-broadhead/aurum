@@ -32,9 +32,14 @@ trap 'rm -rf "$WORKDIR"' EXIT
 
 if [[ -n "$ARCHIVE" ]]; then
   # Resolve archive to absolute path for mixed bash/Python environments.
-  if [[ "${ARCHIVE}" != /* && ! "${ARCHIVE}" =~ ^[A-Za-z]:[\\/] ]]; then
+  if [[ ! -f "$ARCHIVE" && -f "${ROOT}/${ARCHIVE}" ]]; then
     ARCHIVE="${ROOT}/${ARCHIVE}"
   fi
+  if [[ ! -f "$ARCHIVE" ]]; then
+    echo "archive not found: $ARCHIVE" >&2
+    exit 1
+  fi
+  ARCHIVE="$(cd "$(dirname "$ARCHIVE")" && pwd -P 2>/dev/null || pwd)/$(basename "$ARCHIVE")"
   tar -xzf "$ARCHIVE" -C "$WORKDIR"
   # Expect single top-level dir
   DIR="$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -1)"

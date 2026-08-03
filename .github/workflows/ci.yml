@@ -596,6 +596,33 @@ jobs:
           chmod +x scripts/run_sanitizers.sh
           ./scripts/run_sanitizers.sh --asan
 
+  # UBSan pure filters on Linux nightly (JOE-2228).
+  ubsan-pure:
+    name: ubsan (pure filters)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: nightly
+          components: rust-src
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-ubsan
+      - name: UBSan pure filters
+        run: |
+          set -euo pipefail
+          chmod +x scripts/run_sanitizers.sh
+          # Stress already covered by sanitizer-stress; pure UBSan only here.
+          ./scripts/run_sanitizers.sh --ubsan
+
   # Module-scoped trust coverage report (JOE-1888).
   coverage-trust:
     name: coverage (trust modules)

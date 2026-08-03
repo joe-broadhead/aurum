@@ -255,58 +255,6 @@ PY
   check_production
 }
 
-write_operator_report() {
-  local out="${1:-${ROOT}/dist/observatory-operator/OPERATOR_REPORT.md}"
-  mkdir -p "$(dirname "$out")"
-  OUT_PATH="$out" PROD_PATH="$PROD_MANIFEST" ROOT_PATH="$ROOT" python3 - <<'PY'
-import json, os, datetime
-from pathlib import Path
-manifest = json.loads(Path(os.environ["PROD_PATH"]).read_text())
-slots = manifest.get("asset_slots") or []
-targets = manifest.get("coverage_targets") or {}
-lines = []
-lines.append("# STT production pack operator report (JOE-2231)")
-lines.append("")
-lines.append(f"- **generated_at_utc:** {datetime.datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')}")
-lines.append(f"- **manifest:** evals/observatory/corpus.production.manifest.json")
-lines.append(f"- **corpus_name:** {manifest.get('name')}")
-lines.append("")
-lines.append("## Coverage targets")
-lines.append("")
-for k, v in targets.items():
-    lines.append(f"- `{k}`: {v}")
-lines.append("")
-lines.append("## Asset slots")
-lines.append("")
-for s in slots:
-    lines.append(f"### {s.get('slot_id')}")
-    lines.append(f"- role: {s.get('role')}")
-    lines.append(f"- license: {s.get('license_family')}")
-    lines.append(f"- fetch: `{s.get('fetch')}`")
-    lines.append(f"- min_duration_secs: {s.get('min_duration_secs')}")
-    if s.get("use_restrictions"):
-        lines.append(f"- restrictions: {s['use_restrictions']}")
-    lines.append("")
-lines.append("## Operator sequence")
-lines.append("")
-lines.append("1. `./scripts/eval/prepare_stt_observatory_corpus.sh --recipe-check`")
-lines.append("2. For each slot: `--slot <id>` → fetch licensed audio → `cache/<slot>/SHA256SUMS`")
-lines.append("3. Assemble `evals/observatory/cache/corpus.production.json`")
-lines.append("4. `./scripts/eval/prepare_stt_observatory_corpus.sh --production`")
-lines.append("5. Run local model matrix; retain reports under `evals/reports/stt/`")
-lines.append("6. Link reviewed reports on the release evidence index (no private paths/payloads)")
-lines.append("")
-lines.append("## Honesty")
-lines.append("")
-lines.append("- Do **not** commit private Plaud/user audio.")
-lines.append("- `--dry-run-production` proves the coverage checker only; it is **not** product WER evidence.")
-lines.append("- CI continues to use `--core` only.")
-lines.append("")
-Path(os.environ["OUT_PATH"]).write_text("\n".join(lines) + "\n")
-print(f"wrote {os.environ['OUT_PATH']}")
-PY
-}
-
 case "$MODE" in
   core) validate_core_json ;;
   production) check_production ;;

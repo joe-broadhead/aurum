@@ -817,6 +817,7 @@ async fn run_tts_synth(cli: TtsArgs) -> Result<()> {
         speaking_rate,
         timeout_ms,
         cancel: None,
+        op: None,
         local_only: cli.local_only || pack_dir.is_some(),
         pack_dir,
         allow_unverified,

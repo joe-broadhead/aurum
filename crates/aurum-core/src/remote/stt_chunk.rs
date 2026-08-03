@@ -408,13 +408,37 @@ where
         "remote STT boundary-aware chunk-and-stitch (JOE-2219)"
     );
 
+    // One parent OpContext for the whole long-form job (deadline + cancel + progress).
+    let parent_op = options.resolve_op_context();
+    parent_op.check()?;
+    parent_op.emit(
+        "stt",
+        format!(
+            "long_form_start chunks={} target_secs={:.1}",
+            planned.len(),
+            policy.target_secs
+        ),
+    );
+
     let mut parts: Vec<(f64, f64, TranscriptionResult)> = Vec::with_capacity(planned.len());
     for (i, planned_w) in planned.iter().enumerate() {
-        if let Some(flag) = options.cancel.as_ref() {
-            if flag.is_cancelled() {
-                return Err(ProviderError::Cancelled.into());
+        // Absolute deadline / cancel from the parent operation (not only cancel).
+        parent_op.check().map_err(|e| match e {
+            crate::error::TranscriptionError::Provider(ProviderError::Cancelled) => {
+                ProviderError::Cancelled.into()
             }
-        }
+            other => other,
+        })?;
+        parent_op.emit(
+            "stt",
+            format!(
+                "chunk {}/{} offset_secs={:.1} boundary={:?}",
+                i + 1,
+                planned.len(),
+                planned_w.window.offset_secs,
+                planned_w.kind
+            ),
+        );
         let window = planned_w.window;
         let chunk_input = slice_audio_window(input, window)?;
         tracing::debug!(
@@ -426,7 +450,12 @@ where
             boundary = ?planned_w.kind,
             "remote STT chunk"
         );
-        let result = one_shot(chunk_input, options.clone())
+        // Propagate the same OpContext into each chunk so one-shot paths share
+        // the parent deadline rather than minting a cancel-only context.
+        let mut chunk_opts = options.clone();
+        chunk_opts.op = Some(parent_op.clone());
+        chunk_opts.cancel = Some(parent_op.cancel.clone());
+        let result = one_shot(chunk_input, chunk_opts)
             .await
             .map_err(|e| match e {
                 crate::error::TranscriptionError::Provider(
@@ -628,6 +657,7 @@ mod tests {
             language: "en".into(),
             timestamps: false,
             cancel: None,
+            op: None,
         };
         let mut calls = 0u32;
         let out = transcribe_maybe_chunked(&input, &opts, "t", 210.0, |inp, _| {
@@ -661,6 +691,7 @@ mod tests {
             language: "en".into(),
             timestamps: false,
             cancel: None,
+            op: None,
         };
         let mut calls = 0u32;
         let out = transcribe_maybe_chunked(&input, &opts, "t", 210.0, |inp, _| {
@@ -699,6 +730,7 @@ mod tests {
             language: "en".into(),
             timestamps: false,
             cancel: Some(flag),
+            op: None,
         };
         let err = transcribe_maybe_chunked(&input, &opts, "t", 210.0, |_inp, _| async {
             unreachable!("should cancel before first shot")

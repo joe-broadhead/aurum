@@ -368,6 +368,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
                 language: cfg.language.clone(),
                 timestamps: want_timestamps,
                 cancel: None,
+                op: None,
             };
             let mut result = provider.transcribe(&audio, &options).await?;
 

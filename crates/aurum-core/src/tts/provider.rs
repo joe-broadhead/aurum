@@ -49,6 +49,9 @@ pub struct SynthesisOptions {
     pub timeout_ms: u64,
     /// Optional cooperative cancel flag.
     pub cancel: Option<crate::cancel::CancelFlag>,
+    /// Full operation context when supplied by the engine (deadline / progress /
+    /// request id). Preferred over synthesizing from [`Self::cancel`] alone.
+    pub op: Option<crate::runtime::OpContext>,
     /// When true, never hit the network for missing voice packs.
     pub local_only: bool,
     /// Optional local model-pack directory (JOE-1619). When set, loads artifacts
@@ -69,10 +72,40 @@ impl Default for SynthesisOptions {
             speaking_rate: 1.0,
             timeout_ms: crate::tts::DEFAULT_TIMEOUT_MS,
             cancel: None,
+            op: None,
             local_only: false,
             pack_dir: None,
             allow_unverified: false,
         }
+    }
+}
+
+impl SynthesisOptions {
+    /// Resolve operation context, tightening with [`Self::timeout_ms`].
+    ///
+    /// When `timeout_ms == 0`, the engine default timeout is applied (same
+    /// contract as local TTS). An engine-supplied absolute deadline that is
+    /// sooner than the timeout wins.
+    pub fn resolve_op_context(&self) -> crate::runtime::OpContext {
+        use std::time::{Duration, Instant};
+        let mut op = if let Some(ref op) = self.op {
+            op.clone()
+        } else {
+            crate::runtime::OpContext::from_optional_cancel(self.cancel.clone())
+        };
+        let timeout_ms = if self.timeout_ms == 0 {
+            crate::tts::DEFAULT_TIMEOUT_MS
+        } else {
+            self.timeout_ms
+        };
+        let from_timeout = Instant::now() + Duration::from_millis(timeout_ms);
+        match op.deadline() {
+            Some(existing) if existing <= from_timeout => {}
+            _ => {
+                op = op.with_absolute_deadline(from_timeout);
+            }
+        }
+        op
     }
 }
 

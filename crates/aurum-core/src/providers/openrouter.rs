@@ -207,7 +207,7 @@ impl OpenRouterProvider {
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
-        let op = crate::runtime::OpContext::from_optional_cancel(options.cancel.clone());
+        let op = options.resolve_op_context();
         op.check()?;
         op.emit("stt", "admit");
         let _permit = self.governor.acquire(PermitKind::Remote, Some(&op))?;
@@ -801,6 +801,7 @@ mod tests {
             language: "en".into(),
             timestamps: false,
             cancel: None,
+            op: None,
         };
         let result = provider.transcribe(&input, &opts).await.unwrap();
         assert_eq!(result.text(), "Hello from the cloud.");
@@ -842,6 +843,7 @@ mod tests {
             language: "en".into(),
             timestamps: false,
             cancel: None,
+            op: None,
         };
         let result = provider.transcribe(&input, &opts).await.unwrap();
         assert_eq!(result.text(), "Dedicated ASR path works.");
@@ -878,6 +880,7 @@ mod tests {
             language: "auto".into(),
             timestamps: false,
             cancel: None,
+            op: None,
         };
         let err = provider.transcribe(&input, &opts).await.unwrap_err();
         match err {

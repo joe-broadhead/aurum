@@ -10,13 +10,12 @@ use crate::remote::{
     ExpectedWireFormat, HardenedHttpClient, OpenAiSpeechRequest, RemoteBodyLimits, RemotePolicy,
     SpeechResponseFormat,
 };
-use crate::runtime::{OpContext, PermitKind, ResourceGovernor};
+use crate::runtime::{PermitKind, ResourceGovernor};
 use crate::secret::SecretString;
 use crate::tts::provider::{BackendKind, SynthesisOptions, SynthesisProvider, SynthesisResult};
 use crate::tts::validate::{clamp_speaking_rate, SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
 use async_trait::async_trait;
 use std::sync::Arc;
-use std::time::Duration;
 
 const PROVIDER_NAME: &str = "openrouter";
 
@@ -295,10 +294,7 @@ impl SynthesisProvider for OpenRouterTtsProvider {
             }
             .into());
         }
-
-        let timeout = Duration::from_millis(opts.timeout_ms.max(1));
-        let op =
-            OpContext::from_optional_cancel(opts.cancel.clone()).with_deadline_from_now(timeout);
+        let op = opts.resolve_op_context();
         op.check()?;
         op.emit("tts", "admit");
         let _permit = self.governor.acquire(PermitKind::Remote, Some(&op))?;
@@ -469,6 +465,7 @@ mod tests {
                     speaking_rate: 1.0,
                     timeout_ms: 30_000,
                     cancel: None,
+                    op: None,
                     local_only: false,
                     pack_dir: None,
                     allow_unverified: false,
@@ -506,6 +503,7 @@ mod tests {
                     speaking_rate: 1.0,
                     timeout_ms: 5_000,
                     cancel: None,
+                    op: None,
                     local_only: true,
                     pack_dir: None,
                     allow_unverified: false,

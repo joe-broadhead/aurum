@@ -23,6 +23,7 @@ async fn main() -> aurum_core::Result<()> {
                 language: "auto".into(),
                 timestamps: false,
                 cancel: None,
+                op: None,
             },
         )
         .await?;

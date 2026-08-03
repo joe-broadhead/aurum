@@ -157,7 +157,7 @@ impl XaiSttProvider {
                 ),
             })?;
 
-        let op = crate::runtime::OpContext::from_optional_cancel(options.cancel.clone());
+        let op = options.resolve_op_context();
         op.check()?;
         op.emit("stt", "admit");
         let _permit = self.governor.acquire(PermitKind::Remote, Some(&op))?;
@@ -397,6 +397,7 @@ mod tests {
                     language: "en".into(),
                     timestamps: true,
                     cancel: None,
+                    op: None,
                 },
             )
             .await

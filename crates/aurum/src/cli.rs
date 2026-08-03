@@ -1094,6 +1094,7 @@ async fn run_transcribe(cli: TranscribeArgs) -> Result<()> {
         language: cfg.language.clone(),
         timestamps: want_timestamps,
         cancel: None,
+        op: None,
     };
 
     if cli.verbose {

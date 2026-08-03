@@ -19,6 +19,7 @@ async fn cancel_before_decode_errors() {
         language: "en".into(),
         timestamps: false,
         cancel: Some(flag),
+        op: None,
     };
     let err = provider.transcribe_pcm(&samples, &opts).await.unwrap_err();
     assert!(

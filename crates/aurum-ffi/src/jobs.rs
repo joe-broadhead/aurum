@@ -503,6 +503,7 @@ impl JobController {
                 language,
                 timestamps: opts.timestamps,
                 cancel: Some(cancel),
+                op: None,
             };
             let res = provider.transcribe_pcm(&samples, &options).await;
             match res {

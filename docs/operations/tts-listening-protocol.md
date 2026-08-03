@@ -101,9 +101,36 @@ See `evals/observatory/tts-default-decision.md`.
 * Private provider voice IDs: hashed or reviewed aliases in public reports.
 * No listener name, email, or personal device identifier.
 
+## Operator automation (JOE-2319)
+
+```bash
+# Full objective matrix (Kitten default + male + female minimum)
+python3 scripts/eval/run_tts_objective_matrix.py \
+  --models kitten-nano-int8:Luna,kitten-nano-int8:Jasper,kitten-nano-int8:Bella \
+  --local-only
+
+# Prepare blinded listening session (≥20 fixtures × N systems)
+python3 scripts/eval/prepare_tts_listening_session.py prepare \
+  --pairs kitten-nano-int8:Luna,kitten-nano-int8:Jasper \
+  --min-fixtures 20
+
+# After 3 listeners fill ratings.jsonl / worksheets:
+python3 scripts/eval/prepare_tts_listening_session.py aggregate \
+  --session-dir evals/reports/_local/tts_listening_sessions/<session_id> \
+  --ratings path/to/ratings.jsonl
+```
+
+Session audio and `reveal.json` stay under `evals/reports/_local/` (gitignored).
+Retained public artifacts are aggregate JSON only (no listener PII, no raw text
+required in public reports).
+
+**Honesty:** objective `all_passed` alone does not close the three-listener study.
+`listener_count < 3` fails support-tier promotion via `evaluate_support_tier`.
+
 ## Related
 
 * `docs/guide/tts.md`
 * `docs/operations/listening-scorecard.md` (historical pilot form)
+* `docs/operations/product-proof-residuals.md`
 * `evals/reports/listening/`
 * JOE-2218 performance budgets for synthesis RTF

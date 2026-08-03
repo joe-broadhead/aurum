@@ -883,10 +883,111 @@ pub fn sha256_file_full(path: &Path) -> Result<(String, u64)> {
     Ok((hex::encode(hasher.finalize()), total))
 }
 
+/// Process-owned copy of a batch source: the digest is of the snapshot bytes,
+/// and decode must load **this** path (JOE-2316).
+///
+/// Dropping the snapshot deletes the temporary directory.
+#[derive(Debug)]
+pub struct SourceSnapshot {
+    path: PathBuf,
+    digest: String,
+    size: u64,
+    _dir: tempfile::TempDir,
+}
+
+impl SourceSnapshot {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+
+    pub fn size(&self) -> u64 {
+        self.size
+    }
+}
+
+/// Copy `src` into a process-owned temporary file while computing SHA-256.
+///
+/// The snapshot is exclusive (`create_new`) under a private temp directory.
+/// Concurrent mutation of `src` after the copy starts cannot change the bytes
+/// that will be hashed and later decoded from the snapshot path.
+pub fn materialize_source_snapshot(src: &Path) -> Result<SourceSnapshot> {
+    let meta = fs::symlink_metadata(src).map_err(|e| UserError::Other {
+        message: format!("stat {}: {e}", src.display()),
+    })?;
+    if meta.file_type().is_symlink() {
+        return Err(UserError::Other {
+            message: format!("{} is a symlink (rejected)", src.display()),
+        }
+        .into());
+    }
+    if !meta.is_file() {
+        return Err(UserError::Other {
+            message: format!("{} is not a regular file", src.display()),
+        }
+        .into());
+    }
+
+    let dir = tempfile::Builder::new()
+        .prefix("aurum-batch-src-")
+        .tempdir()
+        .map_err(|e| UserError::Other {
+            message: format!("create batch source snapshot dir: {e}"),
+        })?;
+    let dest = dir.path().join(
+        src.file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("source.bin"),
+    );
+
+    let mut input = File::open(src).map_err(|e| UserError::Other {
+        message: format!("open {}: {e}", src.display()),
+    })?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&dest)
+        .map_err(|e| UserError::Other {
+            message: format!("create snapshot {}: {e}", dest.display()),
+        })?;
+
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 1024 * 64];
+    let mut total = 0u64;
+    loop {
+        let n = input.read(&mut buf).map_err(|e| UserError::Other {
+            message: format!("read {}: {e}", src.display()),
+        })?;
+        if n == 0 {
+            break;
+        }
+        output.write_all(&buf[..n]).map_err(|e| UserError::Other {
+            message: format!("write snapshot {}: {e}", dest.display()),
+        })?;
+        hasher.update(&buf[..n]);
+        total += n as u64;
+    }
+    output.sync_all().map_err(|e| UserError::Other {
+        message: format!("sync snapshot {}: {e}", dest.display()),
+    })?;
+
+    Ok(SourceSnapshot {
+        path: dest,
+        digest: hex::encode(hasher.finalize()),
+        size: total,
+        _dir: dir,
+    })
+}
+
 /// Re-hash `path` and require an exact match with a previously captured identity.
 ///
 /// Used after decode so a batch transcript is only accepted when the on-disk
 /// source still matches the digest recorded before `load_audio` (v0.0.23 P1a).
+/// Prefer loading from a [`SourceSnapshot`] so hash and decode share the same
+/// process-owned bytes (JOE-2316).
 pub fn verify_source_identity(
     path: &Path,
     expected_digest: &str,
@@ -1148,6 +1249,24 @@ mod tests {
         verify_source_identity(&path, &d, s).unwrap();
         fs::write(&path, b"tampered-audio-bytes").unwrap();
         assert!(verify_source_identity(&path, &d, s).is_err());
+    }
+
+    #[test]
+    fn materialize_source_snapshot_is_stable_if_original_changes() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("live.bin");
+        fs::write(&path, b"original-bytes-for-batch").unwrap();
+        let snap = materialize_source_snapshot(&path).unwrap();
+        let (live_before, _) = sha256_file_full(&path).unwrap();
+        assert_eq!(snap.digest(), live_before);
+        // Mutate the original path after snapshot — snapshot identity stays fixed.
+        fs::write(&path, b"mutated-after-snapshot!!!!").unwrap();
+        let (live_after, _) = sha256_file_full(&path).unwrap();
+        assert_ne!(snap.digest(), live_after);
+        verify_source_identity(snap.path(), snap.digest(), snap.size()).unwrap();
+        let (snap_again, sz) = sha256_file_full(snap.path()).unwrap();
+        assert_eq!(snap_again, snap.digest());
+        assert_eq!(sz, snap.size());
     }
 
     #[test]

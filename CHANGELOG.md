@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Batch source snapshot (JOE-2316):** batch materializes a process-owned copy
+  of each source while hashing; decode loads the snapshot so concurrent
+  mutation of the original path cannot change the bytes that are transcribed.
+
 ## [0.0.23] - 2026-08-03
 
 Correctness and integration patch after the independent v0.0.22 audit. Continuous

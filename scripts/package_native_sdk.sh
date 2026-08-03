@@ -12,15 +12,20 @@ cd "$ROOT"
 
 FEATURES="none"
 OUT_DIR="${ROOT}/dist/native-sdk"
+abs_path() {
+  # Make absolute on Unix and Windows Git-Bash (avoid /tmp Python path issues).
+  local p="$1"
+  if [[ "${p}" = /* || "${p}" =~ ^[A-Za-z]:[\\/] ]]; then
+    printf '%s\n' "${p}"
+  else
+    printf '%s\n' "${ROOT}/${p}"
+  fi
+}
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --features) FEATURES="$2"; shift 2 ;;
     --out-dir)
-      OUT_DIR="$2"
-      # Always absolute so the staging subshell can still write the archive.
-      if [[ "${OUT_DIR}" != /* ]]; then
-        OUT_DIR="${ROOT}/${OUT_DIR}"
-      fi
+      OUT_DIR="$(abs_path "$2")"
       shift 2
       ;;
     -h|--help)
@@ -49,7 +54,11 @@ fi
 echo "== build aurum-ffi release ($BUILD_FEATURES) =="
 cargo build -p aurum-ffi --release --locked "${CARGO_FEATURES[@]}"
 
-STAGE="$(mktemp -d "${TMPDIR:-/tmp}/aurum-sdk-XXXXXX")"
+# Stage under the repo (not /tmp): Windows GHA bash + system Python mishandle /tmp paths.
+mkdir -p "${ROOT}/dist"
+STAGE="$(mktemp -d "${ROOT}/dist/.sdk-stage-XXXXXX")"
+# Resolve to a real absolute path for both bash and Python.
+STAGE="$(cd "${STAGE}" && pwd -P 2>/dev/null || pwd)"
 trap 'rm -rf "$STAGE"' EXIT
 PREFIX="${STAGE}/aurum-sdk-${VERSION}-${TRIPLE}"
 mkdir -p "${PREFIX}/include" "${PREFIX}/lib" "${PREFIX}/cmake" "${PREFIX}/pkg-config" \
@@ -65,14 +74,23 @@ cp crates/aurum-ffi/README.md "${PREFIX}/share/doc/README-ffi.md"
 STATIC_LIB="libaurum_ffi.a"
 if [[ "$OS" == "windows" ]]; then
   STATIC_LIB="aurum_ffi.lib"
-  if [[ -f target/release/aurum_ffi.lib ]]; then
-    cp target/release/aurum_ffi.lib "${PREFIX}/lib/"
-  fi
-  if [[ -f target/release/aurum_ffi.dll ]]; then
-    cp target/release/aurum_ffi.dll "${PREFIX}/lib/"
-  fi
-  if [[ -f target/release/aurum_ffi.dll.lib ]]; then
-    cp target/release/aurum_ffi.dll.lib "${PREFIX}/lib/"
+  # MSVC may place import/static libs under target/release or with deps.
+  shopt -s nullglob
+  for f in \
+    target/release/aurum_ffi.lib \
+    target/release/aurum_ffi.dll \
+    target/release/aurum_ffi.dll.lib \
+    target/release/deps/aurum_ffi*.lib \
+    target/release/deps/aurum_ffi*.dll
+  do
+    [[ -f "$f" ]] || continue
+    cp "$f" "${PREFIX}/lib/"
+  done
+  shopt -u nullglob
+  if ! ls "${PREFIX}/lib"/*.{lib,dll} >/dev/null 2>&1; then
+    echo "Windows package: no aurum_ffi .lib/.dll found under target/release" >&2
+    ls -la target/release 2>/dev/null | head -40 || true
+    exit 1
   fi
 else
   cp "target/release/${STATIC_LIB}" "${PREFIX}/lib/"
@@ -160,24 +178,27 @@ list(APPEND CMAKE_PREFIX_PATH "\${CMAKE_CURRENT_LIST_DIR}") # SDK root
 - Do not place untrusted directories on the dynamic-library search path.
 EOF
 
-# SDK manifest (deterministic field order via python)
-python3 - <<PY
+# SDK manifest (deterministic field order via python; env paths for Windows).
+PREFIX_ENV="${PREFIX}" VERSION_ENV="${VERSION}" TRIPLE_ENV="${TRIPLE}" \
+BUILD_FEATURES_ENV="${BUILD_FEATURES}" \
+python3 - <<'PY'
 import hashlib, json, os, platform
 from pathlib import Path
-prefix = Path(r"""${PREFIX}""")
+prefix = Path(os.environ["PREFIX_ENV"]).resolve()
+assert prefix.is_dir(), prefix
 files = {}
 for p in sorted(prefix.rglob("*")):
     if p.is_file():
-        rel = str(p.relative_to(prefix)).replace("\\\\", "/")
+        rel = p.relative_to(prefix).as_posix()
         h = hashlib.sha256(p.read_bytes()).hexdigest()
         files[rel] = {"sha256": h, "size": p.stat().st_size}
 manifest = {
     "schema_version": 1,
-    "aurum_version": "${VERSION}",
-    "target_triple": "${TRIPLE}",
+    "aurum_version": os.environ["VERSION_ENV"],
+    "target_triple": os.environ["TRIPLE_ENV"],
     "abi_version": 2,
     "abi_min_version": 2,
-    "build_features": "${BUILD_FEATURES}",
+    "build_features": os.environ["BUILD_FEATURES_ENV"],
     "remote_via_c_abi": False,
     "host": {
         "os": platform.system(),
@@ -190,8 +211,10 @@ manifest = {
         "Remote providers unsupported through C ABI",
     ],
 }
-(prefix / "SDK_MANIFEST.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\\n")
-print("manifest files:", len(files))
+(prefix / "SDK_MANIFEST.json").write_text(
+    json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+)
+print("manifest files:", len(files), "at", prefix)
 PY
 
 # Symbol allowlist copy

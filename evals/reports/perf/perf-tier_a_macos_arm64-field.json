@@ -1,0 +1,107 @@
+{
+  "schema_version": 2,
+  "evidence_version": "0.0.22-perf-v1",
+  "kind": "tier_a_perf_capture",
+  "hardware": {
+    "profile_id": "tier_a_macos_arm64",
+    "tier": "macos_arm64",
+    "cpu_label": "Apple M4",
+    "core_count": 10,
+    "memory_gib": 16,
+    "os_label": "macOS 26.6",
+    "power_mode": "default"
+  },
+  "aurum_version": "0.0.23",
+  "commit": "36cbf544d41fda85d274dc247885ec0246247062",
+  "target_triple": "arm64",
+  "build_profile": "operator_binary",
+  "model_digests": {
+    "tiny-q5_1": "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7"
+  },
+  "cache_state": "prewarmed_local",
+  "scenarios": [
+    {
+      "scenario_id": "workflow/doctor_startup",
+      "samples_ms": [
+        6.234,
+        6.255,
+        6.388,
+        6.464,
+        6.497,
+        6.562,
+        6.677,
+        6.695,
+        6.911,
+        6.946
+      ],
+      "p50_ms": 6.529,
+      "p95_ms": 6.93,
+      "mean_ms": 6.563,
+      "audio_or_synth_duration_ms": null,
+      "rtf_p50": null,
+      "concurrency": 1,
+      "warm": true,
+      "release_gated": true
+    },
+    {
+      "scenario_id": "workflow/cli_stt_one_file",
+      "samples_ms": [
+        235.213,
+        236.429,
+        237.173,
+        255.39,
+        256.201,
+        257.506,
+        274.808,
+        275.373,
+        276.924,
+        281.56
+      ],
+      "p50_ms": 256.853,
+      "p95_ms": 279.474,
+      "mean_ms": 258.658,
+      "audio_or_synth_duration_ms": 5232.375,
+      "rtf_p50": 0.0491,
+      "concurrency": 1,
+      "warm": true,
+      "release_gated": true
+    },
+    {
+      "scenario_id": "stt_local/tiny-q5_1/30s/warm",
+      "samples_ms": [
+        451.615,
+        471.574,
+        487.795,
+        493.53,
+        577.527
+      ],
+      "p50_ms": 487.795,
+      "p95_ms": 560.728,
+      "mean_ms": 496.408,
+      "audio_or_synth_duration_ms": 30000.0,
+      "rtf_p50": 0.0163,
+      "concurrency": 1,
+      "warm": true,
+      "release_gated": true
+    },
+    {
+      "scenario_id": "tts_local/kitten-nano-int8/Luna/short",
+      "samples_ms": [
+        797.06,
+        815.85,
+        820.943,
+        830.599,
+        838.335
+      ],
+      "p50_ms": 820.943,
+      "p95_ms": 836.788,
+      "mean_ms": 820.558,
+      "audio_or_synth_duration_ms": 2137.583,
+      "rtf_p50": 0.3841,
+      "concurrency": 1,
+      "warm": true,
+      "release_gated": true
+    }
+  ],
+  "notes": "JOE-2317 field capture. Hostnames/user paths redacted. 30s STT uses looped short fixture (not unique speech content). Cross-machine comparisons are informational only."
+}

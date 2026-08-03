@@ -1,0 +1,118 @@
+# Named-hardware Tier A performance field capture (JOE-2317).
+# Manual / scheduled only — not a PR merge gate. Uploads JSON artifacts for
+# operator review and optional commit under evals/reports/perf/.
+name: Tier A perf capture
+
+on:
+  workflow_dispatch:
+    inputs:
+      stt_model:
+        description: Local STT model id (must download or cache)
+        required: true
+        default: tiny-q5_1
+      skip_tts:
+        description: Skip TTS scenarios (true/false)
+        required: true
+        default: "false"
+  schedule:
+    # Weekly Sunday 06:00 UTC — informational only
+    - cron: "0 6 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tier-a-perf-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  AURUM_BIN: ${{ github.workspace }}/target/release/aurum
+
+jobs:
+  capture:
+    name: capture (${{ matrix.profile_id }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            profile_id: tier_a_linux_x86_64_gnu
+          - os: windows-latest
+            profile_id: tier_a_windows_x86_64_msvc
+          - os: macos-14
+            profile_id: tier_a_macos_arm64_gha
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+
+      - name: Install Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config ffmpeg
+
+      - name: Install macOS ffmpeg
+        if: runner.os == 'macOS'
+        run: brew install ffmpeg || true
+
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-tier-a-perf
+
+      - name: Build release CLI
+        run: cargo build -p aurum-stt --release --locked
+
+      - name: Set AURUM_BIN (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: echo "AURUM_BIN=${GITHUB_WORKSPACE}/target/release/aurum.exe" >> "$GITHUB_ENV"
+
+      - name: Warm model cache (STT)
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$AURUM_BIN" tests/fixtures/sample.wav \
+            --model "${{ inputs.stt_model || 'tiny-q5_1' }}" \
+            --output-file /tmp/aurum-warm.txt \
+            --language en || \
+          "$AURUM_BIN" tests/fixtures/sample.wav \
+            --model "${{ inputs.stt_model || 'tiny-q5_1' }}" \
+            --output-file "$RUNNER_TEMP/aurum-warm.txt" \
+            --language en
+
+      - name: Run Tier A capture
+        shell: bash
+        run: |
+          set -euo pipefail
+          SKIP_TTS=()
+          if [[ "${{ inputs.skip_tts || 'false' }}" == "true" ]]; then
+            SKIP_TTS=(--skip-tts)
+          fi
+          python3 scripts/eval/run_tier_a_perf_capture.py \
+            --profile-id "${{ matrix.profile_id }}" \
+            --aurum "$AURUM_BIN" \
+            --stt-model "${{ inputs.stt_model || 'tiny-q5_1' }}" \
+            --reps-workflow 10 \
+            --reps-stt 5 \
+            --reps-tts 5 \
+            --warmups 1 \
+            --out "evals/reports/perf/perf-${{ matrix.profile_id }}-gha.json" \
+            "${SKIP_TTS[@]}"
+
+      - name: Upload reports
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: tier-a-perf-${{ matrix.profile_id }}
+          path: |
+            evals/reports/perf/perf-${{ matrix.profile_id }}-gha.json
+            evals/reports/perf/budget-seed-${{ matrix.profile_id }}.json
+          if-no-files-found: error

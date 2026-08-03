@@ -21,16 +21,16 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 
 | Issue | Status | Honest claim |
 |-------|--------|--------------|
-| [JOE-2316](https://linear.app/joe-broadhead/issue/JOE-2316) | **Done** | Process-owned batch source snapshot merged (`36cbf54`, PR #99) |
-| [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Real STT pack assembled + subset scored (merged PR #100); full matrix open |
-| [JOE-2319](https://linear.app/joe-broadhead/issue/JOE-2319) | In Progress | Kitten objective matrix retained; **3-listener study not completed** |
-| [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | In Progress | macOS field capture tooling; Linux/Windows via GHA pending review |
+| [JOE-2316](https://linear.app/joe-broadhead/issue/JOE-2316) | **Done** | Process-owned batch source snapshot (`36cbf54`, PR #99) |
+| [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Real STT pack + subset score (PR #100); full matrix open |
+| [JOE-2319](https://linear.app/joe-broadhead/issue/JOE-2319) | In Progress | Kitten objective matrix (PR #101); **3 listeners still required** |
+| [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | In Progress | macOS field capture retained; Linux/Windows via GHA pending review |
 
 ## JOE-2318 — STT production pack
 
 * Automated fetch/assemble for LibriSpeech, Common Voice accents, noise, long-form, controls
 * `--production` coverage gate passed (~369 min, 66 speakers, 5 accents, 3 long-form)
-* Retained subset scorecard: `evals/reports/stt/stt-production-subset-apple_silicon_metal-tiny-q5_1.json`
+* Retained: `evals/reports/stt/stt-production-subset-apple_silicon_metal-tiny-q5_1.json`
 * **Still open:** full model matrix, TED-LIUM/multilingual, production budget baseline
 
 ## JOE-2319 — TTS listening
@@ -41,9 +41,13 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 
 ## JOE-2317 — Named-hardware Tier A perf
 
-* Capture tooling + macOS field report path
-* Linux/Windows retained baselines still open until GHA/operator reports reviewed
-* See `docs/operations/performance-reports.md`
+* Capture tooling: `scripts/eval/run_tier_a_perf_capture.py` (schema 2)
+* **macOS arm64 field report:** `evals/reports/perf/perf-tier_a_macos_arm64-field.json`
+  * doctor, CLI STT, 30s warm STT, Kitten short TTS
+  * budget seed: `evals/observatory/budgets/perf-tier_a_macos_arm64.field.json`
+* GHA workflow (manual/weekly, **not** a PR gate):
+  `.github/workflows/tier-a-perf-capture.yml` (Linux + Windows + macOS GHA)
+* **Still open for Done:** reviewed Linux + Windows retained reports committed
 
 ## Operator entry points
 
@@ -62,6 +66,9 @@ python3 scripts/eval/prepare_tts_listening_session.py prepare \
 
 # Named-hardware Tier A perf (model must be cached)
 python3 scripts/eval/run_tier_a_perf_capture.py --profile-id tier_a_macos_arm64
+python3 scripts/eval/compare_perf_budget.py \
+  --report evals/reports/perf/perf-tier_a_macos_arm64-field.json \
+  --budget evals/observatory/budgets/perf-tier_a_macos_arm64.field.json
 ```
 
 ## Related

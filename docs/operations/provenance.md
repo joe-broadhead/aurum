@@ -4,17 +4,19 @@ Aurum release assets ship with **byte digests**, **formal SBOMs**, a
 **structured provenance record**, and a **required cosign keyless** signature
 bundle over `SHA256SUMS` (JOE-1882).
 
-## Honest residual (F-006 / JOE-1919)
+## Honest residual (F-006 / JOE-1919 / JOE-2230)
 
 | Claim | Status |
 |-------|--------|
 | GitHub Release digests + cosign keyless over `SHA256SUMS` | **Required** |
 | `PROVENANCE.json` full 40-hex `source_commit` + exact expect match | **Required** |
-| Interoperable SLSA build attestation per binary | **Not claimed** |
-| crates.io crate tarballs in the same cosign evidence set | **Not claimed** |
+| GitHub Actions **SLSA build provenance** attestations for Tier A CLI + native SDK archives | **Required** on release (JOE-2230) |
+| Full multi-party SLSA L3 / hermetic rebuild of every dependency | **Not claimed** |
+| crates.io crate tarballs in the same cosign/attestation evidence set | **Not claimed** |
 | Bit-for-bit dual-builder equality for all Tier A binaries | **Not claimed** where variance is documented |
 
-Operators must not infer crates.io or SLSA L3 guarantees from GitHub Release evidence alone.
+Operators must not infer crates.io package provenance or SLSA L3 from GitHub
+Release evidence alone.
 
 ## Artifacts in a GitHub Release
 
@@ -106,6 +108,14 @@ cp dist/sbom/* dist/release-assets/
 * **cosign keyless** binds the checksum file to a GitHub OIDC identity for the
   release workflow at that tag. Always prefer `AURUM_REQUIRE_COSIGN=1` for
   production download verification.
+* **GitHub SLSA attestations** (JOE-2230) bind individual CLI/SDK subjects to the
+  workflow that built them. Verify with the GitHub UI or:
+
+```bash
+gh attestation verify ./aurum-linux-x86_64 \
+  --owner joe-broadhead \
+  --repo aurum
+```
 
 ## Related
 

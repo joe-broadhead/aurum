@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **JOE-2229 — Protected remote inference smoke:** dry-run schema/canary CI path and
+  optional live CLI smokes; remotes stay experimental until human promotion.
+- **JOE-2231 — Production STT pack operator path:** recipe integrity check and
+  synthetic dry-run coverage gate (not field WER evidence).
+- **JOE-2228 — UBSan pure-filter matrix** on Linux nightly CI.
+- **JOE-2230 — GitHub SLSA build provenance attestations** for Tier A CLI + native
+  SDK on release (additive to cosign/SHA256SUMS). crates.io parity still residual.
+
 ## [0.0.22] - 2026-08-03
 
 World-class product outcomes & SDK coherence cut (**JOE-2215** / **JOE-2226**

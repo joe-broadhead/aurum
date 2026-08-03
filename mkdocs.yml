@@ -139,6 +139,7 @@ nav:
       - Support policy: operations/support-policy.md
       - RC exit: operations/rc-exit.md
       - v0.0.22 product acceptance: operations/v0022-product-acceptance.md
+      - STT production pack operator: operations/stt-production-pack-operator.md
       - v0.0.21 residual closeout: operations/v0021-residual-closeout.md
       - External review brief: operations/external-review-brief.md
       - Post-provider security freeze: operations/post-provider-security-freeze.md

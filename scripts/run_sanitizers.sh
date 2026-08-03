@@ -11,7 +11,7 @@
 #   ./scripts/run_sanitizers.sh            # auto: ASan if Linux else stress only
 #   ./scripts/run_sanitizers.sh --stress   # concurrency/leak stress only
 #   ./scripts/run_sanitizers.sh --asan     # force ASan attempt + stress
-#   ./scripts/run_sanitizers.sh --ubsan    # force UBSan pure filters + stress
+#   ./scripts/run_sanitizers.sh --ubsan    # force UBSan pure filters (stress if AURUM_UBSAN_WITH_STRESS=1)
 #   ./scripts/run_sanitizers.sh --all      # ASan + UBSan + stress (Linux)
 set -euo pipefail
 

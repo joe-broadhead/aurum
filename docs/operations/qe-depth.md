@@ -37,7 +37,7 @@ Runs **curated** unit-test filters under `cargo +nightly miri test` on
 
 Failures in the curated set **fail CI**.
 
-## Sanitizers and concurrency stress (JOE-1887)
+## Sanitizers and concurrency stress (JOE-1887 / JOE-2228)
 
 ```bash
 ./scripts/run_sanitizers.sh          # ASan on Linux when available + stress

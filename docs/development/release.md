@@ -47,7 +47,9 @@ See also [release gate](../operations/release-gate.md) and [supply chain](supply
 2. Merge release/x.y.z PR into master
 3. release-tag creates vX.Y.Z (after version_check)
 4. release.yml: fail-closed tag checkout → test → audit/deny → SBOM
-   → platform CLI binaries → SHA256SUMS + PROVENANCE + GitHub Release
+   → platform CLI binaries + native SDK → SHA256SUMS + PROVENANCE
+   → cosign keyless + GitHub SLSA build provenance attestations
+   → GitHub Release
 ```
 
 ## Manual tag (fallback)

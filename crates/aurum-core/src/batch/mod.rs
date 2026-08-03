@@ -813,6 +813,10 @@ pub fn work_indices(manifest: &BatchManifest, retry_failed: bool) -> Vec<usize> 
 // ---------------------------------------------------------------------------
 
 /// Full SHA-256 of complete file bytes plus size. Authoritative for resume.
+///
+/// Fails closed when the number of bytes read does not match the size observed
+/// at open time (concurrent truncation/extension). The returned size is the
+/// number of bytes that contributed to the digest.
 pub fn sha256_file_full(path: &Path) -> Result<(String, u64)> {
     let mut f = File::open(path).map_err(|e| UserError::Other {
         message: format!("open {}: {e}", path.display()),
@@ -826,6 +830,7 @@ pub fn sha256_file_full(path: &Path) -> Result<(String, u64)> {
         }
         .into());
     }
+    let expected_len = meta.len();
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 1024 * 64];
     let mut total = 0u64;
@@ -839,10 +844,39 @@ pub fn sha256_file_full(path: &Path) -> Result<(String, u64)> {
         hasher.update(&buf[..n]);
         total += n as u64;
     }
-    if total != meta.len() {
-        // Still ok if concurrent truncate; report what we hashed.
+    if total != expected_len {
+        return Err(UserError::Other {
+            message: format!(
+                "source size changed during hash ({}): metadata {expected_len} bytes, read {total} bytes",
+                path.display()
+            ),
+        }
+        .into());
     }
-    Ok((hex::encode(hasher.finalize()), meta.len()))
+    Ok((hex::encode(hasher.finalize()), total))
+}
+
+/// Re-hash `path` and require an exact match with a previously captured identity.
+///
+/// Used after decode so a batch transcript is only accepted when the on-disk
+/// source still matches the digest recorded before `load_audio` (v0.0.23 P1a).
+pub fn verify_source_identity(
+    path: &Path,
+    expected_digest: &str,
+    expected_size: u64,
+) -> Result<()> {
+    let (digest, size) = sha256_file_full(path)?;
+    if digest != expected_digest || size != expected_size {
+        return Err(UserError::Other {
+            message: format!(
+                "source changed between identity capture and use ({}): \
+                 expected {expected_digest}/{expected_size}, got {digest}/{size}",
+                path.display()
+            ),
+        }
+        .into());
+    }
+    Ok(())
 }
 
 /// Cheap discovery preflight identity (size + first 1 MiB). **Not** named sha256;
@@ -1058,6 +1092,17 @@ mod tests {
         let mut x = fp_input("base");
         x.timestamps = true;
         assert_ne!(a, operation_fingerprint(&x));
+    }
+
+    #[test]
+    fn verify_source_identity_accepts_stable_and_rejects_change() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("src.bin");
+        fs::write(&path, b"stable-audio-bytes").unwrap();
+        let (d, s) = sha256_file_full(&path).unwrap();
+        verify_source_identity(&path, &d, s).unwrap();
+        fs::write(&path, b"tampered-audio-bytes").unwrap();
+        assert!(verify_source_identity(&path, &d, s).is_err());
     }
 
     #[test]

@@ -102,9 +102,9 @@ pub use audio::{
 pub use batch::{
     acquire_batch_lock, build_items, discover_inputs, discovery_preflight_id, lock_path,
     manifest_path, merge_for_resume, operation_fingerprint, prepare_resume, sha256_file_full,
-    truncate_error, validate_batch_stt_provider, verify_item_for_resume, work_indices, BatchItem,
-    BatchItemStatus, BatchLock, BatchLockGuard, BatchManifest, BatchSummary,
-    OperationFingerprintInput, ResumeDecision, AUDIO_EXTENSIONS, BATCH_LOCK_NAME,
+    truncate_error, validate_batch_stt_provider, verify_item_for_resume, verify_source_identity,
+    work_indices, BatchItem, BatchItemStatus, BatchLock, BatchLockGuard, BatchManifest,
+    BatchSummary, OperationFingerprintInput, ResumeDecision, AUDIO_EXTENSIONS, BATCH_LOCK_NAME,
     BATCH_MANIFEST_NAME, BATCH_MANIFEST_VERSION, BATCH_MANIFEST_VERSION_V1, MAX_BATCH_ERROR_CHARS,
 };
 pub use cancel::CancelFlag;

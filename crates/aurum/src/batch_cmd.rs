@@ -349,6 +349,9 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
         // 3. execute and transactionally publish transcript
         let item_result = async {
             let audio = audio::load_audio(&source).await?;
+            // Re-hash after decode so the transcript is only accepted when the
+            // on-disk bytes still match the identity recorded above (P1a).
+            aurum_core::verify_source_identity(&source, &src_digest, src_size)?;
             let options = TranscriptionOptions {
                 model: model.clone(),
                 language: cfg.language.clone(),

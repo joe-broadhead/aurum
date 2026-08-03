@@ -24,10 +24,17 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-WORKDIR="$(mktemp -d "${TMPDIR:-/tmp}/aurum-sdk-qual-XXXXXX")"
+# Stage under the repo (not /tmp): Windows GHA bash + system Python mishandle /tmp paths.
+mkdir -p "${ROOT}/dist"
+WORKDIR="$(mktemp -d "${ROOT}/dist/.sdk-qual-XXXXXX")"
+WORKDIR="$(cd "${WORKDIR}" && pwd -P 2>/dev/null || pwd)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
 if [[ -n "$ARCHIVE" ]]; then
+  # Resolve archive to absolute path for mixed bash/Python environments.
+  if [[ "${ARCHIVE}" != /* && ! "${ARCHIVE}" =~ ^[A-Za-z]:[\\/] ]]; then
+    ARCHIVE="${ROOT}/${ARCHIVE}"
+  fi
   tar -xzf "$ARCHIVE" -C "$WORKDIR"
   # Expect single top-level dir
   DIR="$(find "$WORKDIR" -mindepth 1 -maxdepth 1 -type d | head -1)"
@@ -39,14 +46,15 @@ else
   echo "need --archive or --dir" >&2
   exit 2
 fi
+DIR="$(cd "$DIR" && pwd -P 2>/dev/null || pwd)"
 
 echo "== qualify SDK at $DIR =="
 
 # Path traversal / unexpected symlinks
-python3 - <<PY
+DIR_ENV="$DIR" python3 - <<'PY'
 from pathlib import Path
-import sys
-root = Path(r"""$DIR""").resolve()
+import os, sys
+root = Path(os.environ["DIR_ENV"]).resolve()
 for p in root.rglob("*"):
     if p.is_symlink():
         print(f"FAIL unexpected symlink: {p}", file=sys.stderr)
@@ -74,10 +82,10 @@ need SDK_MANIFEST.json
 need BUILD.md
 
 # Manifest self-check
-python3 - <<PY
-import json, hashlib, sys
+DIR_ENV="$DIR" python3 - <<'PY'
+import json, hashlib, sys, os
 from pathlib import Path
-root = Path(r"""$DIR""")
+root = Path(os.environ["DIR_ENV"])
 man = json.loads((root / "SDK_MANIFEST.json").read_text())
 assert man.get("schema_version") == 1
 assert man.get("abi_version") == 2

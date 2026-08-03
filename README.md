@@ -53,7 +53,7 @@ explicit** — never the default. Local whisper + Kitten remain zero-key default
 See [provider matrix](docs/guide/provider-matrix.md) and
 [qualification](docs/operations/provider-qualification.md).
 
-> **v0.0.22** — product outcomes & SDK coherence (JOE-2215): STT/TTS evidence programmes, long-form fidelity, batch v2, SDK contracts, observability, provider evidence gate, product contracts, Tier A native SDK. Library API remains provisional on continuous **0.0.x** (not 1.0). Published as `v0.0.22`.
+> **v0.0.23** — correctness & integration patch: SRT provenance restored, batch identity/fingerprint, SDK OpContext wiring, native SDK CMake/Windows consumer matrix. Library API remains provisional on continuous **0.0.x** (not 1.0). Published as `v0.0.23`.
 
 ## Highlights
 
@@ -102,8 +102,8 @@ Agent skills for coding agents: [`skills/`](skills/) — start with
 
 ```toml
 # Prefer crates.io when published, or pin a git tag
-aurum-core = "0.0.22"
-# aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.22" }
+aurum-core = "0.0.23"
+# aurum-core = { git = "https://github.com/joe-broadhead/aurum", package = "aurum-core", tag = "v0.0.23" }
 ```
 
 Full guide: [Library integration](https://joe-broadhead.github.io/aurum/library/integration/).
@@ -177,7 +177,7 @@ Details: [docs/development/release.md](docs/development/release.md).
 ## Versioning
 
 Aurum ships on a continuous **0.0.x** line. Production-assurance work formerly
-aimed at “1.0” is retargeted to continuous **0.0.x** (tip **v0.0.22**). Pin tags or crates.io versions;
+aimed at “1.0” is retargeted to continuous **0.0.x** (tip **v0.0.23**). Pin tags or crates.io versions;
 do not assume a stable major version yet.
 
 ## Non-goals (0.0.x)

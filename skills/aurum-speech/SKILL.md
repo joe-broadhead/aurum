@@ -5,9 +5,9 @@ license: MIT
 metadata:
   owner: "aurum"
   persona: "speech"
-  version: "0.0.22"
-  product_tip: "0.0.22"
-  next_assurance_cut: "0.0.22"
+  version: "0.0.23"
+  product_tip: "0.0.23"
+  next_assurance_cut: "0.0.23"
 ---
 
 # Aurum speech skill (STT + TTS)
@@ -33,7 +33,7 @@ For host embeds only, see `skills/aurum-embed/`.
    - `docs/guide/provider-matrix.md` (reviewed catalogues)
 4. **Honesty** — report `provider`, model, and when timestamps are unreliable. Do not claim WER/RTF without a retained eval report.
 5. **Privacy** — never echo API keys, full audio, or full transcripts into chat unless the user explicitly wants that content.
-6. **Versioning** — product is continuous **0.0.x** (tip **0.0.22**). Continuous **0.0.x** (not 1.0). Pin tags/crates versions in dependents.
+6. **Versioning** — product is continuous **0.0.x** (tip **0.0.23**). Continuous **0.0.x** (not 1.0). Pin tags/crates versions in dependents.
 
 ## Binary and workspace names
 

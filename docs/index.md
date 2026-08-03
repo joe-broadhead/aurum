@@ -76,8 +76,6 @@ flowchart LR
 
 ## Status
 
-**v0.0.22** (published tip) — product outcomes & SDK coherence (JOE-2215): quality observatory, TTS listening, named-hardware perf, long-form fidelity, batch v2, SDK contracts, observability, provider evidence, product contracts, native SDK packages.
+**v0.0.23** (published tip) — correctness & integration patch after the independent v0.0.22 audit (SRT provenance, batch integrity, SDK/OpContext wiring, native SDK consumer matrix). See [v0.0.23 acceptance](operations/v0023-product-acceptance.md).
 
-**Prior published tip: v0.0.21** — production-assurance cut. Aurum stays on the **0.0.x** iteration line; a major `1.0.0` is **not** planned. Published as tag `v0.0.22` (JOE-2226 Wave 5).
-
-APIs may still change on `0.0.x`; pin a release **tag** (or crates.io version) in dependents.
+**Prior product-outcomes cut: v0.0.22** (JOE-2215 / JOE-2226). Continuous **0.0.x** (not 1.0).

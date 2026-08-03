@@ -324,6 +324,8 @@ fn parse_transcriptions_body(
     want_timestamps: bool,
     duration: f64,
 ) -> Result<(String, Vec<Segment>, bool)> {
+    use crate::remote::TimestampSource;
+
     if !body.trim_start().starts_with('{') {
         let text = body.trim().to_string();
         if text.is_empty() {
@@ -334,7 +336,12 @@ fn parse_transcriptions_body(
         }
         return Ok((
             text.clone(),
-            vec![Segment::from_parts_unchecked(0.0, duration, text)],
+            vec![Segment::from_parts_with_source(
+                0.0,
+                duration,
+                text,
+                TimestampSource::SyntheticSpan,
+            )],
             false,
         ));
     }
@@ -357,14 +364,26 @@ fn parse_transcriptions_body(
         if let Some(raw_segs) = parsed.segments {
             let segments: Vec<Segment> = raw_segs
                 .into_iter()
-                .map(|s| Segment::from_parts_unchecked(s.start, s.end, s.text))
+                .map(|s| {
+                    Segment::from_parts_with_source(
+                        s.start,
+                        s.end,
+                        s.text,
+                        TimestampSource::ProviderSegment,
+                    )
+                })
                 .collect();
             return Ok((text, segments, true));
         }
     }
     Ok((
         text.clone(),
-        vec![Segment::from_parts_unchecked(0.0, duration, text)],
+        vec![Segment::from_parts_with_source(
+            0.0,
+            duration,
+            text,
+            TimestampSource::SyntheticSpan,
+        )],
         false,
     ))
 }
@@ -379,6 +398,32 @@ mod tests {
     fn registry_lookup() {
         assert!(lookup_openai_stt("whisper-1").is_some());
         assert!(lookup_openai_stt("not-a-model").is_none());
+    }
+
+    #[test]
+    fn parse_verbose_json_assigns_provider_segment() {
+        let body = r#"{"text":"hello world","segments":[{"start":0.0,"end":0.5,"text":"hello"},{"start":0.5,"end":1.0,"text":"world"}]}"#;
+        let (text, segs, reliable) = parse_transcriptions_body(body, true, 1.0).unwrap();
+        assert_eq!(text, "hello world");
+        assert!(reliable);
+        assert_eq!(segs.len(), 2);
+        assert!(segs
+            .iter()
+            .all(|s| s.timestamp_source() == crate::remote::TimestampSource::ProviderSegment));
+        assert!(!segs.iter().any(|s| s.timestamp_source().is_approximate()));
+    }
+
+    #[test]
+    fn parse_plain_text_assigns_synthetic_span() {
+        let (text, segs, reliable) = parse_transcriptions_body("hello only", false, 2.0).unwrap();
+        assert_eq!(text, "hello only");
+        assert!(!reliable);
+        assert_eq!(segs.len(), 1);
+        assert_eq!(
+            segs[0].timestamp_source(),
+            crate::remote::TimestampSource::SyntheticSpan
+        );
+        assert!(segs[0].timestamp_source().is_approximate());
     }
 
     #[tokio::test]

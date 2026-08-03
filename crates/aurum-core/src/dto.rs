@@ -52,6 +52,12 @@ impl SttResultDto {
     }
 
     pub fn from_result_with_warnings(result: &TranscriptionResult, warnings: &[String]) -> Self {
+        let mut merged = result.warnings().to_vec();
+        for w in warnings {
+            if !merged.iter().any(|existing| existing == w) {
+                merged.push(w.clone());
+            }
+        }
         Self {
             schema_version: STT_RESULT_SCHEMA_VERSION,
             text: result.text().to_string(),
@@ -78,7 +84,7 @@ impl SttResultDto {
                     )
                 })
                 .collect(),
-            normalization_warnings: warnings.to_vec(),
+            normalization_warnings: merged,
             request_id: None,
         }
     }

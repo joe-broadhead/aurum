@@ -620,6 +620,8 @@ fn parse_transcriptions_body(
     want_timestamps: bool,
     duration: f64,
 ) -> Result<(String, Vec<Segment>, bool)> {
+    use crate::remote::TimestampSource;
+
     // Plain text response_format=text
     if !body.trim_start().starts_with('{') {
         let text = body.trim().to_string();
@@ -631,7 +633,12 @@ fn parse_transcriptions_body(
         }
         return Ok((
             text.clone(),
-            vec![Segment::from_parts_unchecked(0.0, duration, text)],
+            vec![Segment::from_parts_with_source(
+                0.0,
+                duration,
+                text,
+                TimestampSource::SyntheticSpan,
+            )],
             false,
         ));
     }
@@ -654,16 +661,28 @@ fn parse_transcriptions_body(
         if let Some(raw_segs) = parsed.segments {
             let segments: Vec<Segment> = raw_segs
                 .into_iter()
-                .map(|s| Segment::from_parts_unchecked(s.start, s.end, s.text))
+                .map(|s| {
+                    Segment::from_parts_with_source(
+                        s.start,
+                        s.end,
+                        s.text,
+                        TimestampSource::ProviderSegment,
+                    )
+                })
                 .collect();
-            // Dedicated verbose_json segments are treated as engine-derived.
+            // Dedicated verbose_json segments carry provider segment timing.
             return Ok((text, segments, true));
         }
     }
 
     Ok((
         text.clone(),
-        vec![Segment::from_parts_unchecked(0.0, duration, text)],
+        vec![Segment::from_parts_with_source(
+            0.0,
+            duration,
+            text,
+            TimestampSource::SyntheticSpan,
+        )],
         false,
     ))
 }
@@ -673,6 +692,8 @@ fn parse_chat_content(
     want_timestamps: bool,
     duration: f64,
 ) -> (String, Vec<Segment>) {
+    use crate::remote::TimestampSource;
+
     if want_timestamps {
         let cleaned = content
             .trim()
@@ -681,12 +702,30 @@ fn parse_chat_content(
             .trim_end_matches("```")
             .trim();
         if let Ok(payload) = serde_json::from_str::<TimestampPayload>(cleaned) {
-            return (payload.text, payload.segments);
+            // LLM-invented timings are never provider-native; force Unavailable.
+            let segments: Vec<Segment> = payload
+                .segments
+                .into_iter()
+                .map(|s| {
+                    Segment::from_parts_with_source(
+                        s.start(),
+                        s.end(),
+                        s.text().to_string(),
+                        TimestampSource::Unavailable,
+                    )
+                })
+                .collect();
+            return (payload.text, segments);
         }
     }
 
     let text = content.to_string();
-    let segments = vec![Segment::from_parts_unchecked(0.0, duration, text.clone())];
+    let segments = vec![Segment::from_parts_with_source(
+        0.0,
+        duration,
+        text.clone(),
+        TimestampSource::SyntheticSpan,
+    )];
     (text, segments)
 }
 

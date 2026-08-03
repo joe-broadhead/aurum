@@ -495,7 +495,13 @@ fn run_whisper(
             full_text.push(' ');
         }
         full_text.push_str(text);
-        segments.push(Segment::from_parts_unchecked(start, end, text.to_string()));
+        // Local whisper.cpp timings are model-native (JOE-2219 / v0.0.23).
+        segments.push(Segment::from_parts_with_source(
+            start,
+            end,
+            text.to_string(),
+            crate::remote::TimestampSource::NativeModel,
+        ));
     }
 
     let lang_id = state.full_lang_id_from_state();

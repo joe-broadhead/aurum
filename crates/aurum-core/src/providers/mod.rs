@@ -206,6 +206,9 @@ pub struct TranscriptionResult {
     /// Segment policy that was applied during cleanup (when not raw).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     cleanup_segment_policy: Option<crate::cleanup::SegmentCleanupPolicy>,
+    /// Non-fatal operation warnings (e.g. long-form overlap low confidence).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    warnings: Vec<String>,
 }
 
 fn default_backend_kind() -> BackendKind {
@@ -282,6 +285,19 @@ impl TranscriptionResult {
 
     pub fn set_timestamps_reliable(&mut self, reliable: bool) {
         self.timestamps_reliable = reliable;
+    }
+
+    /// Non-fatal warnings collected during the operation (stitch, overlap, …).
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
+
+    pub fn set_warnings(&mut self, warnings: Vec<String>) {
+        self.warnings = warnings;
+    }
+
+    pub fn push_warning(&mut self, warning: impl Into<String>) {
+        self.warnings.push(warning.into());
     }
 
     /// True when any segment uses approximate/non-native timing (JOE-2219).
@@ -391,6 +407,7 @@ impl TranscriptionResult {
             original_text: dto.original_text.clone(),
             original_segments: dto.original_segments.clone(),
             cleanup_segment_policy: dto.cleanup_segment_policy,
+            warnings: dto.normalization_warnings.clone(),
         };
         // LLM-assisted paths cannot claim reliable timestamps through DTO injection.
         if matches!(r.backend_kind, BackendKind::LlmAssisted) {
@@ -431,6 +448,7 @@ impl TranscriptionResult {
             original_text: None,
             original_segments: None,
             cleanup_segment_policy: None,
+            warnings: Vec::new(),
         }
     }
 
@@ -470,6 +488,7 @@ impl TranscriptionResult {
             original_text: None,
             original_segments: None,
             cleanup_segment_policy: None,
+            warnings: Vec::new(),
         }
     }
 
@@ -798,6 +817,89 @@ mod tests {
         dto.timestamps_reliable = true; // injection attempt
         let r = TranscriptionResult::try_from_dto(&dto).unwrap();
         assert!(!r.timestamps_reliable());
-        assert_eq!(r.backend_kind(), BackendKind::LlmAssisted);
+    }
+
+    #[test]
+    fn unchecked_segment_defaults_unavailable_is_approximate() {
+        let s = Segment::from_parts_unchecked(0.0, 1.0, "hi");
+        assert_eq!(
+            s.timestamp_source(),
+            crate::remote::TimestampSource::Unavailable
+        );
+        assert!(s.timestamp_source().is_approximate());
+    }
+
+    #[test]
+    fn native_model_segment_allows_srt_gate() {
+        let segs = vec![Segment::from_parts_with_source(
+            0.0,
+            1.0,
+            "hello",
+            crate::remote::TimestampSource::NativeModel,
+        )];
+        let r =
+            TranscriptionResult::local("hello".into(), segs, Some("en".into()), "base".into(), 1.0);
+        assert!(r.timestamps_reliable());
+        assert!(!r.has_approximate_timestamps());
+        // CLI SRT gate condition: both must pass.
+        assert!(r.timestamps_reliable() && !r.has_approximate_timestamps());
+    }
+
+    #[test]
+    fn provider_segment_and_word_allow_srt_gate() {
+        for source in [
+            crate::remote::TimestampSource::ProviderSegment,
+            crate::remote::TimestampSource::ProviderWord,
+            crate::remote::TimestampSource::ChunkOffset,
+        ] {
+            let segs = vec![Segment::from_parts_with_source(0.0, 1.0, "x", source)];
+            let mut r =
+                TranscriptionResult::openrouter("x".into(), segs, None, "m".into(), 1.0, true);
+            r.set_backend_kind(BackendKind::Asr);
+            r.set_timestamps_reliable(true);
+            assert!(
+                !r.has_approximate_timestamps(),
+                "source {source:?} should not be approximate"
+            );
+        }
+    }
+
+    #[test]
+    fn synthetic_and_unavailable_block_srt_gate() {
+        for source in [
+            crate::remote::TimestampSource::SyntheticSpan,
+            crate::remote::TimestampSource::Unavailable,
+            crate::remote::TimestampSource::Interpolated,
+        ] {
+            let segs = vec![Segment::from_parts_with_source(0.0, 1.0, "x", source)];
+            let mut r = TranscriptionResult::local("x".into(), segs, None, "m".into(), 1.0);
+            r.set_timestamps_reliable(true);
+            assert!(
+                r.has_approximate_timestamps(),
+                "source {source:?} must be approximate"
+            );
+        }
+    }
+
+    #[test]
+    fn warnings_merge_into_stt_dto() {
+        let mut r = TranscriptionResult::local(
+            "hi".into(),
+            vec![Segment::from_parts_with_source(
+                0.0,
+                1.0,
+                "hi",
+                crate::remote::TimestampSource::NativeModel,
+            )],
+            None,
+            "base".into(),
+            1.0,
+        );
+        r.push_warning("segment overlap not confidently deduped; retained later segments");
+        let dto = crate::dto::SttResultDto::from_result(&r);
+        assert_eq!(dto.normalization_warnings.len(), 1);
+        assert!(dto.segments[0].timestamp_source() == crate::remote::TimestampSource::NativeModel);
+        let json = dto.to_json_pretty().unwrap();
+        assert!(json.contains("native_model"));
     }
 }

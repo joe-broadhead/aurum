@@ -157,6 +157,13 @@ impl LongFormPolicy {
             }
             .into());
         }
+        // Zero silence duration becomes 1 sample and stalls the scan stride (v0.0.23).
+        if self.min_silence_secs <= 0.0 {
+            return Err(UserError::InvalidConfig {
+                reason: "LongFormPolicy.min_silence_secs must be > 0".into(),
+            }
+            .into());
+        }
         Ok(())
     }
 
@@ -185,6 +192,10 @@ pub struct PlannedWindow {
 }
 
 /// Plan silence-aware (or overlap) windows covering all samples.
+///
+/// [`PlannedWindow::overlap_secs`] is the overlap **with the previous window**
+/// (0 for the first). When a hard cut is used, the *next* window records the
+/// overlap so stitchers can dedupe against the predecessor.
 pub fn plan_boundary_windows(
     samples: &[f32],
     sample_rate: u32,
@@ -226,6 +237,8 @@ pub fn plan_boundary_windows(
 
     let mut out = Vec::new();
     let mut start = 0usize;
+    // Overlap this window has with its predecessor (set when finishing the previous cut).
+    let mut pending_overlap_secs = 0.0f64;
     while start < total {
         let remaining = total - start;
         if remaining <= max_len {
@@ -237,10 +250,12 @@ pub fn plan_boundary_windows(
                 },
                 kind: if out.is_empty() {
                     BoundaryKind::ShortSingle
+                } else if pending_overlap_secs > 0.0 {
+                    BoundaryKind::TargetWithOverlap
                 } else {
                     BoundaryKind::Silence
                 },
-                overlap_secs: 0.0,
+                overlap_secs: pending_overlap_secs,
             });
             break;
         }
@@ -252,10 +267,10 @@ pub fn plan_boundary_windows(
         let silence_cut =
             find_silence_boundary(samples, search_lo, search_hi, min_silence, quiet_thresh);
 
-        let (end, kind, overlap_secs) = if let Some(cut) = silence_cut {
+        let (end, kind, overlap_for_next) = if let Some(cut) = silence_cut {
             (cut, BoundaryKind::Silence, 0.0f64)
         } else {
-            // Hard cut at ideal with overlap into next window.
+            // Hard cut at ideal; next window starts early by `overlap` samples.
             let end = ideal.min(total);
             let raw_overlap = ((policy.overlap_secs * f64::from(sample_rate)).round() as usize)
                 .min(((end - start) as f64 * policy.max_overlap_fraction).round() as usize);
@@ -274,23 +289,26 @@ pub fn plan_boundary_windows(
                 end_sample: end,
                 offset_secs: start as f64 / f64::from(sample_rate),
             },
+            // Kind describes how this window ends / how the next boundary was chosen.
             kind,
-            overlap_secs,
+            overlap_secs: pending_overlap_secs,
         });
 
         if end >= total {
             break;
         }
         // Advance: for overlap cuts, next window starts `overlap` samples before end.
-        let overlap_samples = if matches!(kind, BoundaryKind::TargetWithOverlap) {
-            ((overlap_secs * f64::from(sample_rate)).round() as usize).min(end - start)
+        let overlap_samples = if overlap_for_next > 0.0 {
+            ((overlap_for_next * f64::from(sample_rate)).round() as usize).min(end - start)
         } else {
             0
         };
         let next = end.saturating_sub(overlap_samples);
+        pending_overlap_secs = overlap_for_next;
         if next <= start {
             // Degenerate: force progress without infinite loop.
             start = end;
+            pending_overlap_secs = 0.0;
         } else {
             start = next;
         }
@@ -301,6 +319,13 @@ pub fn plan_boundary_windows(
         if first.window.start_sample != 0 {
             return Err(UserError::Other {
                 message: "long-form planner: first window must start at sample 0".into(),
+            }
+            .into());
+        }
+        if first.overlap_secs != 0.0 {
+            return Err(UserError::Other {
+                message: "long-form planner: first window must have zero predecessor overlap"
+                    .into(),
             }
             .into());
         }
@@ -361,10 +386,9 @@ fn find_silence_boundary(
                 }
             }
         }
-        i += min_silence.max(1) / 2;
-        if i == lo {
-            i += 1;
-        }
+        // Always advance by at least one sample so min_silence=1 cannot hang.
+        let step = (min_silence.max(1) / 2).max(1);
+        i += step;
     }
     best.map(|(_, cut)| cut)
 }
@@ -618,14 +642,49 @@ mod tests {
             p.kind,
             BoundaryKind::TargetWithOverlap | BoundaryKind::FixedFallback
         )));
-        // Overlap means next start < previous end
+        // Overlap is recorded on the *later* window (relationship with previous).
+        assert_eq!(plan[0].overlap_secs, 0.0);
         for w in plan.windows(2) {
-            if w[0].overlap_secs > 0.0 {
+            if w[1].overlap_secs > 0.0 {
                 assert!(w[1].window.start_sample < w[0].window.end_sample);
             }
         }
+        assert!(
+            plan.iter().skip(1).any(|p| p.overlap_secs > 0.0),
+            "expected at least one later window with predecessor overlap"
+        );
         assert_eq!(plan[0].window.start_sample, 0);
         assert_eq!(plan.last().unwrap().window.end_sample, n);
+    }
+
+    #[test]
+    fn min_silence_zero_rejected() {
+        let p = LongFormPolicy {
+            min_silence_secs: 0.0,
+            ..Default::default()
+        };
+        assert!(p.validate().is_err());
+    }
+
+    #[test]
+    fn two_window_hard_cut_overlap_on_later() {
+        let sr = WHISPER_SAMPLE_RATE;
+        // Continuous noise, ~2× target → two windows with hard-cut overlap.
+        let n = (420.0 * f64::from(sr)) as usize;
+        let samples = vec![0.5f32; n];
+        let plan = plan_boundary_windows(&samples, sr, &LongFormPolicy::default()).unwrap();
+        assert!(plan.len() >= 2, "plan len {}", plan.len());
+        assert_eq!(plan[0].overlap_secs, 0.0);
+        // Second window must carry the overlap used to rewind its start.
+        if plan[0].kind == BoundaryKind::TargetWithOverlap || plan.len() == 2 {
+            assert!(
+                plan[1].overlap_secs > 0.0,
+                "later window overlap_secs={}, kind0={:?}",
+                plan[1].overlap_secs,
+                plan[0].kind
+            );
+            assert!(plan[1].window.start_sample < plan[0].window.end_sample);
+        }
     }
 
     #[test]

@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Timestamp provenance (SRT regression):** providers assign
+  `timestamp_source` at segment creation (`NativeModel` for local whisper.cpp,
+  `ProviderSegment` / `ProviderWord` for dedicated remote ASR, `SyntheticSpan`
+  for full-span fallbacks). Local and dedicated-ASR SRT no longer require
+  `--allow-unreliable-timestamps` solely because provenance defaulted to
+  `unavailable`.
+- **Long-form overlap ownership:** `PlannedWindow.overlap_secs` is recorded on
+  the *later* window (overlap with previous), matching stitcher semantics so
+  two-window hard cuts actually dedupe.
+- **Long-form stitch warnings:** low-confidence overlap outcomes are retained on
+  `TranscriptionResult.warnings` and surface in STT JSON
+  `normalization_warnings`.
+- **Long-form silence scan:** `min_silence_secs` must be `> 0`; scan stride always
+  advances by at least one sample (hang fix).
+- **Observability:** `Metrics::emit` clones the event sink under the lock and
+  invokes the host callback outside the mutex (re-entrant sink safe).
+
 ### Added
 
 - **JOE-2229 — Protected remote inference smoke:** dry-run schema/canary CI path and

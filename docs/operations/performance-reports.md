@@ -72,13 +72,21 @@ regression.
 # PR-safe microbenches
 ./scripts/bench_smoke.sh
 
-# Operator capture (pre-cached models only)
+# Operator capture — simple wall-clock helper (pre-cached models only)
 ./scripts/run_perf_report.sh --profile apple_silicon_metal --model tiny-q5_1
+
+# Operator capture — Tier A multi-scenario field pack (JOE-2317)
+python3 scripts/eval/run_tier_a_perf_capture.py --profile-id tier_a_macos_arm64
+# Writes evals/reports/perf/perf-tier_a_<id>-field.json + budget-seed-*.json
+
+# Cross-platform field capture via GHA (workflow_dispatch; not a PR gate)
+# Actions → "Tier A perf capture" → Run workflow
+# Artifacts: tier-a-perf-tier_a_linux_x86_64_gnu / windows / macos_arm64_gha
 
 # Budget compare (non-zero on fail)
 python3 scripts/eval/compare_perf_budget.py \
-  --report evals/reports/perf/perf-apple_silicon_metal-tiny-q5_1.json \
-  --budget evals/observatory/budgets/perf-tier_a_macos_arm64.example.json
+  --report evals/reports/perf/perf-tier_a_macos_arm64-field.json \
+  --budget evals/observatory/budgets/perf-tier_a_macos_arm64.field.json
 
 cargo test -p aurum-core --lib percentile
 cargo test -p aurum-core --lib budget_pass_and_p95

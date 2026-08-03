@@ -53,7 +53,7 @@ explicit** — never the default. Local whisper + Kitten remain zero-key default
 See [provider matrix](docs/guide/provider-matrix.md) and
 [qualification](docs/operations/provider-qualification.md).
 
-> **v0.0.22** — product outcomes & SDK coherence (JOE-2215): STT/TTS evidence programmes, long-form fidelity, batch v2, SDK contracts, observability, provider evidence gate, product contracts, Tier A native SDK. Library API remains provisional on continuous **0.0.x** (not 1.0). Human GO required before tag.
+> **v0.0.22** — product outcomes & SDK coherence (JOE-2215): STT/TTS evidence programmes, long-form fidelity, batch v2, SDK contracts, observability, provider evidence gate, product contracts, Tier A native SDK. Library API remains provisional on continuous **0.0.x** (not 1.0). Published as `v0.0.22`.
 
 ## Highlights
 

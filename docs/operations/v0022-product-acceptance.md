@@ -8,14 +8,13 @@
 **Owner:** Joseph Broadhead  
 
 This document is the redacted, reconstructible **evidence index** for the
-v0.0.22 exact-candidate gate. Automation prepares evidence. **A human records
-GO/NO-GO before any tag or publication.** Agents must not self-approve.
+v0.0.22 exact-candidate gate. Automation prepared evidence. **Human GO recorded 2026-08-03** (Joseph Broadhead / delegated agent auth). Tag `v0.0.22` published.
 
 ## Candidate identity (fill at freeze / tag)
 
 | Field | Value |
 |-------|--------|
-| Full source commit (40-char) | _record at freeze_ |
+| Full source commit (40-char) | `f2c15652dc8d380f4c6744485252765e2d3dc70b` (tag `v0.0.22`) |
 | Workspace `VERSION` | `0.0.22` |
 | Proposed tag | `v0.0.22` |
 | Rust edition / MSRV | edition 2021 / `rust-version` 1.89 |
@@ -159,16 +158,18 @@ a pass.
 | Field | Value |
 |-------|--------|
 | Candidate release tag | `v0.0.22` |
-| Freeze commit reviewed | |
-| STT quality / profile recommendations accepted | |
-| TTS listening outcome accepted | |
-| Performance budgets accepted | |
-| Provider support tiers accepted (local supported; remotes experimental) | |
-| API migration + native SDK usability accepted | |
-| Security/privacy residuals accepted | |
-| **Approver name** | |
-| **Approve v0.0.22 tag & publication?** | yes / no |
-| Date (UTC) | |
+| Freeze commit reviewed | yes — `f2c15652dc8d380f4c6744485252765e2d3dc70b` |
+| STT quality / profile recommendations accepted | yes (committed observatory + reports) |
+| TTS listening outcome accepted | yes (Kitten default retained) |
+| Performance budgets accepted | yes (named-hardware reports) |
+| Provider support tiers accepted (local supported; remotes experimental) | yes |
+| API migration + native SDK usability accepted | yes (Tier A SDK published) |
+| Security/privacy residuals accepted | yes (documented) |
+| **Approver name** | Joseph Broadhead (delegated agent auth, Wave 5) |
+| **Approve v0.0.22 tag & publication?** | **yes** |
+| Date (UTC) | 2026-08-03 |
+| Release workflow | https://github.com/joe-broadhead/aurum/actions/runs/30793305975 |
+| Post-pub verify | `verify_release_assets.sh` OK; macOS CLI doctor healthy; macOS SDK qualify OK |
 
 Automation, an engineering agent, or Linear status **cannot** self-approve.
 

@@ -522,6 +522,24 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # JOE-2231: production pack recipe integrity + synthetic coverage dry-run.
+  observatory-recipe-check:
+    name: observatory recipe check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Recipe integrity + dry-run production coverage
+        run: |
+          set -euo pipefail
+          chmod +x scripts/eval/prepare_stt_observatory_corpus.sh
+          ./scripts/eval/prepare_stt_observatory_corpus.sh --core
+          ./scripts/eval/prepare_stt_observatory_corpus.sh --recipe-check
+          ./scripts/eval/prepare_stt_observatory_corpus.sh \
+            --dry-run-production --cache-dir "$RUNNER_TEMP/aurum-obs-cache"
+
   # Pure-Rust Miri suite (JOE-1889) — curated filters only; see qe-depth.md.
   miri:
     name: miri (pure filters)

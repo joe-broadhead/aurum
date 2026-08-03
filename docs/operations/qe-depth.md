@@ -37,18 +37,20 @@ Runs **curated** unit-test filters under `cargo +nightly miri test` on
 
 Failures in the curated set **fail CI**.
 
-## Sanitizers and concurrency stress (JOE-1887)
+## Sanitizers and concurrency stress (JOE-1887 / JOE-2228)
 
 ```bash
 ./scripts/run_sanitizers.sh          # ASan on Linux when available + stress
 ./scripts/run_sanitizers.sh --stress # concurrency only
+./scripts/run_sanitizers.sh --ubsan  # JOE-2228 pure-filter UB matrix
+./scripts/run_sanitizers.sh --all    # ASan + UB matrix + stress on Linux
 ```
 
 | Combination | Status |
 |-------------|--------|
 | ASan + pure lib tests on **Linux nightly** | Enabled in CI |
+| JOE-2228 pure-filter UB matrix | Enabled in CI (`ubsan-pure`): prefers rustc `-Zsanitizer=undefined` when listed; else **overflow-checks + debug-assertions** pure filters. **Miri** remains the primary pure-Rust UB detector (current nightlies dropped `undefined` from `-Zsanitizer`). |
 | ASan on macOS/Windows hosts | **Gap** — toolchain/friction; covered by Linux CI |
-| UBSan full matrix | **Accepted residual for v0.0.21** — ASan + Miri first; track later 0.0.x |
 | Full whisper/ORT under ASan | **Gap** — link time / false positives; integration suite instead |
 | Concurrency stress (jobs / fault injection) | Enabled on stable in CI |
 

@@ -143,10 +143,10 @@ and cosign identity env vars (see [provenance.md](provenance.md)).
 
 | Residual | Impact | Owner |
 |----------|--------|-------|
-| Remote providers experimental (no protected live smoke in Waves 1–3) | Must not claim remote `supported`; gate fails if mis-labelled | Maintainer |
-| Full SLSA attestations / crates.io package provenance parity | Not claimed; GitHub Release cosign + PROVENANCE required | Supply chain residual |
-| UBSan full matrix / full whisper+ORT under ASan | QE depth residual; not release-blocking | QE residual |
-| Production STT pack ≥60 min multi-speaker | Operator-prepared open-data; core corpus + retained metal reports in tree | Product residual |
+| Remote providers experimental until live protected smoke + human promotion PR | Dry-run schema/canary in CI (JOE-2229); do not claim remote `supported` without evidence | Maintainer |
+| crates.io package provenance parity / multi-party SLSA L3 | Not claimed; GitHub cosign + PROVENANCE + **SLSA build attestations** required (JOE-2230) | Supply chain residual |
+| Full whisper/ORT under ASan/UBSan; macOS/Windows sanitizers | Pure-filter UBSan on Linux CI (JOE-2228); native paths via integration | QE residual |
+| Production STT pack ≥60 min multi-speaker real speech | Operator path + recipe/dry-run coverage (JOE-2231); core + metal reports in tree | Product residual |
 | Multi-tenant in-process isolation | Explicitly unsupported | Security residual |
 | Stable 1.0 Rust API | Not claimed; continuous 0.0.x | Product residual |
 | Human multi-day dogfood calendar | Represented by Tier A clean-install + dogfood smoke + human sign-off | RC process residual |

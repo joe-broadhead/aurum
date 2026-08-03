@@ -264,6 +264,8 @@ jobs:
       contents: write
       # Keyless cosign via GitHub OIDC (JOE-1882)
       id-token: write
+      # GitHub SLSA build provenance attestations (JOE-2230)
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -352,6 +354,17 @@ jobs:
           export AURUM_COSIGN_CERTIFICATE_IDENTITY="${COSIGN_IDENTITY}"
           echo "cosign_verify_identity=${COSIGN_IDENTITY}"
           "${GITHUB_WORKSPACE}/scripts/verify_release_assets.sh" .
+
+      # JOE-2230: interoperable GitHub SLSA build provenance for Tier A CLI + native SDK.
+      # Additive to cosign/SHA256SUMS/PROVENANCE.json — does not replace them.
+      - name: Attest build provenance (CLI + native SDK)
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373  # v4.1.1
+        with:
+          subject-path: |
+            release-assets/aurum-macos-arm64
+            release-assets/aurum-linux-x86_64
+            release-assets/aurum-windows-x86_64.exe
+            release-assets/aurum-sdk-*.tar.gz
 
       - name: Extract changelog section
         id: notes

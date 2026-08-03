@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Prepare / validate the STT quality observatory corpus (JOE-2216).
+# Prepare / validate the STT quality observatory corpus (JOE-2216 / JOE-2231).
 #
 # - Default: validate the redistributable core only (safe for CI / clean checkout).
 # - --production: require a previously fetched production pack under
 #   evals/observatory/cache/ and enforce coverage minima.
 # - --slot NAME: document the fetch recipe for a production asset slot.
+# - --recipe-check: CI-safe integrity of production manifest recipes (no audio).
+# - --dry-run-production: write a synthetic pack that meets minima to prove the
+#   coverage checker (NOT real speech quality evidence).
 #
 # Never requires private Plaud material. Never uploads restrictive-license audio
 # as a public CI artifact.
@@ -19,12 +22,14 @@ SLOT=""
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") [--core|--production|--slot NAME] [--cache-dir DIR]
+Usage: $(basename "$0") [--core|--production|--slot NAME|--recipe-check|--dry-run-production] [--cache-dir DIR]
 
-  --core         Validate redistributable core corpus (default)
-  --production   Validate production pack presence + coverage (operator machine)
-  --slot NAME    Print fetch recipe for a production asset slot
-  --cache-dir D  Override cache directory (default: evals/observatory/cache)
+  --core               Validate redistributable core corpus (default)
+  --production         Validate production pack presence + coverage (operator machine)
+  --slot NAME          Print fetch recipe for a production asset slot
+  --recipe-check       CI-safe: every asset slot has fetch/license/min_duration (JOE-2231)
+  --dry-run-production Generate synthetic pack under cache/ that satisfies minima (not real speech)
+  --cache-dir D        Override cache directory (default: evals/observatory/cache)
 EOF
 }
 
@@ -33,6 +38,8 @@ while [[ $# -gt 0 ]]; do
     --core) MODE="core"; shift ;;
     --production) MODE="production"; shift ;;
     --slot) SLOT="$2"; MODE="slot"; shift 2 ;;
+    --recipe-check) MODE="recipe-check"; shift ;;
+    --dry-run-production) MODE="dry-run-production"; shift ;;
     --cache-dir) CACHE_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown: $1" >&2; usage; exit 2 ;;
@@ -145,9 +152,114 @@ print(
 PY
 }
 
+recipe_check() {
+  need_file "$PROD_MANIFEST"
+  PROD_PATH="$PROD_MANIFEST" python3 - <<'PY'
+import json, os, sys
+from pathlib import Path
+data = json.loads(Path(os.environ["PROD_PATH"]).read_text())
+assert data.get("schema_version") == 1
+targets = data.get("coverage_targets") or {}
+for k in ("min_duration_secs", "min_speakers", "min_english_accents", "min_long_form_over_10min", "required_scenarios"):
+    assert k in targets, f"coverage_targets missing {k}"
+slots = data.get("asset_slots") or []
+assert slots, "no asset_slots"
+errors = []
+ids = []
+for s in slots:
+    sid = s.get("slot_id")
+    if not sid:
+        errors.append("slot missing slot_id")
+        continue
+    ids.append(sid)
+    for field in ("role", "license_family", "fetch", "min_duration_secs"):
+        if s.get(field) is None or s.get(field) == "":
+            errors.append(f"{sid}: missing {field}")
+    # Speech corpora must not vendor multi-GB audio in-repo; control tones may.
+    if s.get("redistributable_in_repo") is True and "control" not in sid and "silence" not in sid:
+        errors.append(f"{sid}: non-control production audio must not be redistributable_in_repo")
+    fetch = str(s.get("fetch") or "")
+    ok_fetch = (
+        "prepare_stt_observatory_corpus.sh" in fetch
+        or fetch.startswith("http")
+        or fetch.startswith("in-repo")
+    )
+    if not ok_fetch:
+        errors.append(f"{sid}: fetch must reference prepare script, URL, or in-repo path")
+if len(ids) != len(set(ids)):
+    errors.append("duplicate slot_id values")
+if errors:
+    print("RECIPE CHECK FAIL:", "; ".join(errors), file=sys.stderr)
+    sys.exit(1)
+print(f"OK recipe integrity: {len(slots)} slots, coverage_targets present")
+PY
+}
+
+dry_run_production() {
+  # Synthetic fixtures that satisfy minima — explicit dry_run tag; not product WER evidence.
+  need_file "$PROD_MANIFEST"
+  mkdir -p "$CACHE_DIR"
+  local pack="${CACHE_DIR}/corpus.production.json"
+  PACK_PATH="$pack" PROD_PATH="$PROD_MANIFEST" python3 - <<'PY'
+import json, os
+from pathlib import Path
+manifest = json.loads(Path(os.environ["PROD_PATH"]).read_text())
+targets = manifest["coverage_targets"]
+min_dur = float(targets["min_duration_secs"])
+min_speakers = int(targets["min_speakers"])
+min_accents = int(targets["min_english_accents"])
+min_long = int(targets["min_long_form_over_10min"])
+scenarios = list(targets.get("required_scenarios") or [])
+fixtures = []
+# Build enough speakers and accents; pad duration with long-form assemblies.
+for i in range(max(min_speakers, 20)):
+    accent = f"accent_{['us','uk','in','au','ie','za'][i % 6]}"
+    tags = ["dry_run_synthetic", "conversational", accent]
+    if i < min_long:
+        tags.append("long_form")
+        dur = 700.0
+    else:
+        dur = max(30.0, (min_dur / max(min_speakers, 1)) + 5.0)
+    for sc in scenarios:
+        if sc not in tags:
+            tags.append(sc)
+            break
+    fixtures.append({
+        "id": f"dry-run-speaker-{i:03d}",
+        "speaker_id": f"spk-{i:03d}",
+        "duration_secs": dur,
+        "license": "synthetic CC0 dry-run — not real speech quality evidence",
+        "reference": f"synthetic dry-run utterance {i}",
+        "tags": tags,
+        "audio_path": None,
+        "notes": "JOE-2231 dry-run coverage probe only",
+    })
+# Ensure total duration
+total = sum(f["duration_secs"] for f in fixtures)
+if total < min_dur:
+    fixtures[0]["duration_secs"] += (min_dur - total + 1.0)
+    fixtures[0]["tags"] = list(set(fixtures[0]["tags"] + ["long_form"]))
+pack = {
+    "schema_version": 1,
+    "name": "aurum-observatory-production-dry-run",
+    "corpus_version": "observatory-production-dry-run-v1",
+    "description": "SYNTHETIC dry-run pack for coverage gate only. Not a quality claim.",
+    "dry_run": True,
+    "fixtures": fixtures,
+}
+path = Path(os.environ["PACK_PATH"])
+path.write_text(json.dumps(pack, indent=2) + "\n")
+print(f"wrote synthetic dry-run pack: {path} ({len(fixtures)} fixtures)")
+print("WARNING: dry-run pack is not real multi-speaker speech evidence.")
+PY
+  check_production
+}
+
 case "$MODE" in
   core) validate_core_json ;;
   production) check_production ;;
   slot) print_slot_recipe ;;
+  recipe-check) recipe_check ;;
+  dry-run-production) dry_run_production ;;
   *) echo "bad mode" >&2; exit 2 ;;
 esac

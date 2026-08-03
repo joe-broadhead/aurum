@@ -496,6 +496,50 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  # JOE-2229: dry-run protected evidence schema + canary (no network).
+  provider-smoke-dry-run:
+    name: provider smoke dry-run
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Dry-run protected smoke schema
+        env:
+          AURUM_SMOKE_SKIP_RELEASE_GATE: "1"
+        run: |
+          set -euo pipefail
+          chmod +x scripts/protected_provider_smoke.sh
+          ./scripts/protected_provider_smoke.sh --dry-run --out dist/provider-smoke
+      - name: Upload dry-run evidence
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        with:
+          name: provider-smoke-dry-run
+          path: |
+            dist/provider-smoke/SMOKE_SUMMARY.md
+            dist/provider-smoke/records/
+          if-no-files-found: error
+          retention-days: 7
+
+  # JOE-2231: production pack recipe integrity + synthetic coverage dry-run.
+  observatory-recipe-check:
+    name: observatory recipe check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Recipe integrity + dry-run production coverage
+        run: |
+          set -euo pipefail
+          chmod +x scripts/eval/prepare_stt_observatory_corpus.sh
+          ./scripts/eval/prepare_stt_observatory_corpus.sh --core
+          ./scripts/eval/prepare_stt_observatory_corpus.sh --recipe-check
+          ./scripts/eval/prepare_stt_observatory_corpus.sh \
+            --dry-run-production --cache-dir "$RUNNER_TEMP/aurum-obs-cache"
+
   # Pure-Rust Miri suite (JOE-1889) — curated filters only; see qe-depth.md.
   miri:
     name: miri (pure filters)
@@ -551,6 +595,35 @@ jobs:
           set -euo pipefail
           chmod +x scripts/run_sanitizers.sh
           ./scripts/run_sanitizers.sh --asan
+
+  # JOE-2228 pure-filter UB matrix (overflow-checks fallback when rustc lacks UBSan).
+  ubsan-pure:
+    name: ubsan (pure filters)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: nightly
+          components: rust-src
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config
+      - uses: Swatinem/rust-cache@f0deed1e0edfc6a9be95417288c0e1099b1eeec3  # v2.7.7
+        with:
+          prefix-key: v2-aurum-ubsan
+      - name: Pure-filter UB matrix (JOE-2228)
+        run: |
+          set -euo pipefail
+          chmod +x scripts/run_sanitizers.sh
+          ./scripts/run_sanitizers.sh --ubsan
 
   # Module-scoped trust coverage report (JOE-1888).
   coverage-trust:

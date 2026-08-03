@@ -393,10 +393,15 @@ impl Metrics {
     }
 
     pub fn emit(&self, event: OpEvent) {
-        if let Ok(g) = self.event_sink.lock() {
-            if let Some(sink) = g.as_ref() {
-                sink.emit(event);
-            }
+        // Clone the Arc under the lock, then invoke the host callback *outside*
+        // so a slow/re-entrant sink cannot hold the metrics mutex (v0.0.23).
+        let sink = self
+            .event_sink
+            .lock()
+            .ok()
+            .and_then(|g| g.as_ref().map(Arc::clone));
+        if let Some(sink) = sink {
+            sink.emit(event);
         }
     }
 
@@ -790,6 +795,44 @@ mod tests {
         }
         assert_eq!(sink.len(), 2);
         assert_eq!(sink.dropped(), 3);
+    }
+
+    #[test]
+    fn emit_does_not_hold_metrics_mutex_during_sink_callback() {
+        use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
+        use std::sync::Mutex as StdMutex;
+
+        /// Sink that re-enters Metrics::set_event_sink while handling emit.
+        struct ReentrantSink {
+            metrics: Arc<Metrics>,
+            hit: Arc<AtomicBool>,
+            // Keep a strong ref so Drop of prior sink does not race.
+            _guard: StdMutex<()>,
+        }
+
+        impl EventSink for ReentrantSink {
+            fn emit(&self, _event: OpEvent) {
+                self.hit.store(true, AtomicOrdering::SeqCst);
+                // Would deadlock if Metrics::emit held event_sink while calling us.
+                self.metrics.set_event_sink(None);
+            }
+        }
+
+        let m = Arc::new(Metrics::new());
+        let hit = Arc::new(AtomicBool::new(false));
+        let sink: Arc<dyn EventSink> = Arc::new(ReentrantSink {
+            metrics: Arc::clone(&m),
+            hit: Arc::clone(&hit),
+            _guard: StdMutex::new(()),
+        });
+        m.set_event_sink(Some(sink));
+        m.emit(OpEvent::stage(
+            1,
+            OpKind::Stt,
+            OpStage::Start,
+            MetricsScope::EngineLocal,
+        ));
+        assert!(hit.load(AtomicOrdering::SeqCst));
     }
 
     #[test]

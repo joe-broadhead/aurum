@@ -296,6 +296,8 @@ fn parse_xai_stt_body(
     want_timestamps: bool,
     media_duration: f64,
 ) -> Result<(String, Vec<Segment>, bool)> {
+    use crate::remote::TimestampSource;
+
     let parsed: XaiSttJson =
         serde_json::from_str(body).map_err(|e| ProviderError::InvalidProviderPayload {
             provider: PROVIDER_NAME.into(),
@@ -316,7 +318,14 @@ fn parse_xai_stt_body(
         if let Some(words) = parsed.words.filter(|w| !w.is_empty()) {
             let segments: Vec<Segment> = words
                 .into_iter()
-                .map(|w| Segment::from_parts_unchecked(w.start, w.end, w.text))
+                .map(|w| {
+                    Segment::from_parts_with_source(
+                        w.start,
+                        w.end,
+                        w.text,
+                        TimestampSource::ProviderWord,
+                    )
+                })
                 .collect();
             return Ok((text, segments, true));
         }
@@ -325,7 +334,12 @@ fn parse_xai_stt_body(
     let _ = parsed.language;
     Ok((
         text.clone(),
-        vec![Segment::from_parts_unchecked(0.0, duration, text)],
+        vec![Segment::from_parts_with_source(
+            0.0,
+            duration,
+            text,
+            TimestampSource::SyntheticSpan,
+        )],
         false,
     ))
 }

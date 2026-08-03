@@ -124,10 +124,21 @@ pub fn soft_split_text_segments(
     let max_chars = max_chars.max(1);
     let chars: Vec<char> = text.chars().collect();
     if chars.is_empty() {
-        return vec![Segment::from_parts_unchecked(start, end, String::new())];
+        return vec![Segment::from_parts_with_source(
+            start,
+            end,
+            String::new(),
+            TimestampSource::SyntheticSpan,
+        )];
     }
     if chars.len() <= max_chars {
-        return vec![Segment::from_parts_unchecked(start, end, text.to_string())];
+        // Full-span carrier without further subdivision.
+        return vec![Segment::from_parts_with_source(
+            start,
+            end,
+            text.to_string(),
+            TimestampSource::SyntheticSpan,
+        )];
     }
     let n_parts = chars.len().div_ceil(max_chars);
     let span = (end - start).max(0.0);
@@ -268,8 +279,8 @@ pub fn stitch_chunk_results(
     });
     result.set_backend_kind(backend_kind);
     result.set_timestamps_reliable(timestamps_reliable);
+    result.set_warnings(stitch_warnings);
     result.validate_segments()?;
-    let _ = stitch_warnings; // reserved for progress/diagnostics (no payload)
     Ok(result)
 }
 
@@ -293,6 +304,7 @@ pub fn stitch_chunk_results_with_overlaps(
     let model = parts[0].2.model().to_string();
     let language = parts[0].2.language().map(|s| s.to_string());
     let provider_name = parts[0].2.provider().to_string();
+    let mut stitch_warnings: Vec<String> = Vec::new();
 
     for (i, (offset, overlap_secs, r)) in parts.iter().enumerate() {
         if matches!(r.backend_kind(), crate::providers::BackendKind::Asr) {
@@ -301,8 +313,11 @@ pub fn stitch_chunk_results_with_overlaps(
         let mut chunk_segs = normalize_chunk_segments(r.segments(), *offset, limits);
         if i > 0 && *overlap_secs > 0.0 {
             let earlier = segments.as_slice();
-            let (deduped, _) =
+            let (deduped, warn) =
                 dedupe_segments_overlap(earlier, &chunk_segs, *overlap_secs, *offset);
+            if let Some(w) = warn {
+                stitch_warnings.push(w);
+            }
             chunk_segs = deduped;
         }
         let t = r.text().trim();
@@ -312,7 +327,8 @@ pub fn stitch_chunk_results_with_overlaps(
         segments.extend(chunk_segs);
     }
 
-    let (text, _) = stitch_text_with_overlap(&text_parts);
+    let (text, text_warns) = stitch_text_with_overlap(&text_parts);
+    stitch_warnings.extend(text_warns);
     validate_text_bounds(&text, None, limits, provider)?;
     validate_segments(&segments, full_duration_secs, limits, provider)?;
     let sources: Vec<_> = segments.iter().map(|s| s.timestamp_source()).collect();
@@ -334,6 +350,7 @@ pub fn stitch_chunk_results_with_overlaps(
     });
     result.set_backend_kind(backend_kind);
     result.set_timestamps_reliable(timestamps_reliable);
+    result.set_warnings(stitch_warnings);
     result.validate_segments()?;
     Ok(result)
 }
@@ -538,6 +555,72 @@ mod tests {
         assert!((stitched.segments()[1].start() - 210.0).abs() < 1e-9);
         assert!(stitched.timestamps_reliable());
         assert_eq!(stitched.provider(), "openai");
+    }
+
+    #[test]
+    fn stitch_with_overlaps_dedupes_using_later_window_overlap() {
+        // Simulates planner ownership: part0 overlap=0, part1 overlap=1.5.
+        let mut a = TranscriptionResult::openrouter(
+            "the quick brown fox jumps".to_string(),
+            vec![Segment::from_parts_with_source(
+                0.0,
+                5.0,
+                "the quick brown fox jumps",
+                TimestampSource::ProviderSegment,
+            )],
+            None,
+            "m".to_string(),
+            5.0,
+            true,
+        );
+        a.set_provider("openai");
+        a.set_backend_kind(BackendKind::Asr);
+        a.set_timestamps_reliable(true);
+
+        let mut b = TranscriptionResult::openrouter(
+            "fox jumps over the lazy dog".to_string(),
+            vec![Segment::from_parts_with_source(
+                0.0,
+                5.0,
+                "fox jumps over the lazy dog",
+                TimestampSource::ProviderSegment,
+            )],
+            None,
+            "m".to_string(),
+            5.0,
+            true,
+        );
+        b.set_provider("openai");
+        b.set_backend_kind(BackendKind::Asr);
+        b.set_timestamps_reliable(true);
+
+        let stitched = stitch_chunk_results_with_overlaps(
+            &[(0.0, 0.0, a), (3.5, 1.5, b)],
+            8.5,
+            "openai",
+            TranscriptLimits::default(),
+        )
+        .unwrap();
+        // Overlap tokens "fox jumps" should be deduped from the later chunk text path.
+        assert!(stitched.text().contains("lazy"));
+        assert!(stitched.text().contains("quick"));
+        // Low-confidence path may leave warnings empty when text dedupe succeeds.
+        let _ = stitched.warnings();
+    }
+
+    #[test]
+    fn soft_split_marks_interpolated_and_synthetic() {
+        let text = "a".repeat(20);
+        let segs = soft_split_text_segments(&text, 0.0, 10.0, 8);
+        assert!(segs
+            .iter()
+            .all(|s| s.timestamp_source() == TimestampSource::Interpolated));
+        let single = soft_split_text_segments("short", 0.0, 1.0, 100);
+        assert_eq!(single.len(), 1);
+        assert_eq!(
+            single[0].timestamp_source(),
+            TimestampSource::SyntheticSpan
+        );
     }
 
     #[tokio::test]

@@ -42,16 +42,16 @@ Failures in the curated set **fail CI**.
 ```bash
 ./scripts/run_sanitizers.sh          # ASan on Linux when available + stress
 ./scripts/run_sanitizers.sh --stress # concurrency only
-./scripts/run_sanitizers.sh --ubsan  # Linux nightly pure filters (JOE-2228)
-./scripts/run_sanitizers.sh --all    # ASan + UBSan + stress on Linux
+./scripts/run_sanitizers.sh --ubsan  # JOE-2228 pure-filter UB matrix
+./scripts/run_sanitizers.sh --all    # ASan + UB matrix + stress on Linux
 ```
 
 | Combination | Status |
 |-------------|--------|
 | ASan + pure lib tests on **Linux nightly** | Enabled in CI |
-| UBSan + pure lib tests on **Linux nightly** | Enabled in CI (`ubsan-pure`, JOE-2228) |
-| ASan/UBSan on macOS/Windows hosts | **Gap** — toolchain/friction; covered by Linux CI |
-| Full whisper/ORT under ASan/UBSan | **Gap** — link time / false positives; integration suite instead |
+| JOE-2228 pure-filter UB matrix | Enabled in CI (`ubsan-pure`): prefers rustc `-Zsanitizer=undefined` when listed; else **overflow-checks + debug-assertions** pure filters. **Miri** remains the primary pure-Rust UB detector (current nightlies dropped `undefined` from `-Zsanitizer`). |
+| ASan on macOS/Windows hosts | **Gap** — toolchain/friction; covered by Linux CI |
+| Full whisper/ORT under ASan | **Gap** — link time / false positives; integration suite instead |
 | Concurrency stress (jobs / fault injection) | Enabled on stable in CI |
 
 ## Branch coverage policy (JOE-1888)

@@ -3,16 +3,19 @@
 #
 # Strategy:
 #   1. AddressSanitizer (ASan) on Linux nightly for pure domain/dto filters
-#   2. UndefinedBehaviorSanitizer (UBSan) on Linux nightly for pure filters (JOE-2228)
+#   2. JOE-2228 pure-filter "UB" matrix:
+#        - Prefer rustc -Zsanitizer=undefined when the nightly still lists it
+#        - Else fail-closed pure filters with overflow-checks + debug-assertions
+#          (current nightlies dropped `undefined`; Miri remains primary pure-Rust UB)
 #   3. Concurrency stress unit tests on stable (all OSes)
-#   4. Document remaining gaps (full whisper/ORT under sanitizers, macOS ASan/UBSan)
+#   4. Document remaining gaps (full whisper/ORT under sanitizers, macOS ASan)
 #
 # Usage:
 #   ./scripts/run_sanitizers.sh            # auto: ASan if Linux else stress only
 #   ./scripts/run_sanitizers.sh --stress   # concurrency/leak stress only
 #   ./scripts/run_sanitizers.sh --asan     # force ASan attempt + stress
-#   ./scripts/run_sanitizers.sh --ubsan    # force UBSan pure filters (stress if AURUM_UBSAN_WITH_STRESS=1)
-#   ./scripts/run_sanitizers.sh --all      # ASan + UBSan + stress (Linux)
+#   ./scripts/run_sanitizers.sh --ubsan    # JOE-2228 pure-filter UB matrix
+#   ./scripts/run_sanitizers.sh --all      # ASan + UB matrix + stress (Linux)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -26,7 +29,7 @@ while [ $# -gt 0 ]; do
     --ubsan) MODE="ubsan"; shift ;;
     --all) MODE="all"; shift ;;
     --auto) MODE="auto"; shift ;;
-    -h|--help) sed -n '1,25p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,30p' "$0"; exit 0 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -44,6 +47,25 @@ host_is_linux() {
   local triple
   triple="$(rustc +nightly -vV 2>/dev/null | sed -n 's/^host: //p' || true)"
   [[ "${triple}" == *linux* ]]
+}
+
+# Returns 0 if nightly rustc accepts -Zsanitizer=undefined.
+rustc_supports_ubsan() {
+  # Probe via error text: unsupported values list does not include "undefined".
+  local err
+  err="$(rustc +nightly -Zsanitizer=undefined --print cfg - 2>&1 </dev/null || true)"
+  if echo "${err}" | grep -qi "incorrect value \`undefined\`"; then
+    return 1
+  fi
+  # If rustc advanced far enough to complain about missing input/crate, sanitizer is accepted.
+  if echo "${err}" | grep -qiE "no input|error: "; then
+    # accepted enough that it is not the "incorrect value" path
+    if echo "${err}" | grep -qi "incorrect value"; then
+      return 1
+    fi
+    return 0
+  fi
+  return 1
 }
 
 run_asan() {
@@ -83,41 +105,51 @@ run_asan() {
   fi
 }
 
+run_overflow_pure() {
+  echo "== overflow-checks + debug-assertions pure filters (JOE-2228 fallback) =="
+  echo "note: current nightly rustc does not list -Zsanitizer=undefined;"
+  echo "      Miri (ci miri job) remains the primary pure-Rust UB detector."
+  echo "filters=${PURE_FILTERS[*]}"
+  RUSTFLAGS="${RUSTFLAGS:-} -C overflow-checks=on -C debug-assertions=on" \
+    cargo test -p aurum-core --lib --no-default-features --locked \
+    -- "${PURE_FILTERS[@]}"
+}
+
 run_ubsan() {
-  echo "== UndefinedBehaviorSanitizer (nightly, pure filters) =="
+  echo "== JOE-2228 pure-filter UB matrix =="
   if ! command -v rustup >/dev/null; then
-    echo "rustup required for UBSan job" >&2
+    echo "rustup required for UB matrix" >&2
     exit 1
   fi
-  local triple
-  triple="$(rustc +nightly -vV | sed -n 's/^host: //p')"
-  case "${triple}" in
-    *linux*)
-      ;;
-    *)
-      echo "UBSan matrix is validated on Linux; host=${triple} — skipped (see qe-depth.md)."
-      return 0
-      ;;
-  esac
 
-  rustup component add rust-src --toolchain nightly 2>/dev/null || true
-
-  # Keep pure filters bounded for PR CI. halt_on_error fails closed.
-  echo "UBSan target=${triple} filters=${PURE_FILTERS[*]}"
-  set +e
-  RUSTFLAGS="-Zsanitizer=undefined" \
-    UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}" \
-    cargo +nightly test -p aurum-core --lib --no-default-features --locked \
-    -Zbuild-std --target "${triple}" \
-    -- "${PURE_FILTERS[@]}"
-  local rc=$?
-  set -e
-  if [ "${rc}" -ne 0 ]; then
-    echo "build-std UBSan path failed (rc=${rc}); trying host RUSTFLAGS smoke on domain only..."
+  if rustc_supports_ubsan; then
+    local triple
+    triple="$(rustc +nightly -vV | sed -n 's/^host: //p')"
+    case "${triple}" in
+      *linux*)
+        ;;
+      *)
+        echo "LLVM UBSan path is validated on Linux; host=${triple} — overflow pure filters."
+        run_overflow_pure
+        return 0
+        ;;
+    esac
+    rustup component add rust-src --toolchain nightly 2>/dev/null || true
+    echo "UBSan (rustc undefined) target=${triple} filters=${PURE_FILTERS[*]}"
+    set +e
     RUSTFLAGS="-Zsanitizer=undefined" \
       UBSAN_OPTIONS="${UBSAN_OPTIONS:-print_stacktrace=1:halt_on_error=1}" \
       cargo +nightly test -p aurum-core --lib --no-default-features --locked \
-      -- domain::
+      -Zbuild-std --target "${triple}" \
+      -- "${PURE_FILTERS[@]}"
+    local rc=$?
+    set -e
+    if [ "${rc}" -ne 0 ]; then
+      echo "build-std UBSan failed (rc=${rc}); falling back to overflow pure filters..."
+      run_overflow_pure
+    fi
+  else
+    run_overflow_pure
   fi
 }
 
@@ -126,7 +158,6 @@ case "${MODE}" in
   asan) run_asan; run_stress ;;
   ubsan)
     run_ubsan
-    # Optional stress when AURUM_UBSAN_WITH_STRESS=1 (CI pure job skips).
     if [[ "${AURUM_UBSAN_WITH_STRESS:-}" == "1" ]]; then
       run_stress
     fi
@@ -134,10 +165,10 @@ case "${MODE}" in
   all)
     if host_is_linux || [[ "$(uname -s)" == "Linux" ]]; then
       run_asan
-      run_ubsan
     else
-      echo "Non-Linux host: ASan/UBSan deferred to Linux CI (documented gap)."
+      echo "Non-Linux host: ASan deferred to Linux CI (documented gap)."
     fi
+    run_ubsan
     run_stress
     ;;
   auto)

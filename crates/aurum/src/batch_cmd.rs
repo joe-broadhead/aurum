@@ -316,9 +316,11 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
         let out_rel = manifest.items[idx].output.clone();
         let out_path = cli.output_dir.join(&out_rel);
 
-        // 1. compute/verify source identity
-        let (src_digest, src_size) = match sha256_file_full(&source) {
-            Ok(v) => v,
+        // 1. process-owned snapshot: hash of the same bytes that will be decoded
+        //    (JOE-2316). Concurrent mutation of the original path cannot change
+        //    the snapshot after materialization.
+        let snapshot = match aurum_core::materialize_source_snapshot(&source) {
+            Ok(s) => s,
             Err(e) => {
                 manifest.items[idx].status = BatchItemStatus::Failed;
                 manifest.items[idx].error = Some(truncate_error(&e.to_string()));
@@ -328,6 +330,8 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
                 continue;
             }
         };
+        let src_digest = snapshot.digest().to_string();
+        let src_size = snapshot.size();
 
         // 2. mark running and persist
         manifest.items[idx].status = BatchItemStatus::Running;
@@ -359,10 +363,10 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
 
         // 3. execute and transactionally publish transcript
         let item_result = async {
-            let audio = audio::load_audio(&source).await?;
-            // Re-hash after decode so the transcript is only accepted when the
-            // on-disk bytes still match the identity recorded above (P1a).
-            aurum_core::verify_source_identity(&source, &src_digest, src_size)?;
+            // Decode the snapshot path (not the live original path).
+            let audio = audio::load_audio(snapshot.path()).await?;
+            // Defense in depth: snapshot must still match recorded identity.
+            aurum_core::verify_source_identity(snapshot.path(), &src_digest, src_size)?;
             let options = TranscriptionOptions {
                 model: model.clone(),
                 language: cfg.language.clone(),

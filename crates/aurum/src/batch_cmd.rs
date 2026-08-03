@@ -172,6 +172,13 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
         .unwrap_or(cfg.openrouter_stt_mode.as_str());
     let stt_mode = OpenRouterSttMode::parse(stt_mode_raw)?;
 
+    let long_form = aurum_core::LongFormPolicy::from_env_or_default();
+    let model_artifact_digest = if provider_name == "local" {
+        aurum_core::local_model_artifact_digest(&model)
+    } else {
+        // Remote model digests are not pinned in-tree; retain evidence id only.
+        None
+    };
     let op_fp_input = OperationFingerprintInput {
         provider_id: provider_name.clone(),
         backend_route: if provider_name == "local" {
@@ -180,6 +187,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
             format!("remote/{stt_mode_raw}")
         },
         model_id: model.clone(),
+        model_artifact_digest: model_artifact_digest.clone(),
         support_evidence: profile_evidence.clone(),
         language: cfg.language.clone(),
         timestamps: want_timestamps,
@@ -189,7 +197,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
         cleanup_provider: cleanup_kind.as_str().into(),
         cleanup_model: cfg.cleanup_openrouter_model.clone(),
         cleanup_segments: segment_policy.as_str().into(),
-        long_form_policy: None,
+        long_form_policy: Some(aurum_core::long_form_policy_fingerprint(&long_form)),
         dto_schema_version: aurum_core::STT_RESULT_SCHEMA_VERSION.to_string(),
         profile: profile_name.clone(),
         profile_evidence_version: profile_evidence
@@ -327,6 +335,9 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
         manifest.items[idx].source_sha256 = Some(src_digest.clone());
         manifest.items[idx].source_size = Some(src_size);
         manifest.items[idx].operation_fingerprint = Some(op_fp.clone());
+        if let Some(ref d) = model_artifact_digest {
+            manifest.items[idx].model_digest = Some(d.clone());
+        }
         manifest.items[idx].started_at_unix = Some(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)

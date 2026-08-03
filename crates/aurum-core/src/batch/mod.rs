@@ -120,6 +120,9 @@ pub struct OperationFingerprintInput {
     pub provider_id: String,
     pub backend_route: String,
     pub model_id: String,
+    /// Reviewed local model artifact digest when known (catalogue pin).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_artifact_digest: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub support_evidence: Option<String>,
     pub language: String,
@@ -131,6 +134,7 @@ pub struct OperationFingerprintInput {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cleanup_model: Option<String>,
     pub cleanup_segments: String,
+    /// Canonical long-form policy identity (includes env chunk override).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub long_form_policy: Option<String>,
     pub dto_schema_version: String,
@@ -161,6 +165,7 @@ pub fn operation_fingerprint(input: &OperationFingerprintInput) -> String {
             "  \"language\": {},\n",
             "  \"local_only\": {},\n",
             "  \"long_form_policy\": {},\n",
+            "  \"model_artifact_digest\": {},\n",
             "  \"model_id\": {},\n",
             "  \"output_format\": {},\n",
             "  \"profile\": {},\n",
@@ -182,6 +187,7 @@ pub fn operation_fingerprint(input: &OperationFingerprintInput) -> String {
         json_str(&input.language),
         input.local_only,
         json_opt_str(&input.long_form_policy),
+        json_opt_str(&input.model_artifact_digest),
         json_str(&input.model_id),
         json_str(&input.output_format),
         json_opt_str(&input.profile),
@@ -194,6 +200,27 @@ pub fn operation_fingerprint(input: &OperationFingerprintInput) -> String {
     let mut hasher = Sha256::new();
     hasher.update(payload.as_bytes());
     hex::encode(hasher.finalize())
+}
+
+/// Deterministic identity string for a long-form policy (fixed field order).
+pub fn long_form_policy_fingerprint(policy: &crate::remote::LongFormPolicy) -> String {
+    format!(
+        "lfv1:target={:.6}:min={:.6}:max={:.6}:search={:.6}:silence={:.6}:rms={:.6}:overlap={:.6}:max_ov={:.6}",
+        policy.target_secs,
+        policy.min_secs,
+        policy.max_secs,
+        policy.search_secs,
+        policy.min_silence_secs,
+        policy.silence_rms_ratio,
+        policy.overlap_secs,
+        policy.max_overlap_fraction,
+    )
+}
+
+/// Reviewed catalogue pin for a local STT model id, when known.
+pub fn local_model_artifact_digest(model_id: &str) -> Option<String> {
+    let info = crate::model::lookup_model(model_id).ok()?;
+    crate::model::pinned_sha256(info.filename).map(|s| s.to_string())
 }
 
 fn json_str(s: &str) -> String {
@@ -1063,6 +1090,7 @@ mod tests {
             provider_id: "local".into(),
             backend_route: "whisper_cpp".into(),
             model_id: model.into(),
+            model_artifact_digest: local_model_artifact_digest(model),
             support_evidence: None,
             language: "en".into(),
             timestamps: false,
@@ -1072,7 +1100,9 @@ mod tests {
             cleanup_provider: "rules".into(),
             cleanup_model: None,
             cleanup_segments: "auto".into(),
-            long_form_policy: None,
+            long_form_policy: Some(long_form_policy_fingerprint(
+                &crate::remote::LongFormPolicy::default(),
+            )),
             dto_schema_version: "1".into(),
             profile: None,
             profile_evidence_version: None,
@@ -1092,6 +1122,21 @@ mod tests {
         let mut x = fp_input("base");
         x.timestamps = true;
         assert_ne!(a, operation_fingerprint(&x));
+        let mut y = fp_input("base");
+        y.long_form_policy = Some("different".into());
+        assert_ne!(a, operation_fingerprint(&y));
+        let mut z = fp_input("base");
+        z.model_artifact_digest = Some("deadbeef".into());
+        assert_ne!(a, operation_fingerprint(&z));
+    }
+
+    #[test]
+    fn long_form_policy_fingerprint_stable() {
+        let p = crate::remote::LongFormPolicy::default();
+        let a = long_form_policy_fingerprint(&p);
+        let b = long_form_policy_fingerprint(&p);
+        assert_eq!(a, b);
+        assert!(a.starts_with("lfv1:"));
     }
 
     #[test]

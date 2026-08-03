@@ -147,6 +147,18 @@ impl TranscriptionRequest {
         }
         Ok(())
     }
+
+    /// Split into legacy provider options and a full [`OpContext`] (P1c).
+    pub fn into_options_and_context(self) -> (crate::providers::TranscriptionOptions, OpContext) {
+        let ctx = self.operation.into_op_context();
+        let options = crate::providers::TranscriptionOptions {
+            model: self.model,
+            language: self.language,
+            timestamps: self.timestamps,
+            cancel: Some(ctx.cancel.clone()),
+        };
+        (options, ctx)
+    }
 }
 
 /// TTS request with shared operation control.
@@ -209,6 +221,21 @@ impl SynthesisRequest {
             .into());
         }
         Ok(())
+    }
+
+    /// Split into legacy provider options and a full [`OpContext`] (P1c).
+    #[cfg(feature = "tts")]
+    pub fn into_options_and_context(self) -> (crate::tts::provider::SynthesisOptions, OpContext) {
+        let ctx = self.operation.into_op_context();
+        let options = crate::tts::provider::SynthesisOptions {
+            model: self.model,
+            voice: self.voice,
+            language: self.language,
+            speaking_rate: self.speaking_rate,
+            cancel: Some(ctx.cancel.clone()),
+            ..Default::default()
+        };
+        (options, ctx)
     }
 }
 
@@ -394,6 +421,22 @@ mod tests {
         assert!(bad.validate().is_err());
         let nan = SynthesisRequest::new("m", "v").speaking_rate(f32::NAN);
         assert!(nan.validate().is_err());
+    }
+
+    #[test]
+    fn transcription_request_into_options_preserves_cancel() {
+        let cancel = CancelFlag::new();
+        cancel.cancel();
+        let req = TranscriptionRequest::new("base")
+            .language("en")
+            .timestamps(true)
+            .operation(OperationOptions::new().with_cancel(cancel));
+        let (opts, ctx) = req.into_options_and_context();
+        assert_eq!(opts.model, "base");
+        assert_eq!(opts.language, "en");
+        assert!(opts.timestamps);
+        assert!(opts.cancel.as_ref().unwrap().is_cancelled());
+        assert!(ctx.cancel.is_cancelled());
     }
 
     #[test]

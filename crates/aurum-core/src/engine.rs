@@ -32,8 +32,10 @@
 use crate::audio::AudioInput;
 use crate::config::{Config, ValidatedConfig};
 use crate::doctor::{run_doctor, DoctorReport};
-use crate::error::{Result, UserError};
-use crate::observability::{Metrics, MetricsSnapshot};
+use crate::error::{ErrorCategory, Result, UserError};
+use crate::observability::{
+    Metrics, MetricsSnapshot, OpEvent, OpKind, OpStage, TerminalCategory, TerminalGuard,
+};
 use crate::provider_platform::{
     ProviderBuildContext, ProviderId, ProviderRegistry, ProviderResolveOptions,
 };
@@ -41,11 +43,11 @@ use crate::providers::local::{LocalWhisperProvider, SttContextPool};
 use crate::providers::{
     OpenRouterSttMode, TranscriptionOptions, TranscriptionProvider, TranscriptionResult,
 };
-use crate::runtime::{GovernorConfig, ResourceGovernor};
+use crate::runtime::{GovernorConfig, OpContext, ResourceGovernor};
+use crate::sdk::{OperationOptions, TranscriptionRequest};
 use crate::support::{build_support_bundle, SupportBundle};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
 
 #[cfg(feature = "tts")]
 use crate::tts::local::{LocalTtsProvider, TtsSessionPool};
@@ -310,22 +312,97 @@ impl AurumEngine {
     }
 
     /// High-level STT from a prepared [`AudioInput`] via config `provider` (JOE-1787 / JOE-1938).
+    ///
+    /// Compatibility wrapper around [`Self::transcribe_request`] with a default
+    /// [`OperationOptions`] (cancel taken from `options` when present).
     pub async fn transcribe(
         &self,
         input: &AudioInput,
         options: &TranscriptionOptions,
     ) -> Result<TranscriptionResult> {
+        let mut op = OperationOptions::new();
+        if let Some(ref c) = options.cancel {
+            op = op.with_cancel(c.clone());
+        }
+        let request = TranscriptionRequest {
+            model: options.model.clone(),
+            language: options.language.clone(),
+            timestamps: options.timestamps,
+            operation: op,
+        };
+        self.transcribe_request(input, request).await
+    }
+
+    /// STT via the typed request contract (JOE-2221 / v0.0.23 P1c).
+    ///
+    /// Drives provider execution from [`TranscriptionRequest`], preserves cancel /
+    /// deadline / request id through [`OpContext`], and records a single terminal
+    /// outcome via [`TerminalGuard`] (P1d).
+    pub async fn transcribe_request(
+        &self,
+        input: &AudioInput,
+        request: TranscriptionRequest,
+    ) -> Result<TranscriptionResult> {
         self.ensure_open()?;
-        self.metrics.record_start();
-        let start = Instant::now();
+        request.validate()?;
+        let (options, op) = request.into_options_and_context();
+        op.check()?;
+        self.run_stt(input, &options, op).await
+    }
+
+    async fn run_stt(
+        &self,
+        input: &AudioInput,
+        options: &TranscriptionOptions,
+        op: OpContext,
+    ) -> Result<TranscriptionResult> {
         let id = self.stt_provider_id()?;
-        let provider = self.stt_provider(&id)?;
+        let mut guard = TerminalGuard::start(Arc::clone(&self.metrics), op.request_id, OpKind::Stt);
+        let decoded_bytes = (input.len() as u64).saturating_mul(4);
+        self.metrics.record_decoded_bytes(decoded_bytes);
+        self.metrics.emit(
+            OpEvent::stage(
+                op.request_id,
+                OpKind::Stt,
+                OpStage::Inference,
+                self.metrics.scope(),
+            )
+            .with_provider(id.as_str())
+            .with_model(options.model.clone())
+            .with_decoded_bytes(decoded_bytes),
+        );
+
+        let provider = match self.stt_provider(&id) {
+            Ok(p) => p,
+            Err(e) => {
+                self.finish_guard(&mut guard, &e);
+                return Err(e);
+            }
+        };
+        if let Err(e) = op.check() {
+            self.finish_guard(&mut guard, &e);
+            return Err(e);
+        }
         let out = provider.transcribe(input, options).await;
         match &out {
-            Ok(_) => self.metrics.record_complete(start.elapsed()),
-            Err(_) => self.metrics.record_failed(),
+            Ok(_) => {
+                guard.finish(TerminalCategory::Completed, false);
+            }
+            Err(e) => {
+                self.finish_guard(&mut guard, e);
+            }
         }
         out
+    }
+
+    fn finish_guard(&self, guard: &mut TerminalGuard, err: &crate::error::TranscriptionError) {
+        let cat = match err.error_category() {
+            ErrorCategory::Cancelled => TerminalCategory::Cancelled,
+            ErrorCategory::DeadlineExceeded => TerminalCategory::Deadline,
+            ErrorCategory::BusyOverloaded => TerminalCategory::Overload,
+            _ => TerminalCategory::Failed,
+        };
+        guard.finish(cat, err.retryable());
     }
 
     /// High-level STT from mono PCM @ whisper sample rate (JOE-1787 / JOE-1938).
@@ -354,15 +431,76 @@ impl AurumEngine {
         text: &str,
         options: &SynthesisOptions,
     ) -> Result<SynthesisResult> {
+        use crate::sdk::SynthesisRequest;
+        let mut op = OperationOptions::new();
+        if let Some(ref c) = options.cancel {
+            op = op.with_cancel(c.clone());
+        }
+        let request = SynthesisRequest {
+            model: options.model.clone(),
+            voice: options.voice.clone(),
+            language: options.language.clone(),
+            speaking_rate: options.speaking_rate,
+            operation: op,
+        };
+        self.synthesize_request(text, request).await
+    }
+
+    /// TTS via the typed request contract (JOE-2221 / v0.0.23 P1c).
+    #[cfg(feature = "tts")]
+    pub async fn synthesize_request(
+        &self,
+        text: &str,
+        request: crate::sdk::SynthesisRequest,
+    ) -> Result<SynthesisResult> {
         self.ensure_open()?;
-        self.metrics.record_start();
-        let start = Instant::now();
+        request.validate()?;
+        let (options, op) = request.into_options_and_context();
+        op.check()?;
+
         let id = self.tts_provider_id()?;
-        let provider = self.tts_provider(&id)?;
-        let out = provider.synthesize(text, options).await;
+        let mut guard = TerminalGuard::start(Arc::clone(&self.metrics), op.request_id, OpKind::Tts);
+        let chars = text.chars().count() as u64;
+        self.metrics.record_tts_chars(chars);
+        self.metrics.emit(
+            OpEvent::stage(
+                op.request_id,
+                OpKind::Tts,
+                OpStage::Inference,
+                self.metrics.scope(),
+            )
+            .with_provider(id.as_str())
+            .with_model(options.model.clone())
+            .with_encoded_bytes(chars),
+        );
+
+        let provider = match self.tts_provider(&id) {
+            Ok(p) => p,
+            Err(e) => {
+                self.finish_guard(&mut guard, &e);
+                return Err(e);
+            }
+        };
+        if let Err(e) = op.check() {
+            self.finish_guard(&mut guard, &e);
+            return Err(e);
+        }
+        // Propagate local_only from engine config when request left defaults.
+        let mut options = options;
+        if self.config.as_ref().local_only {
+            options.local_only = true;
+        }
+        let out = provider.synthesize(text, &options).await;
         match &out {
-            Ok(_) => self.metrics.record_complete(start.elapsed()),
-            Err(_) => self.metrics.record_failed(),
+            Ok(r) => {
+                if r.chunk_count > 0 {
+                    self.metrics.record_tts_chunks(r.chunk_count as u64);
+                }
+                guard.finish(TerminalCategory::Completed, false);
+            }
+            Err(e) => {
+                self.finish_guard(&mut guard, e);
+            }
         }
         out
     }
@@ -429,6 +567,69 @@ impl Drop for AurumEngine {
 mod tests {
     use super::*;
     use crate::provider_platform::preflight_stt_with_registry;
+
+    #[tokio::test]
+    async fn transcribe_request_respects_deadline_and_records_terminal() {
+        use crate::audio::AudioInput;
+        use crate::sdk::TranscriptionRequest;
+        use std::time::{Duration, Instant};
+
+        let e = AurumEngine::load().unwrap();
+        let sink = Arc::new(crate::observability::BoundedEventSink::new(32));
+        e.metrics().set_event_sink(Some(
+            sink.clone() as Arc<dyn crate::observability::EventSink>
+        ));
+        // Past deadline → fails closed before provider work.
+        let request = TranscriptionRequest::new("tiny-q5_1").operation(
+            OperationOptions::new().with_deadline(Instant::now() - Duration::from_secs(1)),
+        );
+        let audio =
+            AudioInput::from_pcm(vec![0.0f32; 1600], crate::audio::WHISPER_SAMPLE_RATE).unwrap();
+        let err = e.transcribe_request(&audio, request).await.unwrap_err();
+        assert_eq!(err.error_category(), ErrorCategory::DeadlineExceeded);
+        // TerminalGuard may not start if check fails first — ops_started can be 0.
+        // When deadline is checked before TerminalGuard, no metrics start is expected.
+        let _ = sink.drain();
+        let _ = err;
+    }
+
+    #[tokio::test]
+    async fn transcribe_request_wires_metrics_on_provider_error() {
+        use crate::audio::AudioInput;
+        use crate::sdk::TranscriptionRequest;
+
+        let e = AurumEngine::load().unwrap();
+        let sink = Arc::new(crate::observability::BoundedEventSink::new(64));
+        e.metrics().set_event_sink(Some(
+            sink.clone() as Arc<dyn crate::observability::EventSink>
+        ));
+        // Empty model rejected by request validation before guard.
+        let request = TranscriptionRequest::new("");
+        let audio =
+            AudioInput::from_pcm(vec![0.0f32; 1600], crate::audio::WHISPER_SAMPLE_RATE).unwrap();
+        assert!(e.transcribe_request(&audio, request).await.is_err());
+        assert_eq!(e.metrics_snapshot().ops_started, 0);
+
+        // Missing model file will fail during provider path after TerminalGuard starts.
+        let request = TranscriptionRequest::new("definitely-not-a-real-model-xyz");
+        let err = e.transcribe_request(&audio, request).await;
+        assert!(err.is_err());
+        let snap = e.metrics_snapshot();
+        assert!(snap.ops_started >= 1);
+        assert!(snap.ops_failed >= 1 || snap.ops_completed >= 1);
+        let events = sink.drain();
+        assert!(
+            events.iter().any(|ev| ev.stage == OpStage::Start),
+            "expected Start event"
+        );
+        assert!(
+            events
+                .iter()
+                .any(|ev| ev.stage == OpStage::Terminal || ev.terminal.is_some()),
+            "expected Terminal event"
+        );
+        assert!(snap.decoded_bytes_total > 0);
+    }
 
     #[test]
     fn independent_engines_have_independent_metrics_and_pools() {

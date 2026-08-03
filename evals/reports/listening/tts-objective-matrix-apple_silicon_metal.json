@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "evidence_version": "0.0.22-tts-listening-v1",
+  "kind": "tts_objective_matrix_summary",
+  "hardware_profile": "apple_silicon_metal",
+  "aurum_version": "0.0.23",
+  "commit": "36cbf544d41fda85d274dc247885ec0246247062",
+  "pairs": [
+    {
+      "model": "kitten-nano-int8",
+      "voice": "Luna",
+      "passed": 65,
+      "failed": 0,
+      "all_passed": true,
+      "report": "evals/reports/listening/tts-objective-apple_silicon_metal-kitten-nano-int8-Luna.json"
+    },
+    {
+      "model": "kitten-nano-int8",
+      "voice": "Jasper",
+      "passed": 65,
+      "failed": 0,
+      "all_passed": true,
+      "report": "evals/reports/listening/tts-objective-apple_silicon_metal-kitten-nano-int8-Jasper.json"
+    },
+    {
+      "model": "kitten-nano-int8",
+      "voice": "Bella",
+      "passed": 65,
+      "failed": 0,
+      "all_passed": true,
+      "report": "evals/reports/listening/tts-objective-apple_silicon_metal-kitten-nano-int8-Bella.json"
+    }
+  ],
+  "all_pairs_passed": true,
+  "notes": "Summary of per-voice objective reports. Human listening is separate."
+}

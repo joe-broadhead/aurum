@@ -5,7 +5,7 @@ license: MIT
 metadata:
   owner: "aurum"
   persona: "cli"
-  version: "0.0.22"
+  version: "0.0.23"
 ---
 
 # Aurum CLI skill (install / verify)

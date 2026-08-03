@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.23] - 2026-08-03
+
+Correctness and integration patch after the independent v0.0.22 audit. Continuous
+**0.0.x** (not 1.0). Restores SRT for normal local/dedicated ASR, tightens batch
+identity and fingerprints, connects SDK request/OpContext/observability paths,
+and hardens the native SDK consumer matrix.
+
 ### Fixed
 
 - **Timestamp provenance (SRT regression):** providers assign
@@ -56,6 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **JOE-2228 — UBSan pure-filter matrix** on Linux nightly CI.
 - **JOE-2230 — GitHub SLSA build provenance attestations** for Tier A CLI + native
   SDK on release (additive to cosign/SHA256SUMS). crates.io parity still residual.
+
 
 ## [0.0.22] - 2026-08-03
 
@@ -829,7 +837,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.22...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.23...HEAD
+[0.0.23]: https://github.com/joe-broadhead/aurum/compare/v0.0.22...v0.0.23
 [0.0.22]: https://github.com/joe-broadhead/aurum/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/joe-broadhead/aurum/compare/v0.0.20...v0.0.21
 [0.0.20]: https://github.com/joe-broadhead/aurum/compare/v0.0.19...v0.0.20

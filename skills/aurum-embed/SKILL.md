@@ -5,7 +5,7 @@ license: MIT
 metadata:
   owner: "aurum"
   persona: "embed"
-  version: "0.0.22"
+  version: "0.0.23"
 ---
 
 # Aurum embed skill
@@ -24,7 +24,7 @@ For CLI STT/TTS recipes, load **`skills/aurum-speech/`**.
 - ABI v2: jobs for preload/transcribe/cleanup/**local** TTS; destroy/drain ownership rules apply.
 - Call process shutdown / clear whisper cache before exit on Metal.
 - **Do not** expose remote credentials through the FFI surface (remote **not supported** on C ABI).
-- Treat public Rust APIs and ABI as **provisional** on continuous **0.0.x** (pin `0.0.22` / tag `v0.0.22`; continuous 0.0.x, not 1.0).
+- Treat public Rust APIs and ABI as **provisional** on continuous **0.0.x** (pin `0.0.23` / tag `v0.0.23`; continuous 0.0.x, not 1.0).
 
 ## Load order
 

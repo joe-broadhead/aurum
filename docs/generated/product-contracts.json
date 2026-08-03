@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "aurum_version": "0.0.22",
+  "aurum_version": "0.0.23",
   "providers": [
     {
       "id": "local",

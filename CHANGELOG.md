@@ -25,6 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   advances by at least one sample (hang fix).
 - **Observability:** `Metrics::emit` clones the event sink under the lock and
   invokes the host callback outside the mutex (re-entrant sink safe).
+- **Batch source identity (P1a):** full-file hash fails closed on concurrent size
+  change; batch re-verifies `source_sha256` after decode before accepting a
+  transcript.
+- **Batch operation fingerprint (P1b):** includes effective long-form policy and
+  reviewed local model artifact digest when known.
+
+### Changed
+
+- **SDK execution path (P1c):** `AurumEngine::transcribe_request` /
+  `synthesize_request` consume `TranscriptionRequest` / `SynthesisRequest`;
+  legacy `transcribe` / `synthesize` wrap them.
+- **Engine observability (P1d):** STT/TTS engine paths use `TerminalGuard`, emit
+  Start/Inference/Terminal events, and record decoded-bytes and TTS char/chunk
+  counters.
 
 ### Added
 

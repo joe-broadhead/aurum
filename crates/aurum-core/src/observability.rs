@@ -180,6 +180,22 @@ impl OpEvent {
         self
     }
 
+    pub fn with_decoded_bytes(mut self, n: u64) -> Self {
+        self.decoded_bytes = Some(n);
+        self
+    }
+
+    pub fn with_encoded_bytes(mut self, n: u64) -> Self {
+        self.encoded_bytes = Some(n);
+        self
+    }
+
+    pub fn with_chunk(mut self, index: u32, count: u32) -> Self {
+        self.chunk_index = Some(index);
+        self.chunk_count = Some(count);
+        self
+    }
+
     pub fn with_terminal(mut self, cat: TerminalCategory, retryable: bool) -> Self {
         self.stage = OpStage::Terminal;
         self.terminal = Some(cat);
@@ -454,6 +470,48 @@ impl Metrics {
 
     pub fn record_remote_error(&self) {
         self.remote_errors.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_decoded_bytes(&self, n: u64) {
+        self.decoded_bytes_total.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn record_upload_bytes(&self, n: u64) {
+        self.upload_bytes_total.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn record_response_bytes(&self, n: u64) {
+        self.response_bytes_total.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn record_tts_chars(&self, n: u64) {
+        self.tts_chars_total.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn record_tts_chunks(&self, n: u64) {
+        self.tts_chunks_total.fetch_add(n, Ordering::Relaxed);
+    }
+
+    pub fn record_long_form_chunk_attempted(&self) {
+        self.long_form_chunks_attempted
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_long_form_chunk_completed(&self) {
+        self.long_form_chunks_completed
+            .fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_long_form_chunk_failed(&self) {
+        self.long_form_chunks_failed.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_batch_item_succeeded(&self) {
+        self.batch_items_succeeded.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub fn record_batch_item_failed(&self) {
+        self.batch_items_failed.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn record_terminal(&self, cat: TerminalCategory) {

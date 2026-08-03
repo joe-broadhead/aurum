@@ -67,3 +67,14 @@ Record the **exact tag commit** (40-char) after merge/tag in post-publication no
 - **Do not yank v0.0.22.**  
 - **Publish v0.0.23** as the recommended tip for SRT/batch/SDK correctness.  
 - Product-proof packs remain follow-on work, not tag blockers for this patch.
+
+## Post-publication verification (2026-08-03)
+
+| Item | Value |
+|------|--------|
+| Tag | `v0.0.23` |
+| Tag commit | `59408acf46a3e5ce58f6f3f92b2f0f447a622809` |
+| GitHub Release | https://github.com/joe-broadhead/aurum/releases/tag/v0.0.23 |
+| Release workflow | success (run 30857495411) |
+| crates.io | `aurum-core` / `aurum-stt` / `aurum-ffi` **0.0.23** published |
+

@@ -14,10 +14,6 @@ on:
         description: Skip TTS scenarios (true/false)
         required: true
         default: "false"
-      platforms:
-        description: "Comma list: linux,windows,macos (default all)"
-        required: false
-        default: "linux,windows,macos"
   schedule:
     # Weekly Sunday 06:00 UTC — informational only
     - cron: "0 6 * * 0"
@@ -44,19 +40,10 @@ jobs:
         include:
           - os: ubuntu-24.04
             profile_id: tier_a_linux_x86_64_gnu
-            key: linux
           - os: windows-latest
             profile_id: tier_a_windows_x86_64_msvc
-            key: windows
           - os: macos-14
             profile_id: tier_a_macos_arm64_gha
-            key: macos
-    # Allow selective re-runs (e.g. platforms=windows) without redoing all OS.
-    if: >
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.platforms == '' ||
-      github.event.inputs.platforms == 'all' ||
-      contains(github.event.inputs.platforms, matrix.key)
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:

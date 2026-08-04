@@ -1,0 +1,70 @@
+{
+  "schema_version": 2,
+  "evidence_version": "0.0.22-perf-v1",
+  "kind": "tier_a_perf_capture",
+  "hardware": {
+    "profile_id": "tier_a_windows_x86_64_msvc",
+    "tier": "windows_x86_64_msvc",
+    "cpu_label": "AMD64 Family 25 Model 17 Stepping 1, AuthenticAMD",
+    "core_count": 4,
+    "memory_gib": 15,
+    "os_label": "Windows 10.0.26100",
+    "power_mode": "default"
+  },
+  "aurum_version": "0.0.23",
+  "commit": "ea8ffac383b6af7831e8b98423f806580f1aad47",
+  "target_triple": "AMD64",
+  "build_profile": "operator_binary",
+  "model_digests": {},
+  "cache_state": "unknown",
+  "scenarios": [
+    {
+      "scenario_id": "workflow/doctor_startup",
+      "samples_ms": [
+        28.902,
+        29.178,
+        29.429,
+        30.144,
+        30.706,
+        31.81,
+        32.851,
+        33.426,
+        50.364,
+        70.372
+      ],
+      "p50_ms": 31.258,
+      "p95_ms": 61.368,
+      "mean_ms": 36.718,
+      "audio_or_synth_duration_ms": null,
+      "rtf_p50": null,
+      "concurrency": 1,
+      "warm": true,
+      "release_gated": true
+    },
+    {
+      "scenario_id": "workflow/cli_stt_one_file",
+      "samples_ms": [
+        13056.96,
+        13147.885,
+        13173.655,
+        13227.36,
+        13308.907,
+        13321.627,
+        13341.226,
+        13530.404,
+        14562.835,
+        14821.177
+      ],
+      "p50_ms": 13315.267,
+      "p95_ms": 14704.923,
+      "mean_ms": 13549.203,
+      "audio_or_synth_duration_ms": null,
+      "rtf_p50": null,
+      "concurrency": 1,
+      "warm": true,
+      "release_gated": true
+    }
+  ],
+  "notes": "JOE-2317 field capture. Hostnames/user paths redacted. 30s STT uses looped short fixture (not unique speech content). Cross-machine comparisons are informational only. GHA field capture from https://github.com/joe-broadhead/aurum/actions/runs/30863347968. Runner is GitHub-hosted (not maintainer desktop); informational vs same-machine budgets. TTS scenarios absent when Kitten pack not pre-cached (--local-only). Windows may omit 30s STT if ffmpeg unavailable.",
+  "source_ci_run": "https://github.com/joe-broadhead/aurum/actions/runs/30863347968"
+}

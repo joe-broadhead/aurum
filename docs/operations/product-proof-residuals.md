@@ -24,7 +24,7 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 | [JOE-2316](https://linear.app/joe-broadhead/issue/JOE-2316) | **Done** | Process-owned batch source snapshot (`36cbf54`, PR #99) |
 | [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Real STT pack + subset score (PR #100); full matrix open |
 | [JOE-2319](https://linear.app/joe-broadhead/issue/JOE-2319) | In Progress | Kitten objective matrix (PR #101); **3 listeners still required** |
-| [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | In Progress | macOS field capture retained; Linux/Windows via GHA pending review |
+| [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | In Progress | macOS + Linux + Windows field reports retained (GHA runners informational) |
 
 ## JOE-2318 — STT production pack
 
@@ -42,12 +42,18 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 ## JOE-2317 — Named-hardware Tier A perf
 
 * Capture tooling: `scripts/eval/run_tier_a_perf_capture.py` (schema 2)
-* **macOS arm64 field report:** `evals/reports/perf/perf-tier_a_macos_arm64-field.json`
-  * doctor, CLI STT, 30s warm STT, Kitten short TTS
-  * budget seed: `evals/observatory/budgets/perf-tier_a_macos_arm64.field.json`
-* GHA workflow (manual/weekly, **not** a PR gate):
-  `.github/workflows/tier-a-perf-capture.yml` (Linux + Windows + macOS GHA)
-* **Still open for Done:** reviewed Linux + Windows retained reports committed
+* **Three-platform field reports retained:**
+
+  | Platform | Report | Notes |
+  |----------|--------|-------|
+  | macOS arm64 (maintainer) | `evals/reports/perf/perf-tier_a_macos_arm64-field.json` | M4 local; includes TTS |
+  | Linux x86_64 (GHA) | `evals/reports/perf/perf-tier_a_linux_x86_64_gnu-gha.json` | Ubuntu 24.04 / EPYC; no TTS pack |
+  | Windows x86_64 (GHA) | `evals/reports/perf/perf-tier_a_windows_x86_64_msvc-gha.json` | GHA Windows; no 30s (ffmpeg) / no TTS |
+
+* Budget seeds: `evals/observatory/budgets/perf-tier_a_*.field.json`
+* GHA source run: https://github.com/joe-broadhead/aurum/actions/runs/30863347968
+* GHA runners are **informational** vs maintainer same-machine budgets
+* **Still open for Done:** full scenario catalogue; TTS on Linux/Windows; optional GHA macOS re-run after empty-array fix
 
 ## Operator entry points
 

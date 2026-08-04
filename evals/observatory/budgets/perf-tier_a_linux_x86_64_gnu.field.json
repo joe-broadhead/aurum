@@ -1,0 +1,43 @@
+{
+  "schema_version": 2,
+  "evidence_version": "0.0.22-perf-v1",
+  "hardware_profile_id": "tier_a_linux_x86_64_gnu",
+  "notes": "Seeded from GHA field capture https://github.com/joe-broadhead/aurum/actions/runs/30863347968. Review before treating as release gate baseline. Cross-machine comparisons are informational only.",
+  "source_report": "evals/reports/perf/perf-tier_a_linux_x86_64_gnu-gha.json",
+  "scenarios": [
+    {
+      "scenario_id": "workflow/doctor_startup",
+      "baseline_p50_ms": 3.678,
+      "baseline_p95_ms": 4.788,
+      "baseline_rtf_p50": null,
+      "max_p50_relative_warn": 0.1,
+      "max_p95_relative_fail": 0.15,
+      "max_rss_relative_fail": 0.15,
+      "max_rss_absolute_bytes": 268435456,
+      "max_throughput_relative_drop": 0.15
+    },
+    {
+      "scenario_id": "workflow/cli_stt_one_file",
+      "baseline_p50_ms": 1150.454,
+      "baseline_p95_ms": 1157.414,
+      "baseline_rtf_p50": 0.2199,
+      "max_p50_relative_warn": 0.1,
+      "max_p95_relative_fail": 0.15,
+      "max_rss_relative_fail": 0.15,
+      "max_rss_absolute_bytes": 268435456,
+      "max_throughput_relative_drop": 0.15
+    },
+    {
+      "scenario_id": "stt_local/tiny-q5_1/30s/warm",
+      "baseline_p50_ms": 5075.977,
+      "baseline_p95_ms": 5092.077,
+      "baseline_rtf_p50": 0.1692,
+      "max_p50_relative_warn": 0.1,
+      "max_p95_relative_fail": 0.15,
+      "max_rss_relative_fail": 0.15,
+      "max_rss_absolute_bytes": 268435456,
+      "max_throughput_relative_drop": 0.15
+    }
+  ],
+  "source_ci_run": "https://github.com/joe-broadhead/aurum/actions/runs/30863347968"
+}

@@ -22,7 +22,7 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 | Issue | Status | Honest claim |
 |-------|--------|--------------|
 | [JOE-2316](https://linear.app/joe-broadhead/issue/JOE-2316) | **Done** | Process-owned batch source snapshot (`36cbf54`, PR #99) |
-| [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Pack + multi-model subset matrix + production budgets; TED/multi still open |
+| [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Pack + 4-model subset matrix + budgets; TED/multi / full-hour still open |
 | [JOE-2319](https://linear.app/joe-broadhead/issue/JOE-2319) | In Progress | Kitten objective matrix (PR #101); **3 listeners still required** |
 | [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | **Done** | macOS + Linux + Windows field reports retained; GHA limits documented |
 
@@ -36,9 +36,11 @@ SDK consumers). This document tracks the remaining **product-proof** work.
   |-------|-----------------|------------|--------|
   | `tiny-q5_1` | ~0.132 | 2 | `stt-tiny-q5_1.production-subset.json` |
   | `base` | ~0.100 | 2 | `stt-base.production-subset.json` |
+  | `base.en-q5_1` | ~0.099 | 1 | `stt-base.en-q5_1.production-subset.json` |
+  | `small-q5_1` | ~0.094 | 2 | `stt-small-q5_1.production-subset.json` |
 
 * Reports: `evals/reports/stt/stt-production-subset-*.json` + matrix summary
-* **Still open for Done:** larger model matrix (`small`, turbo), TED-LIUM/multilingual slots, full-hour fixture sweep
+* **Still open for Done:** `large-v3-turbo` (optional), TED-LIUM/multilingual slots, full-hour fixture sweep
 
 ## JOE-2319 — TTS listening
 

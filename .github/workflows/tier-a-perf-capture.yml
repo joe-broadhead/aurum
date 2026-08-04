@@ -87,7 +87,7 @@ jobs:
           fi
           choco install ffmpeg -y
           # Refresh PATH for subsequent steps on Windows runners
-          echo "C:\\ProgramData\\chocolatey\\bin" >> "$GITHUB_PATH"
+          printf '%s\n' '/c/ProgramData/chocolatey/bin' >> "$GITHUB_PATH"
 
       - name: Warm model cache (STT)
         shell: bash

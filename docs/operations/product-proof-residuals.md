@@ -24,7 +24,7 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 | [JOE-2316](https://linear.app/joe-broadhead/issue/JOE-2316) | **Done** | Process-owned batch source snapshot (`36cbf54`, PR #99) |
 | [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Real STT pack + subset score (PR #100); full matrix open |
 | [JOE-2319](https://linear.app/joe-broadhead/issue/JOE-2319) | In Progress | Kitten objective matrix (PR #101); **3 listeners still required** |
-| [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | In Progress | macOS + Linux + Windows field reports retained (GHA runners informational) |
+| [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | **Done** | macOS + Linux + Windows field reports retained; GHA limits documented |
 
 ## JOE-2318 — STT production pack
 
@@ -39,21 +39,22 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 * Blinded session pack tooling ready; **3 listeners still required**
 * See `docs/operations/tts-listening-protocol.md`
 
-## JOE-2317 — Named-hardware Tier A perf
+## JOE-2317 — Named-hardware Tier A perf — **Done**
 
 * Capture tooling: `scripts/eval/run_tier_a_perf_capture.py` (schema 2)
-* **Three-platform field reports retained:**
+* **Three-platform field reports retained** (see `evals/reports/perf/README-tier-a.md`):
 
   | Platform | Report | Notes |
   |----------|--------|-------|
-  | macOS arm64 (maintainer) | `evals/reports/perf/perf-tier_a_macos_arm64-field.json` | M4 local; includes TTS |
-  | Linux x86_64 (GHA) | `evals/reports/perf/perf-tier_a_linux_x86_64_gnu-gha.json` | Ubuntu 24.04 / EPYC; no TTS pack |
-  | Windows x86_64 (GHA) | `evals/reports/perf/perf-tier_a_windows_x86_64_msvc-gha.json` | GHA Windows; no 30s (ffmpeg) / no TTS |
+  | macOS arm64 (maintainer) | `perf-tier_a_macos_arm64-field.json` | M4 local; doctor/STT/30s/TTS |
+  | Linux x86_64 (GHA) | `perf-tier_a_linux_x86_64_gnu-gha.json` | EPYC; doctor/STT/30s/TTS |
+  | macOS arm64 (GHA) | `perf-tier_a_macos_arm64_gha-gha.json` | M1 VM; doctor/STT/30s/TTS |
+  | Windows x86_64 (GHA) | `perf-tier_a_windows_x86_64_msvc-gha.json` | doctor/CLI STT (prior GHA) |
 
-* Budget seeds: `evals/observatory/budgets/perf-tier_a_*.field.json`
-* GHA source run: https://github.com/joe-broadhead/aurum/actions/runs/30863347968
-* GHA runners are **informational** vs maintainer same-machine budgets
-* **Still open for Done:** full scenario catalogue; TTS on Linux/Windows; optional GHA macOS re-run after empty-array fix
+* Budget seeds + compare PASS for each retained report
+* GHA full re-run: https://github.com/joe-broadhead/aurum/actions/runs/30883816912
+* **Out of scope for this Done:** full catalogue (concurrency/batch/large models);
+  Windows illegal-instruction flake on later rebuild documented, not blocking family evidence
 
 ## Operator entry points
 

@@ -76,34 +76,51 @@ jobs:
         shell: bash
         run: echo "AURUM_BIN=${GITHUB_WORKSPACE}/target/release/aurum.exe" >> "$GITHUB_ENV"
 
+      - name: Install Windows ffmpeg (for 30s STT scenario)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if command -v ffmpeg >/dev/null 2>&1; then
+            echo "ffmpeg already on PATH"
+            exit 0
+          fi
+          choco install ffmpeg -y
+          # Refresh PATH for subsequent steps on Windows runners
+          echo "C:\\ProgramData\\chocolatey\\bin" >> "$GITHUB_PATH"
+
       - name: Warm model cache (STT)
         shell: bash
         run: |
           set -euo pipefail
+          OUT="${RUNNER_TEMP:-/tmp}/aurum-warm.txt"
           "$AURUM_BIN" tests/fixtures/sample.wav \
             --model "${{ inputs.stt_model || 'tiny-q5_1' }}" \
-            --output-file /tmp/aurum-warm.txt \
-            --language en || \
-          "$AURUM_BIN" tests/fixtures/sample.wav \
-            --model "${{ inputs.stt_model || 'tiny-q5_1' }}" \
-            --output-file "$RUNNER_TEMP/aurum-warm.txt" \
+            --output-file "$OUT" \
             --language en
 
-      - name: Install Windows ffmpeg (for 30s STT scenario)
-        if: runner.os == 'Windows'
+      - name: Warm TTS pack (Kitten) when not skipped
+        if: ${{ (inputs.skip_tts || 'false') != 'true' }}
         shell: bash
-        run: choco install ffmpeg -y || true
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP:-/tmp}/aurum-tts-warm.wav"
+          # Allow download on first run so capture --local-only can measure TTS.
+          "$AURUM_BIN" tts "Hello from Aurum." \
+            --model kitten-nano-int8 \
+            --voice Luna \
+            --output-file "$OUT" \
+            --force
 
       - name: Run Tier A capture
         shell: bash
         run: |
           set -euo pipefail
-          # macOS bash + set -u rejects empty "${arr[@]}" — build args as a string list.
+          # macOS bash + set -u rejects empty "${arr[@]}" — expand safely.
           extra_args=()
           if [[ "${{ inputs.skip_tts || 'false' }}" == "true" ]]; then
             extra_args+=(--skip-tts)
           fi
-          # shellcheck disable=SC2068
           python3 scripts/eval/run_tier_a_perf_capture.py \
             --profile-id "${{ matrix.profile_id }}" \
             --aurum "$AURUM_BIN" \
@@ -112,6 +129,7 @@ jobs:
             --reps-stt 5 \
             --reps-tts 5 \
             --warmups 1 \
+            --local-only \
             --out "evals/reports/perf/perf-${{ matrix.profile_id }}-gha.json" \
             ${extra_args[@]+"${extra_args[@]}"}
 

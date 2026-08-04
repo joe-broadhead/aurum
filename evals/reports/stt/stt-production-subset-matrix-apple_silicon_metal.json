@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "evidence_version": "0.0.22-observatory-v1",
+  "kind": "stt_production_subset_matrix",
+  "hardware_profile": "apple_silicon_metal",
+  "models": [
+    {
+      "model": "tiny-q5_1",
+      "report": "evals/reports/stt/stt-production-subset-apple_silicon_metal-tiny-q5_1.json",
+      "budget": "evals/observatory/budgets/stt-tiny-q5_1.production-subset.json",
+      "mean_wer": 0.1864,
+      "mean_wer_speech_only": 0.1322,
+      "silence_false_positives": 2,
+      "fixture_count_scored": 32,
+      "compare_pass": true,
+      "scenario_mean_wer": {
+        "accent_ca": 0.3307,
+        "accent_in": 0.125,
+        "accent_uk": 0.2143,
+        "accent_us": 0.2307,
+        "clean": 0.096,
+        "noisy": 0.1089,
+        "non_speech": 1.0,
+        "silence": 1.0
+      }
+    },
+    {
+      "model": "base",
+      "report": "evals/reports/stt/stt-production-subset-apple_silicon_metal-base.json",
+      "budget": "evals/observatory/budgets/stt-base.production-subset.json",
+      "mean_wer": 0.1565,
+      "mean_wer_speech_only": 0.1003,
+      "silence_false_positives": 2,
+      "fixture_count_scored": 32,
+      "compare_pass": true,
+      "scenario_mean_wer": {
+        "accent_ca": 0.3307,
+        "accent_in": 0.0625,
+        "accent_uk": 0.2143,
+        "accent_us": 0.1923,
+        "clean": 0.0589,
+        "noisy": 0.0874,
+        "non_speech": 1.0,
+        "silence": 1.0
+      }
+    }
+  ]
+}

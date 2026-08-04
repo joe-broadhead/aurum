@@ -25,7 +25,14 @@ Audio under `evals/observatory/cache/` is **gitignored** and not redistributed.
 
 # Score a capped real-speech subset (local model must be cached)
 ./scripts/eval/prepare_stt_observatory_corpus.sh --score-subset \
-  --model tiny-q5_1 --profile apple_silicon_metal --max-fixtures 24
+  --model tiny-q5_1 --profile apple_silicon_metal --max-fixtures 32
+./scripts/eval/prepare_stt_observatory_corpus.sh --score-subset \
+  --model base --profile apple_silicon_metal --max-fixtures 32
+
+# Fail-closed budget compare against production-subset baselines
+python3 scripts/eval/compare_stt_budget.py \
+  --report evals/reports/stt/stt-production-subset-apple_silicon_metal-base.json \
+  --budget evals/observatory/budgets/stt-base.production-subset.json
 
 # Per-slot recipe only (no download)
 ./scripts/eval/prepare_stt_observatory_corpus.sh --slot librispeech_clean_subset

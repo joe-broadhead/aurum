@@ -22,7 +22,7 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 | Issue | Status | Honest claim |
 |-------|--------|--------------|
 | [JOE-2316](https://linear.app/joe-broadhead/issue/JOE-2316) | **Done** | Process-owned batch source snapshot (`36cbf54`, PR #99) |
-| [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Real STT pack + subset score (PR #100); full matrix open |
+| [JOE-2318](https://linear.app/joe-broadhead/issue/JOE-2318) | In Progress | Pack + multi-model subset matrix + production budgets; TED/multi still open |
 | [JOE-2319](https://linear.app/joe-broadhead/issue/JOE-2319) | In Progress | Kitten objective matrix (PR #101); **3 listeners still required** |
 | [JOE-2317](https://linear.app/joe-broadhead/issue/JOE-2317) | **Done** | macOS + Linux + Windows field reports retained; GHA limits documented |
 
@@ -30,8 +30,15 @@ SDK consumers). This document tracks the remaining **product-proof** work.
 
 * Automated fetch/assemble for LibriSpeech, Common Voice accents, noise, long-form, controls
 * `--production` coverage gate passed (~369 min, 66 speakers, 5 accents, 3 long-form)
-* Retained: `evals/reports/stt/stt-production-subset-apple_silicon_metal-tiny-q5_1.json`
-* **Still open:** full model matrix, TED-LIUM/multilingual, production budget baseline
+* **Multi-model production-subset matrix** (32 fixtures, multi-accent):
+
+  | Model | speech-only WER | silence FP | budget |
+  |-------|-----------------|------------|--------|
+  | `tiny-q5_1` | ~0.132 | 2 | `stt-tiny-q5_1.production-subset.json` |
+  | `base` | ~0.100 | 2 | `stt-base.production-subset.json` |
+
+* Reports: `evals/reports/stt/stt-production-subset-*.json` + matrix summary
+* **Still open for Done:** larger model matrix (`small`, turbo), TED-LIUM/multilingual slots, full-hour fixture sweep
 
 ## JOE-2319 — TTS listening
 

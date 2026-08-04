@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "evidence_version": "0.0.22-observatory-v1",
+  "model": "base",
+  "backend_kind": "asr",
+  "corpus": "observatory-production-v1-subset",
+  "baseline_mean_wer": 0.1565,
+  "max_absolute_wer_points": 1.0,
+  "max_relative_wer": 0.1,
+  "scenario_baseline_wer": {
+    "accent_ca": 0.3307,
+    "accent_in": 0.0625,
+    "accent_uk": 0.2143,
+    "accent_us": 0.1923,
+    "clean": 0.0589,
+    "noisy": 0.0874,
+    "non_speech": 1.0,
+    "silence": 1.0
+  },
+  "max_scenario_relative_wer": 0.15,
+  "max_silence_false_positives": 2,
+  "max_mean_repetition_ratio": 0.35,
+  "source_report": "evals/reports/stt/stt-production-subset-apple_silicon_metal-base.json",
+  "notes": "Production-pack subset baseline for base on apple_silicon_metal (JOE-2318). Seeded from stt-production-subset-apple_silicon_metal-base.json. mean_wer includes silence controls; speech_only=0.1003. Silence FP floor=2."
+}

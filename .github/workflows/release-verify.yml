@@ -42,6 +42,7 @@ jobs:
       - name: Resolve tag
         id: tag
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_TAG: ${{ github.event.inputs.tag }}
           RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
@@ -56,8 +57,6 @@ jobs:
           fi
           echo "tag=${tag}" >> "$GITHUB_OUTPUT"
           echo "Resolved tag: ${tag}"
-        env:
-          GH_TOKEN: ${{ github.token }}
 
       - name: Independent verify
         env:

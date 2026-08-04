@@ -856,9 +856,21 @@ def score_subset(
         raise SystemExit("run assemble first")
     pack = json.loads(pack_path.read_text(encoding="utf-8"))
     fixtures = [f for f in pack.get("fixtures") or [] if f.get("audio")]
-    # Prefer diversity: controls + some clean + noisy + skip multi-hour longform for first score
-    controls = [f for f in fixtures if "control" in (f.get("tags") or []) or "silence" in (f.get("tags") or [])]
+    # Prefer diversity: controls + clean + noisy + accents; skip multi-hour longform
+    controls = [
+        f
+        for f in fixtures
+        if "control" in (f.get("tags") or [])
+        or "silence" in (f.get("tags") or [])
+        or "non_speech" in (f.get("tags") or [])
+    ]
     noisy = [f for f in fixtures if "noisy" in (f.get("tags") or [])]
+    accents = [
+        f
+        for f in fixtures
+        if "common_voice" in (f.get("tags") or [])
+        and any(str(t).startswith("accent_") for t in (f.get("tags") or []))
+    ]
     clean = [
         f
         for f in fixtures
@@ -869,12 +881,23 @@ def score_subset(
     clean_short = [f for f in clean if float(f.get("duration_secs") or 0) <= 20.0]
     selected: list[dict[str, Any]] = []
     selected.extend(controls[:4])
-    selected.extend(noisy[:6])
-    # Speakers spread
+    selected.extend(noisy[:4])
+    # Spread accent tags: up to 2 clips per accent, up to 8 CV total.
+    per_accent: dict[str, int] = {}
+    for f in accents:
+        tags = [str(t) for t in (f.get("tags") or []) if str(t).startswith("accent_")]
+        tag = tags[0] if tags else "accent_?"
+        if per_accent.get(tag, 0) >= 2:
+            continue
+        per_accent[tag] = per_accent.get(tag, 0) + 1
+        selected.append(f)
+        if sum(per_accent.values()) >= 8:
+            break
+    # Speakers spread for clean LS
     seen_spk = set()
     for f in clean_short:
         spk = f.get("speaker_id")
-        if spk in seen_spk and len(selected) > 10:
+        if spk in seen_spk and len(selected) > 12:
             continue
         seen_spk.add(spk)
         selected.append(f)
@@ -999,6 +1022,29 @@ def score_subset(
         if not any(t in s.get("tags", []) for t in ("silence", "non_speech", "control"))
     ]
     ns = max(len(speech), 1)
+    # Scenario buckets for budget compare (priority order; accents only for CV).
+    buckets: dict[str, list[float]] = {}
+    for s in scores:
+        tags = [str(t).lower() for t in (s.get("tags") or [])]
+        if "silence" in tags:
+            key = "silence"
+        elif "non_speech" in tags:
+            key = "non_speech"
+        elif "noisy" in tags or "noise_mix" in tags:
+            key = "noisy"
+        elif "common_voice" in tags:
+            accents = [t for t in tags if t.startswith("accent_")]
+            key = accents[0] if accents else "common_voice"
+        elif "librispeech" in tags or "clean" in tags:
+            key = "clean"
+        elif "long_form" in tags:
+            key = "long_form"
+        else:
+            key = tags[0] if tags else "untagged"
+        buckets.setdefault(key, []).append(float(s.get("wer") or 0.0))
+    scenario_mean_wer = {
+        k: round(sum(v) / len(v), 4) for k, v in sorted(buckets.items()) if v
+    }
     report = {
         "schema_version": 1,
         "corpus_version": pack.get("corpus_version"),
@@ -1017,9 +1063,11 @@ def score_subset(
         "fixture_count_scored": len(scores),
         "notes": (
             "Production-pack subset scorepath (JOE-2318). Real licensed speech "
-            "(LibriSpeech and/or Common Voice). Hypotheses omitted from public report. "
-            "Not a full 60-min matrix until all slots + full fixture sweep complete."
+            "(LibriSpeech, noise overlays, and/or Common Voice accents). "
+            "Hypotheses omitted from public report. Capped fixture count — not a full "
+            "hour sweep of every production fixture."
         ),
+        "scenario_mean_wer": scenario_mean_wer,
         "stt_scores": scores,
         "mean_wer": round(sum(s["wer"] for s in scores) / n, 4),
         "mean_cer": round(sum(s["cer"] for s in scores) / n, 4),

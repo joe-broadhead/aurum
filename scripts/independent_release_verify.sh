@@ -73,7 +73,12 @@ if [ -n "${COMMIT}" ]; then
 fi
 export AURUM_REQUIRE_COSIGN="${AURUM_REQUIRE_COSIGN:-1}"
 export AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER="${AURUM_COSIGN_CERTIFICATE_OIDC_ISSUER:-https://token.actions.githubusercontent.com}"
-export AURUM_COSIGN_CERTIFICATE_IDENTITY="${AURUM_COSIGN_CERTIFICATE_IDENTITY:-https://github.com/${REPO}/.github/workflows/release.yml@refs/tags/${TAG}}"
+# Prefer explicit env if set. Default: accept keyless certs from release.yml on
+# either the tag ref or master (releases may be signed from the release workflow
+# running on master when publishing the tag — observed for v0.0.23).
+if [ -z "${AURUM_COSIGN_CERTIFICATE_IDENTITY:-}" ] && [ -z "${AURUM_COSIGN_CERTIFICATE_IDENTITY_REGEXP:-}" ]; then
+  export AURUM_COSIGN_CERTIFICATE_IDENTITY_REGEXP="https://github.com/${REPO}/\\.github/workflows/release\\.yml@refs/(tags/${TAG}|heads/master)"
+fi
 
 chmod +x "${ROOT}/scripts/verify_release_assets.sh"
 "${ROOT}/scripts/verify_release_assets.sh" "${ASSETS}"

@@ -37,7 +37,7 @@ jobs:
           ./scripts/protected_provider_smoke.sh --dry-run --out dist/provider-smoke
       - name: Upload
         if: ${{ inputs.upload }}
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: provider-protected-smoke-dry-run
           path: |
@@ -78,7 +78,7 @@ jobs:
           ./scripts/protected_provider_smoke.sh --live --out dist/provider-smoke
       - name: Upload redacted evidence
         if: ${{ always() && inputs.upload }}
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: provider-protected-smoke-live
           path: |

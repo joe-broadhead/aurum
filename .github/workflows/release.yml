@@ -76,7 +76,7 @@ jobs:
           ./scripts/version_check.sh
           grep -qE "^## \\[${RELEASE_VERSION}\\]" CHANGELOG.md
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
       - name: Install build deps
@@ -140,7 +140,7 @@ jobs:
           ref: ${{ needs.validate.outputs.release_tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
@@ -209,7 +209,7 @@ jobs:
           ref: ${{ needs.validate.outputs.release_tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
 
@@ -434,7 +434,7 @@ jobs:
           ref: ${{ needs.validate.outputs.release_tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu

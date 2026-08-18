@@ -20,7 +20,7 @@ import zipfile
 from collections import defaultdict, deque
 from pathlib import Path
 
-from datasets import Audio, load_dataset
+from datasets import Audio, Dataset, concatenate_datasets, load_dataset
 from huggingface_hub import hf_hub_download
 import soundfile as sf
 
@@ -31,7 +31,7 @@ CAMOES_REPO = "inesc-id/camoes_SI"
 CAMOES_REVISION = "c85aec9653738c2a58ead316b61e1438cf845bc5"
 MIN_DURATION_S = 5.0
 MAX_DURATION_S = 20.0
-CLIPS_PER_DIALECT = 10
+DEFAULT_CLIPS_PER_DIALECT = 10
 
 
 def stable_key(value: str) -> str:
@@ -53,7 +53,7 @@ def find_zip_member(zf: zipfile.ZipFile, requested: str) -> str | None:
     return matches[0] if len(matches) == 1 else None
 
 
-def prepare_coraa(out_dir: Path, hf_cache: Path) -> list[dict]:
+def prepare_coraa(out_dir: Path, hf_cache: Path, clip_count: int) -> list[dict]:
     metadata_path = Path(
         hf_hub_download(
             repo_id=CORAA_REPO,
@@ -82,7 +82,7 @@ def prepare_coraa(out_dir: Path, hf_cache: Path) -> list[dict]:
     selected: list[dict] = []
     with zipfile.ZipFile(archive_path) as zf:
         active = deque(sorted(groups))
-        while active and len(selected) < CLIPS_PER_DIALECT:
+        while active and len(selected) < clip_count:
             group = active.popleft()
             candidates = groups[group]
             accepted = False
@@ -127,7 +127,7 @@ def prepare_coraa(out_dir: Path, hf_cache: Path) -> list[dict]:
             if candidates:
                 active.append(group)
 
-    if len(selected) != CLIPS_PER_DIALECT:
+    if len(selected) != clip_count:
         raise RuntimeError(f"selected only {len(selected)} CORAA clips")
     return selected
 
@@ -141,13 +141,27 @@ def raw_audio_bytes(audio: dict) -> bytes:
     return Path(path).read_bytes()
 
 
-def prepare_camoes(out_dir: Path, hf_cache: Path) -> list[dict]:
-    dataset = load_dataset(
-        CAMOES_REPO,
-        revision=CAMOES_REVISION,
-        split="test",
-        cache_dir=str(hf_cache),
-    ).cast_column("audio", Audio(decode=False))
+def prepare_camoes(out_dir: Path, hf_cache: Path, clip_count: int) -> list[dict]:
+    prepared_dir = (
+        hf_cache
+        / "inesc-id___camoes_si"
+        / "default"
+        / "0.0.0"
+        / CAMOES_REVISION
+    )
+    arrow_shards = sorted(prepared_dir.glob("camoes_si-test-*.arrow"))
+    if arrow_shards:
+        dataset = concatenate_datasets(
+            [Dataset.from_file(str(shard)) for shard in arrow_shards]
+        )
+    else:
+        dataset = load_dataset(
+            CAMOES_REPO,
+            revision=CAMOES_REVISION,
+            split="test",
+            cache_dir=str(hf_cache),
+        )
+    dataset = dataset.cast_column("audio", Audio(decode=False))
     ordered = sorted(
         range(len(dataset)),
         key=lambda index: stable_key(str(dataset[index].get("ID", index))),
@@ -165,16 +179,16 @@ def prepare_camoes(out_dir: Path, hf_cache: Path) -> list[dict]:
         if add_camoes_row(row, index, out_dir, selected):
             if speaker:
                 used_speakers.add(speaker)
-        if len(selected) == CLIPS_PER_DIALECT:
+        if len(selected) == clip_count:
             break
 
-    if len(selected) < CLIPS_PER_DIALECT:
+    if len(selected) < clip_count:
         for index in deferred:
             if add_camoes_row(dataset[index], index, out_dir, selected):
-                if len(selected) == CLIPS_PER_DIALECT:
+                if len(selected) == clip_count:
                     break
 
-    if len(selected) != CLIPS_PER_DIALECT:
+    if len(selected) != clip_count:
         raise RuntimeError(f"selected only {len(selected)} CAMOES clips")
     return selected
 
@@ -215,19 +229,29 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--out-dir", default="/tmp/aurum-portuguese-eval")
     parser.add_argument("--hf-cache", default="/tmp/aurum-portuguese-eval/hf-cache")
+    parser.add_argument(
+        "--clips-per-dialect",
+        type=int,
+        default=DEFAULT_CLIPS_PER_DIALECT,
+        help="balanced clip count for each dialect (default: 10)",
+    )
     args = parser.parse_args()
+    if args.clips_per_dialect < 1:
+        raise SystemExit("--clips-per-dialect must be at least 1")
 
     out_dir = Path(args.out_dir).resolve()
     hf_cache = Path(args.hf_cache).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     hf_cache.mkdir(parents=True, exist_ok=True)
 
-    items = prepare_coraa(out_dir, hf_cache) + prepare_camoes(out_dir, hf_cache)
+    items = prepare_coraa(out_dir, hf_cache, args.clips_per_dialect) + prepare_camoes(
+        out_dir, hf_cache, args.clips_per_dialect
+    )
     manifest = {
         "schema_version": 1,
         "language": "pt",
         "selection": {
-            "clips_per_dialect": CLIPS_PER_DIALECT,
+            "clips_per_dialect": args.clips_per_dialect,
             "minimum_duration_s": MIN_DURATION_S,
             "maximum_duration_s": MAX_DURATION_S,
             "ordering": "sha256(source fixture id), round-robin CORAA source/accent",

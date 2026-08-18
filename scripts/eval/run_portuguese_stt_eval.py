@@ -95,10 +95,14 @@ def aggregate(rows: list[dict]) -> dict:
 
 
 def markdown_report(report: dict) -> str:
+    reused_rows = sum(1 for row in report["results"] if row.get("reused"))
+    fresh_rows = len(report["results"]) - reused_rows
     lines = [
         "# Portuguese STT comparison",
         "",
         "Machine-readable evidence: `portuguese-stt-results.json`.",
+        f"Rows: {len(report['results'])} total, {fresh_rows} fresh, "
+        f"{reused_rows} SHA-validated reuse.",
         "",
         "| Model | Dialect | Clips | Errors | WER | CER | RTF | Repetition |",
         "|---|---:|---:|---:|---:|---:|---:|---:|",
@@ -118,6 +122,7 @@ def markdown_report(report: dict) -> str:
             "- CAMOES may be in-domain for `large-v3-ptpt-q5_0`.",
             "- CORAA declares no repository license; selected audio remains local-only.",
             "- Review hypotheses manually for hallucinations, names, numbers, punctuation, and dialect vocabulary.",
+            "- Aggregate RTF may combine reused and fresh sequential runs; compare absolute performance only under matching host load.",
             "- Do not claim WER for private audio without reference transcripts.",
             "",
         ]
@@ -132,6 +137,12 @@ def main() -> None:
     parser.add_argument("--models", default=DEFAULT_MODELS)
     parser.add_argument("--out-dir", default="/tmp/aurum-portuguese-results")
     parser.add_argument("--profile", default="local-host")
+    parser.add_argument(
+        "--reuse-results",
+        action="append",
+        default=[],
+        help="reuse successful rows when model, audio SHA, and reference match",
+    )
     args = parser.parse_args()
 
     manifest_path = Path(args.manifest).resolve()
@@ -144,14 +155,41 @@ def main() -> None:
     transcript_dir.mkdir(exist_ok=True)
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("language") != "pt" or len(manifest.get("items", [])) != 20:
-        raise SystemExit("manifest must contain exactly 20 Portuguese clips")
+    clips_per_dialect = manifest.get("selection", {}).get("clips_per_dialect")
+    if not isinstance(clips_per_dialect, int) or clips_per_dialect < 1:
+        raise SystemExit("manifest must declare a positive clips_per_dialect")
+    expected_total = clips_per_dialect * 2
+    if manifest.get("language") != "pt" or len(manifest.get("items", [])) != expected_total:
+        raise SystemExit(
+            f"manifest must contain exactly {expected_total} Portuguese clips"
+        )
     dialect_counts = Counter(item.get("dialect") for item in manifest["items"])
-    if dialect_counts != {"pt-BR": 10, "pt-PT": 10}:
+    if dialect_counts != {
+        "pt-BR": clips_per_dialect,
+        "pt-PT": clips_per_dialect,
+    }:
         raise SystemExit(f"manifest dialect counts are invalid: {dict(dialect_counts)}")
     models = [model.strip() for model in args.models.split(",") if model.strip()]
     if not models:
         raise SystemExit("at least one model is required")
+
+    aurum_sha256 = sha256_file(aurum)
+    reusable: dict[tuple[str, str, str], tuple[dict, str]] = {}
+    for reuse_value in args.reuse_results:
+        reuse_path = Path(reuse_value).resolve()
+        prior = json.loads(reuse_path.read_text(encoding="utf-8"))
+        if prior.get("provider") != "local" or prior.get("language") != "pt":
+            raise SystemExit(f"incompatible reusable report: {reuse_path}")
+        if prior.get("aurum_binary_sha256") != aurum_sha256:
+            raise SystemExit(f"reusable report used a different Aurum binary: {reuse_path}")
+        for row in prior.get("results", []):
+            if row.get("status") == "ok":
+                key = (
+                    row.get("model"),
+                    row.get("audio_sha256"),
+                    row.get("reference"),
+                )
+                reusable[key] = (row, str(reuse_path))
 
     rows = []
     for model in models:
@@ -159,6 +197,19 @@ def main() -> None:
             audio = (manifest_path.parent / item["audio"]).resolve()
             if not audio.is_file():
                 raise SystemExit(f"missing audio fixture: {audio}")
+            audio_sha256 = sha256_file(audio)
+            reused = reusable.get((model, audio_sha256, item["reference"]))
+            if reused is not None:
+                prior_row, reuse_source = reused
+                row = dict(prior_row)
+                row["reused"] = True
+                row["reused_from"] = reuse_source
+                rows.append(row)
+                print(
+                    f"{model} {item['id']}: status=ok wer={row['wer']} "
+                    f"rtf={row['rtf']} reused=true"
+                )
+                continue
             transcript = transcript_dir / f"{model}-{item['id']}.txt"
             command = [
                 str(aurum),
@@ -191,7 +242,7 @@ def main() -> None:
                 "source_dataset": item["source_dataset"],
                 "source_revision": item["source_revision"],
                 "source_fixture_id": item["source_fixture_id"],
-                "audio_sha256": sha256_file(audio),
+                "audio_sha256": audio_sha256,
                 "duration_s": item["duration_s"],
                 "status": "ok" if process.returncode == 0 else "error",
                 "exit_code": process.returncode,
@@ -208,6 +259,8 @@ def main() -> None:
                 "rtf": round(wall_s / item["duration_s"], 6),
                 "repetition_ratio": round(repetition_ratio(hypothesis), 6),
                 "qualitative_review": None,
+                "reused": False,
+                "reused_from": None,
             }
             rows.append(row)
             print(
@@ -233,10 +286,11 @@ def main() -> None:
             "machine": platform.machine(),
         },
         "aurum_binary": str(aurum),
-        "aurum_binary_sha256": sha256_file(aurum),
+        "aurum_binary_sha256": aurum_sha256,
         "manifest": str(manifest_path),
         "manifest_sha256": sha256_file(manifest_path),
         "models": models,
+        "reuse_sources": [str(Path(value).resolve()) for value in args.reuse_results],
         "summary": summary,
         "results": rows,
     }

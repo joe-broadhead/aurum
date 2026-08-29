@@ -37,6 +37,7 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 hound = { workspace = true }
 indicatif = { workspace = true }
+language-tags = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }

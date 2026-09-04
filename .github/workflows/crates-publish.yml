@@ -74,7 +74,7 @@ jobs:
           fi
           echo "bound tag=${TAG} commit=${head_commit} version=${ver}"
 
-      - uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@d1031067263f94b142dd6c0ce24c5eb9d02d52a0  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
 

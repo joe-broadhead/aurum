@@ -101,7 +101,7 @@ jobs:
           chmod +x scripts/generate_sbom.sh
           ./scripts/generate_sbom.sh dist/sbom
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           # Not named aurum-* so binary download pattern stays binary-only.
           name: sbom-inventory
@@ -180,7 +180,7 @@ jobs:
           ls -la dist
 
       - name: Upload artifact
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: aurum-${{ matrix.asset }}
           path: dist/*
@@ -248,7 +248,7 @@ jobs:
           ls -la dist/sdk-upload
 
       - name: Upload SDK artifact
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: aurum-sdk-${{ matrix.asset }}
           path: dist/sdk-upload/*
@@ -462,7 +462,7 @@ jobs:
             --out dist/repro
 
       - name: Upload variance report
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: repro-variance-linux-x86_64
           path: dist/repro/VARIANCE_REPORT.md

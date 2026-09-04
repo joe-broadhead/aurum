@@ -389,7 +389,7 @@ jobs:
           ./scripts/rc_downstream_check.sh
           ./scripts/generate_rc_exit_report.sh dist/rc-exit
       - name: Upload RC exit pack
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: rc-exit-pack
           path: |
@@ -454,7 +454,7 @@ jobs:
           ./scripts/rehearse_rc_rollback.sh
       - name: Upload RC evidence
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: rc-dogfood-evidence
           path: |
@@ -489,7 +489,7 @@ jobs:
           ./scripts/rehearse_model_revocation.sh
           ./scripts/rehearse_disclosure_tabletop.sh
       - name: Upload rehearsal evidence
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: security-rehearsal-pr
           path: dist/security-rehearsal/
@@ -513,7 +513,7 @@ jobs:
           chmod +x scripts/protected_provider_smoke.sh
           ./scripts/protected_provider_smoke.sh --dry-run --out dist/provider-smoke
       - name: Upload dry-run evidence
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: provider-smoke-dry-run
           path: |
@@ -651,7 +651,7 @@ jobs:
           chmod +x scripts/coverage_trust.sh
           ./scripts/coverage_trust.sh dist/coverage-trust
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: trust-coverage
           path: dist/coverage-trust/
@@ -684,7 +684,7 @@ jobs:
           ./scripts/run_mutants.sh --smoke
       - name: Upload mutants summary
         if: always()
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: mutants-smoke
           path: dist/mutants/
@@ -717,7 +717,7 @@ jobs:
           chmod +x scripts/compare_release_builds.sh
           ./scripts/compare_release_builds.sh --target x86_64-unknown-linux-gnu --out dist/repro
       - name: Upload variance report
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08  # v4.6.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
         with:
           name: repro-variance-smoke
           path: dist/repro/VARIANCE_REPORT.md

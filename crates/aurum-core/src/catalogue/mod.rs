@@ -392,6 +392,13 @@ impl EffectiveCatalogue {
 /// the effective catalogue during that transition.
 fn builtin_document() -> Result<CatalogueDocument> {
     let mut document = CatalogueDocument::parse(BUILTIN_TOML)?;
+    #[cfg(not(feature = "tts"))]
+    {
+        document
+            .records
+            .retain(|record| record.direction != Direction::Tts);
+        document.defaults.tts = DirectionDefaults::default();
+    }
     for model in crate::model::MODELS {
         if document
             .records
@@ -529,6 +536,7 @@ fn builtin_document() -> Result<CatalogueDocument> {
             &[],
         );
     }
+    #[cfg(feature = "tts")]
     for record in crate::providers::OPENROUTER_TTS_REGISTRY {
         push_remote(
             &mut document,
@@ -540,6 +548,7 @@ fn builtin_document() -> Result<CatalogueDocument> {
             record.voices,
         );
     }
+    #[cfg(feature = "tts")]
     for record in crate::providers::OPENAI_TTS_REGISTRY {
         push_remote(
             &mut document,
@@ -551,6 +560,7 @@ fn builtin_document() -> Result<CatalogueDocument> {
             record.voices,
         );
     }
+    #[cfg(feature = "tts")]
     for record in crate::providers::ELEVENLABS_TTS_REGISTRY {
         push_remote(
             &mut document,
@@ -562,6 +572,7 @@ fn builtin_document() -> Result<CatalogueDocument> {
             &[],
         );
     }
+    #[cfg(feature = "tts")]
     for record in crate::providers::XAI_TTS_REGISTRY {
         push_remote(
             &mut document,
@@ -854,6 +865,24 @@ origin = { kind = "downloadable_local", filename = "bad.bin", url = "https://exa
         for model in crate::tts::catalogue::MODELS {
             assert!(catalogue.lookup(model.id).is_some(), "missing {}", model.id);
         }
+    }
+
+    #[cfg(not(feature = "tts"))]
+    #[test]
+    fn no_tts_build_has_a_valid_stt_only_catalogue() {
+        let catalogue = EffectiveCatalogue::builtin().unwrap();
+        assert!(catalogue
+            .records()
+            .iter()
+            .all(|record| { record.record.direction == Direction::Stt }));
+        assert_eq!(
+            catalogue
+                .resolve(Direction::Stt, None, None, "pt-BR")
+                .unwrap()
+                .record
+                .id,
+            "medium-ptbr-q5_0"
+        );
     }
     #[test]
     fn resolver_prefers_exact_then_base_then_global() {

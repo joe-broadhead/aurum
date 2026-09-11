@@ -84,9 +84,15 @@ provider = "rules"         # rules | openrouter
 
 # [providers.elevenlabs]
 # [providers.xai]
+
+# An optional reviewed deployment catalogue. Its records replace matching
+# built-ins by canonical id; a disabled record removes its aliases too.
+# The path is explicit: Aurum never discovers, fetches, or falls back from it.
+# [catalogue]
+# path = "/absolute/path/to/model-catalogue.toml"
 ```
 
-Only canonical sections are accepted: `[stt]`, `[cleanup]`, `[tts]`, `[providers.*]`.
+Only canonical sections are accepted: `[stt]`, `[cleanup]`, `[tts]`, `[providers.*]`, `[catalogue]`.
 Unknown top-level sections (including old `[default]` / `[openrouter]`) fail closed.
 
 ### `local_only`

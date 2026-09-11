@@ -460,6 +460,7 @@ mod tests {
         let cfg = Config {
             provider: "local".into(),
             model: Some("base".into()),
+            configured_stt_model: None,
             language: "en".into(),
             output: "txt".into(),
             output_file: None,
@@ -485,6 +486,8 @@ mod tests {
             tts_pack_dir: None,
             tts_allow_unverified: false,
             tts_custom_models: vec![],
+            catalogue: crate::catalogue::EffectiveCatalogue::builtin().unwrap(),
+            catalogue_path: None,
             local_only: false,
             config_path: None,
             cache_dir: std::env::temp_dir().join("aurum-sdk-test-cache"),

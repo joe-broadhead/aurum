@@ -41,6 +41,7 @@
 //!
 //! A provider is **never** inferred merely because its API key is present.
 
+use crate::catalogue::{CatalogueSource, EffectiveCatalogue};
 use crate::error::{Result, UserError};
 use crate::provider_platform::ProviderId;
 use crate::secret::SecretString;
@@ -78,6 +79,17 @@ pub struct ConfigFile {
     /// Named provider credentials and vendor options.
     #[serde(default)]
     pub providers: ProvidersFileSection,
+    /// Explicit deployment catalogue replacement. There is intentionally no
+    /// environment variable or discovery fallback for this trusted input.
+    #[serde(default)]
+    pub catalogue: CatalogueSection,
+}
+
+/// Optional explicit deployment-owned model catalogue.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CatalogueSection {
+    pub path: Option<PathBuf>,
 }
 
 /// Canonical STT direction (`[stt]`).
@@ -85,8 +97,8 @@ pub struct ConfigFile {
 pub struct SttSection {
     #[serde(default = "default_provider")]
     pub provider: String,
-    #[serde(default = "default_local_model")]
-    pub model: String,
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default = "default_output")]
@@ -97,7 +109,7 @@ impl Default for SttSection {
     fn default() -> Self {
         Self {
             provider: default_provider(),
-            model: default_local_model(),
+            model: None,
             language: default_language(),
             output: default_output(),
         }
@@ -359,6 +371,8 @@ pub struct Config {
     /// STT provider id (`local`, `openrouter`, …). Never inferred from key presence.
     pub provider: String,
     pub model: Option<String>,
+    /// File-level STT model selection, distinct from a built-in fallback.
+    pub configured_stt_model: Option<String>,
     pub language: String,
     pub output: String,
     pub output_file: Option<PathBuf>,
@@ -394,6 +408,10 @@ pub struct Config {
     pub tts_allow_unverified: bool,
     /// Validated custom TTS catalogue entries (empty when packs not present yet).
     pub tts_custom_models: Vec<CustomTtsModelConfig>,
+    /// Parsed effective model catalogue. A configured deployment path is a
+    /// startup error when it cannot be read or validated; it never falls back.
+    pub catalogue: EffectiveCatalogue,
+    pub catalogue_path: Option<PathBuf>,
     /// When true, remote STT/TTS providers are rejected at validation (JOE-1935).
     pub local_only: bool,
     pub config_path: Option<PathBuf>,
@@ -436,6 +454,7 @@ impl std::fmt::Debug for Config {
             .field("tts_pack_dir", &self.tts_pack_dir)
             .field("tts_allow_unverified", &self.tts_allow_unverified)
             .field("tts_custom_models", &self.tts_custom_models)
+            .field("catalogue_path", &self.catalogue_path)
             .field("local_only", &self.local_only)
             .field("config_path", &self.config_path)
             .field("cache_dir", &self.cache_dir)
@@ -551,10 +570,21 @@ pub struct EffectiveConfigDiagnostic {
     pub tts_pack_dir: Option<String>,
     pub tts_allow_unverified: bool,
     pub tts_custom_model_ids: Vec<String>,
+    pub catalogue_path: Option<String>,
+    pub catalogue_digest: String,
+    pub catalogue_records: Vec<CatalogueRecordDiagnostic>,
     pub local_only: bool,
     pub config_path: Option<String>,
     pub cache_dir: String,
     pub sources: ConfigSourceMap,
+}
+
+/// Provenance and stable identity for one effective model record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CatalogueRecordDiagnostic {
+    pub id: String,
+    pub source: CatalogueSource,
+    pub digest: String,
 }
 
 /// Redacted view of named provider credentials.
@@ -851,6 +881,21 @@ impl Config {
                 .iter()
                 .map(|m| m.id.clone())
                 .collect(),
+            catalogue_path: self
+                .catalogue_path
+                .as_ref()
+                .map(|path| path.display().to_string()),
+            catalogue_digest: self.catalogue.digest(),
+            catalogue_records: self
+                .catalogue
+                .records()
+                .iter()
+                .map(|record| CatalogueRecordDiagnostic {
+                    id: record.record.id.clone(),
+                    source: record.source.clone(),
+                    digest: record.digest.clone(),
+                })
+                .collect(),
             local_only: self.local_only,
             config_path: self.config_path.as_ref().map(|p| p.display().to_string()),
             cache_dir: self.cache_dir.display().to_string(),
@@ -861,6 +906,13 @@ impl Config {
     fn from_parts(file: Option<ConfigFile>, config_path: Option<PathBuf>) -> Result<Self> {
         let file = file.unwrap_or_default();
 
+        let catalogue_path = file.catalogue.path.clone();
+        let catalogue = match &catalogue_path {
+            Some(path) => EffectiveCatalogue::load_deployment(path)?,
+            None => EffectiveCatalogue::builtin()?,
+        };
+
+        let configured_stt_model = file.stt.as_ref().and_then(|section| section.model.clone());
         let (provider, model, language, output) = resolve_stt(&file);
         let openrouter = resolve_openrouter(&file);
 
@@ -904,6 +956,7 @@ impl Config {
         Ok(Self {
             provider,
             model: Some(model),
+            configured_stt_model,
             language,
             output,
             output_file: None,
@@ -941,6 +994,8 @@ impl Config {
             tts_pack_dir: file.tts.pack_dir.map(PathBuf::from),
             tts_allow_unverified: file.tts.allow_unverified,
             tts_custom_models: file.tts.custom_models,
+            catalogue,
+            catalogue_path,
             local_only: false,
             config_path,
             cache_dir,
@@ -1030,6 +1085,45 @@ impl Config {
                     Ok(m)
                 }
             }
+            "local" => {
+                // The embedded catalogue owns automatic language/default choice.
+                // Keep legacy explicit IDs working while the remaining static
+                // records are migrated into the v1 review file.
+                if let Some(model) = self.configured_stt_model.as_deref() {
+                    if let Ok(record) = self.catalogue.resolve(
+                        crate::catalogue::Direction::Stt,
+                        Some(model),
+                        None,
+                        &self.language,
+                    ) {
+                        return Ok(record.record.id.clone());
+                    }
+                    if self.catalogue_path.is_some() {
+                        return Err(UserError::InvalidModel {
+                            model: model.to_string(),
+                            available: self
+                                .catalogue
+                                .records()
+                                .iter()
+                                .filter(|record| {
+                                    record.record.direction == crate::catalogue::Direction::Stt
+                                        && record.record.provider.eq_ignore_ascii_case("local")
+                                })
+                                .map(|record| record.record.id.as_str())
+                                .collect::<Vec<_>>()
+                                .join(", "),
+                        }
+                        .into());
+                    }
+                    return Ok(model.to_string());
+                }
+                Ok(self
+                    .catalogue
+                    .resolve(crate::catalogue::Direction::Stt, None, None, &self.language)?
+                    .record
+                    .id
+                    .clone())
+            }
             _ => Ok(self
                 .model
                 .clone()
@@ -1061,7 +1155,7 @@ fn resolve_stt(file: &ConfigFile) -> (String, String, String, String) {
     match file.stt.as_ref() {
         Some(s) => (
             s.provider.clone(),
-            s.model.clone(),
+            s.model.clone().unwrap_or_else(default_local_model),
             s.language.clone(),
             s.output.clone(),
         ),
@@ -1339,6 +1433,9 @@ provider = "local"
 
 # [providers.elevenlabs]
 # [providers.xai]
+
+# [catalogue]
+# path = "/absolute/path/to/model-catalogue.toml"
 "#;
     fs::write(path, example)?;
     Ok(())
@@ -1552,6 +1649,24 @@ trust = "verified"
         assert_eq!(cfg.tts_provider, "local");
         assert!((cfg.tts_speaking_rate - 1.0).abs() < f32::EPSILON);
         assert!(!cfg.local_only);
+    }
+
+    #[test]
+    fn local_catalogue_language_defaults_preserve_explicit_model_precedence() {
+        let dir = tempdir().unwrap();
+        let missing = dir.path().join("missing.toml");
+        let mut cfg = Config::load_from(&missing).unwrap();
+        cfg.language = "pt-BR".into();
+        assert_eq!(cfg.resolve_model(false).unwrap(), "medium-ptbr-q5_0");
+        cfg.language = "pt-PT".into();
+        assert_eq!(cfg.resolve_model(false).unwrap(), "large-v3-ptpt-q5_0");
+        cfg.language = "pt".into();
+        assert_eq!(cfg.resolve_model(false).unwrap(), "base");
+
+        let path = dir.path().join("explicit.toml");
+        fs::write(&path, "[stt]\nmodel = \"tiny\"\nlanguage = \"pt-BR\"\n").unwrap();
+        let cfg = Config::load_from(&path).unwrap();
+        assert_eq!(cfg.resolve_model(false).unwrap(), "tiny");
     }
 
     #[test]
@@ -1857,6 +1972,67 @@ speaking_rate = 1.25
         assert!(cfg.validate().is_err());
         cfg.tts_speaking_rate = 10.0;
         assert!(cfg.validate().is_err());
+    }
+
+    #[test]
+    fn explicit_catalogue_path_loads_or_fails_closed() {
+        let dir = tempdir().unwrap();
+        let deployment = dir.path().join("catalogue.toml");
+        fs::write(
+            &deployment,
+            r#"schema_version = 1
+[[model]]
+id = "deployment-tiny"
+direction = "stt"
+provider = "local"
+tier = "supported"
+origin = { kind = "downloadable_local", filename = "deployment-tiny.bin", url = "https://example.invalid/deployment-tiny.bin", size_bytes = 1, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+"#,
+        ).unwrap();
+        let config = dir.path().join("config.toml");
+        fs::write(&config, format!("[catalogue]\npath = {:?}\n", deployment)).unwrap();
+        let cfg = Config::load_from_required(&config).unwrap();
+        assert!(cfg.catalogue.lookup("deployment-tiny").is_some());
+        assert_eq!(cfg.catalogue_path.as_deref(), Some(deployment.as_path()));
+        let diagnostic = cfg.effective_diagnostic();
+        assert_eq!(diagnostic.catalogue_digest.len(), 64);
+        assert!(diagnostic.catalogue_records.iter().any(|record| {
+            record.id == "deployment-tiny"
+                && matches!(record.source, CatalogueSource::Deployment { .. })
+        }));
+
+        fs::write(
+            &config,
+            "[catalogue]\npath = \"/definitely/missing.toml\"\n",
+        )
+        .unwrap();
+        assert!(Config::load_from_required(&config).is_err());
+    }
+
+    #[test]
+    fn deployment_catalogue_cannot_fall_back_to_removed_local_model() {
+        let dir = tempdir().unwrap();
+        let catalogue = dir.path().join("catalogue.toml");
+        fs::write(&catalogue, r#"schema_version = 1
+[[model]]
+id = "tiny"
+direction = "stt"
+provider = "local"
+enabled = false
+tier = "supported"
+origin = { kind = "downloadable_local", filename = "tiny.bin", url = "https://example.invalid/tiny.bin", size_bytes = 1, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+"#).unwrap();
+        let config = dir.path().join("config.toml");
+        fs::write(
+            &config,
+            format!(
+                "[catalogue]\npath = {:?}\n[stt]\nmodel = \"tiny\"\n",
+                catalogue
+            ),
+        )
+        .unwrap();
+        let cfg = Config::load_from_required(&config).unwrap();
+        assert!(cfg.resolve_model(false).is_err());
     }
 
     #[test]

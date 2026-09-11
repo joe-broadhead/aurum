@@ -499,21 +499,19 @@ pub async fn load_via_ffmpeg_with_timeout(
             }
 
             let rem = &buf[offset..n];
-            let pairs = rem.len() / 2;
-            if samples.len().saturating_add(pairs) > max_samples {
+            let (pairs, remainder) = rem.as_chunks::<2>();
+            if samples.len().saturating_add(pairs.len()) > max_samples {
                 return Err(UserError::AudioTooLarge {
-                    decoded_bytes: (samples.len() + pairs) * std::mem::size_of::<f32>(),
+                    decoded_bytes: (samples.len() + pairs.len()) * std::mem::size_of::<f32>(),
                     max_bytes: max_decoded_bytes,
                 }
                 .into());
             }
-            for chunk in rem.chunks_exact(2) {
-                let s = i16::from_le_bytes([chunk[0], chunk[1]]);
+            for &[lo, hi] in pairs {
+                let s = i16::from_le_bytes([lo, hi]);
                 samples.push(s as f32 / 32768.0);
             }
-            if rem.len() % 2 == 1 {
-                carry = Some(rem[rem.len() - 1]);
-            }
+            carry = remainder.first().copied();
         }
         if carry.is_some() {
             return Err(UserError::InvalidAudio {

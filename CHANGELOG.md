@@ -7,11 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Dynamic local model catalogue:** versioned, integrity-pinned model records
+  support explicit deployment replacement and language-aware local STT defaults;
+  Portuguese specialist models remain opt-in and experimental.
+
 ### Fixed
 
 - **Batch source snapshot (JOE-2316):** batch materializes a process-owned copy
   of each source while hashing; decode loads the snapshot so concurrent
   mutation of the original path cannot change the bytes that are transcribed.
+- **STT-only catalogue:** builds without the optional TTS feature no longer
+  expose TTS-only built-in records or reference TTS provider registries.
+- **Current stable Rust lint compatibility:** fixed-width PCM and NPY decoding
+  uses fixed-size slice chunks, preserving decoding semantics under Clippy's
+  current `-D warnings` policy.
 
 ## [0.0.23] - 2026-08-03
 

@@ -904,9 +904,35 @@ origin = { kind = "downloadable_local", filename = "bad.bin", url = "https://exa
     fn effective_builtin_catalogue_covers_legacy_stt_ids_and_pins() {
         let catalogue = EffectiveCatalogue::builtin().unwrap();
         for model in crate::model::MODELS {
-            assert!(
-                catalogue.lookup(model.name).is_some(),
-                "missing {}",
+            let record = catalogue
+                .lookup(model.name)
+                .unwrap_or_else(|| panic!("missing {}", model.name));
+            let (filename, size_bytes, sha256) = match &record.record.origin {
+                Origin::DownloadableLocal {
+                    filename,
+                    size_bytes,
+                    sha256,
+                    ..
+                }
+                | Origin::PreparedLocal {
+                    filename,
+                    size_bytes,
+                    sha256,
+                    ..
+                } => (filename, *size_bytes, sha256),
+                other => panic!("{} has non-local origin {other:?}", model.name),
+            };
+            assert_eq!(filename, model.filename, "{} filename drift", model.name);
+            assert_eq!(
+                size_bytes,
+                crate::model::pinned_exact_bytes(model.filename).unwrap(),
+                "{} exact size drift",
+                model.name
+            );
+            assert_eq!(
+                sha256,
+                crate::model::pinned_sha256(model.filename).unwrap(),
+                "{} sha256 drift",
                 model.name
             );
         }

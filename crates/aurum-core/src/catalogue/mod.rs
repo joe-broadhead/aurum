@@ -217,21 +217,21 @@ impl CatalogueDocument {
                 }
             }
         }
-        self.validate_defaults(&ids)?;
+        // Defaults are deliberately not resolved here. A deployment document may
+        // point at a built-in record which only exists after the effective view is
+        // assembled. Validate the keys now and resolve them after merging.
+        self.validate_default_keys()?;
         Ok(())
     }
 
-    fn validate_defaults(&self, ids: &BTreeSet<String>) -> Result<()> {
-        for (direction, defaults) in [
-            (Direction::Stt, &self.defaults.stt),
-            (Direction::Tts, &self.defaults.tts),
-        ] {
+    fn validate_default_keys(&self) -> Result<()> {
+        for defaults in [&self.defaults.stt, &self.defaults.tts] {
             if let Some(id) = &defaults.global {
-                validate_default(id, direction, ids, &self.records)?;
+                validate_id(id, "default model id")?;
             }
             for (language, id) in &defaults.language {
                 validate_language(language)?;
-                validate_default(id, direction, ids, &self.records)?;
+                validate_id(id, "default model id")?;
             }
         }
         Ok(())
@@ -258,6 +258,7 @@ impl EffectiveCatalogue {
         let mut records: BTreeMap<String, EffectiveRecord> = builtin
             .records
             .into_iter()
+            .filter(|record| record.enabled)
             .map(|record| {
                 let digest = digest(&record);
                 (
@@ -271,8 +272,12 @@ impl EffectiveCatalogue {
             })
             .collect();
         let mut defaults = builtin.defaults;
-        if let Some((deployment, path)) = deployment {
+        canonicalize_defaults(&mut defaults.stt)?;
+        canonicalize_defaults(&mut defaults.tts)?;
+        if let Some((mut deployment, path)) = deployment {
             deployment.validate()?;
+            canonicalize_defaults(&mut deployment.defaults.stt)?;
+            canonicalize_defaults(&mut deployment.defaults.tts)?;
             // Deployment records replace the entire matching record; nothing is inherited.
             for record in deployment.records {
                 let key = record.id.to_ascii_lowercase();
@@ -286,13 +291,29 @@ impl EffectiveCatalogue {
                             digest,
                         },
                     );
-                } else {
-                    records.remove(&key);
+                } else if records.remove(&key).is_none() {
+                    // Aliases are compatibility names; disabling one must disable
+                    // its canonical record rather than silently doing nothing.
+                    let alias_key = records.iter().find_map(|(canonical, entry)| {
+                        entry
+                            .record
+                            .aliases
+                            .iter()
+                            .any(|alias| alias.eq_ignore_ascii_case(&record.id))
+                            .then(|| canonical.clone())
+                    });
+                    let Some(alias_key) = alias_key else {
+                        return Err(config_error(format!(
+                            "disabled model '{}' does not match an effective canonical id or alias",
+                            record.id
+                        )));
+                    };
+                    records.remove(&alias_key);
                 }
             }
             // A non-empty deployment defaults section is explicit; empty sides retain built-ins.
-            merge_defaults(&mut defaults.stt, deployment.defaults.stt);
-            merge_defaults(&mut defaults.tts, deployment.defaults.tts);
+            merge_defaults(&mut defaults.stt, deployment.defaults.stt)?;
+            merge_defaults(&mut defaults.tts, deployment.defaults.tts)?;
         }
         let records: Vec<_> = records.into_values().collect();
         let effective = Self { records, defaults };
@@ -307,7 +328,16 @@ impl EffectiveCatalogue {
     /// resumable batch fingerprints.
     pub fn digest(&self) -> String {
         hex::encode(Sha256::digest(
-            serde_json::to_vec(&self.records).expect("effective catalogue is serializable"),
+            // Source paths are diagnostic metadata, not model identity. Moving an
+            // identical deployment file must not invalidate resumable batches.
+            serde_json::to_vec(
+                &self
+                    .records
+                    .iter()
+                    .map(|entry| &entry.record)
+                    .collect::<Vec<_>>(),
+            )
+            .expect("effective catalogue is serializable"),
         ))
     }
     pub fn source_for(&self, id: &str) -> Option<&CatalogueSource> {
@@ -373,16 +403,18 @@ impl EffectiveCatalogue {
         }
     }
     fn validate_effective(&self) -> Result<()> {
-        let doc = CatalogueDocument {
-            schema_version: CATALOGUE_SCHEMA_VERSION,
-            defaults: self.defaults.clone(),
-            records: self
-                .records
-                .iter()
-                .map(|entry| entry.record.clone())
-                .collect(),
-        };
-        doc.validate()
+        for (direction, defaults) in [
+            (Direction::Stt, &self.defaults.stt),
+            (Direction::Tts, &self.defaults.tts),
+        ] {
+            if let Some(id) = &defaults.global {
+                validate_effective_default(id, direction, &self.records)?;
+            }
+            for id in defaults.language.values() {
+                validate_effective_default(id, direction, &self.records)?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -626,20 +658,42 @@ fn push_remote(
     });
 }
 
-fn merge_defaults(target: &mut DirectionDefaults, incoming: DirectionDefaults) {
+fn merge_defaults(target: &mut DirectionDefaults, incoming: DirectionDefaults) -> Result<()> {
     if incoming.global.is_some() {
         target.global = incoming.global;
     }
-    target.language.extend(incoming.language);
+    for (language, id) in incoming.language {
+        let canonical = normalize_language(&language)?;
+        if target.language.insert(canonical, id).is_some() {
+            // Replacement is intentional for deployment values; normalized
+            // duplicates inside one document are rejected by canonicalization.
+        }
+    }
+    Ok(())
 }
-fn validate_default(
+fn canonicalize_defaults(defaults: &mut DirectionDefaults) -> Result<()> {
+    let mut normalized = BTreeMap::new();
+    for (language, id) in std::mem::take(&mut defaults.language) {
+        let key = normalize_language(&language)?;
+        if normalized.insert(key.clone(), id).is_some() {
+            return Err(config_error(format!(
+                "duplicate normalized default language '{key}'"
+            )));
+        }
+    }
+    defaults.language = normalized;
+    Ok(())
+}
+fn validate_effective_default(
     id: &str,
     direction: Direction,
-    _ids: &BTreeSet<String>,
-    records: &[CatalogueRecord],
+    records: &[EffectiveRecord],
 ) -> Result<()> {
     if records.iter().any(|record| {
-        record.enabled && record.direction == direction && record.id.eq_ignore_ascii_case(id)
+        record.record.direction == direction
+            && record.record.id.eq_ignore_ascii_case(id)
+            && record.record.provider.eq_ignore_ascii_case("local")
+            && !matches!(record.record.origin, Origin::Remote { .. })
     }) {
         Ok(())
     } else {
@@ -978,5 +1032,91 @@ origin = { kind = "downloadable_local", filename = "changed-base.bin", url = "ht
         )
         .unwrap();
         assert_ne!(builtin.digest(), changed.digest());
+    }
+
+    #[test]
+    fn deployment_defaults_can_target_builtin_and_normalize_language_keys() {
+        let deployment = CatalogueDocument::parse(
+            "schema_version = 1\n[defaults.stt.language]\npt-br = \"tiny\"\n",
+        )
+        .unwrap();
+        let effective = EffectiveCatalogue::from_documents(
+            builtin_document().unwrap(),
+            Some((deployment, PathBuf::from("/tmp/deploy.toml"))),
+        )
+        .unwrap();
+        assert_eq!(
+            effective
+                .resolve(Direction::Stt, None, None, "pt-BR")
+                .unwrap()
+                .record
+                .id,
+            "tiny"
+        );
+    }
+
+    #[test]
+    fn remote_records_cannot_be_defaults() {
+        let deployment = CatalogueDocument::parse(r#"schema_version = 1
+[defaults.stt]
+global = "remote"
+[[model]]
+id = "remote"
+direction = "stt"
+provider = "openai"
+tier = "supported"
+origin = { kind = "remote", wire_model = "whisper-1", capabilities = { timestamps_reliable = true } }
+"#).unwrap();
+        assert!(EffectiveCatalogue::from_documents(
+            builtin_document().unwrap(),
+            Some((deployment, PathBuf::from("/tmp/deploy.toml"))),
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn alias_disable_removes_the_canonical_record() {
+        let deployment = CatalogueDocument::parse(r#"schema_version = 1
+[defaults.stt]
+global = "tiny"
+[[model]]
+id = "base-default"
+direction = "stt"
+provider = "local"
+enabled = false
+tier = "supported"
+origin = { kind = "downloadable_local", filename = "unused.bin", url = "https://example.invalid/unused.bin", size_bytes = 1, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+"#).unwrap();
+        let effective = EffectiveCatalogue::from_documents(
+            builtin_document().unwrap(),
+            Some((deployment, PathBuf::from("/tmp/deploy.toml"))),
+        )
+        .unwrap();
+        assert!(effective.lookup("base").is_none());
+        assert!(effective.lookup("base-default").is_none());
+    }
+
+    #[test]
+    fn digest_does_not_depend_on_deployment_path() {
+        let deployment = CatalogueDocument::parse(r#"schema_version = 1
+[[model]]
+id = "base"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "same content"
+origin = { kind = "downloadable_local", filename = "base.bin", url = "https://example.invalid/base.bin", size_bytes = 42, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+"#).unwrap();
+        let a = EffectiveCatalogue::from_documents(
+            builtin_document().unwrap(),
+            Some((deployment.clone(), PathBuf::from("/tmp/a.toml"))),
+        )
+        .unwrap();
+        let b = EffectiveCatalogue::from_documents(
+            builtin_document().unwrap(),
+            Some((deployment, PathBuf::from("/elsewhere/b.toml"))),
+        )
+        .unwrap();
+        assert_eq!(a.digest(), b.digest());
     }
 }

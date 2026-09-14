@@ -507,8 +507,8 @@ pub async fn load_via_ffmpeg_with_timeout(
                 }
                 .into());
             }
-            for chunk in rem.chunks_exact(2) {
-                let s = i16::from_le_bytes([chunk[0], chunk[1]]);
+            for chunk in rem.as_chunks::<2>().0 {
+                let s = i16::from_le_bytes(*chunk);
                 samples.push(s as f32 / 32768.0);
             }
             if rem.len() % 2 == 1 {

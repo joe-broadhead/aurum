@@ -344,8 +344,8 @@ fn decode_pcm_s16le(
 
 fn read_i16le_samples(bytes: &[u8]) -> Vec<i16> {
     let mut out = Vec::with_capacity(bytes.len() / 2);
-    for chunk in bytes.chunks_exact(2) {
-        out.push(i16::from_le_bytes([chunk[0], chunk[1]]));
+    for chunk in bytes.as_chunks::<2>().0 {
+        out.push(i16::from_le_bytes(*chunk));
     }
     out
 }
@@ -367,7 +367,7 @@ fn apply_channel_policy(
                 .into());
             }
             let mut mono = Vec::with_capacity(interleaved.len() / 2);
-            for pair in interleaved.chunks_exact(2) {
+            for pair in interleaved.as_chunks::<2>().0 {
                 // Deterministic average with rounding toward zero via i32 mid.
                 let l = pair[0] as i32;
                 let r = pair[1] as i32;

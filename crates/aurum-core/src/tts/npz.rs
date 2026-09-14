@@ -267,13 +267,14 @@ pub fn parse_npy(data: &[u8]) -> Result<(Vec<usize>, Vec<f32>)> {
         .into());
     }
     let values: Vec<f32> = data_bytes[..n_elements * 4]
-        .chunks_exact(4)
-        .map(|b| {
-            let arr = [b[0], b[1], b[2], b[3]];
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|arr| {
             if big_endian {
-                f32::from_be_bytes(arr)
+                f32::from_be_bytes(*arr)
             } else {
-                f32::from_le_bytes(arr)
+                f32::from_le_bytes(*arr)
             }
         })
         .collect();

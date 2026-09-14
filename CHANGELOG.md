@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Build/lint compatibility with Rust 1.98:** replaced `slice::chunks_exact` with
+  the const-generic `slice::as_chunks` in the PCM decode and NPY float paths,
+  fixing the new `clippy::chunks_exact_to_as_chunks` errors that broke the Lint
+  job under stable `-D warnings`. Behavior is unchanged; MSRV remains 1.89.
+- **Security (RUSTSEC-2026-0258):** bumped `h2` to 0.4.16, clearing the
+  unbounded empty-DATA-frame advisory inherited transitively via `hyper`.
+
 - **Batch source snapshot (JOE-2316):** batch materializes a process-owned copy
   of each source while hashing; decode loads the snapshot so concurrent
   mutation of the original path cannot change the bytes that are transcribed.

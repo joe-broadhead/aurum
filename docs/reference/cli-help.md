@@ -194,7 +194,8 @@ Options:
   -O, --output-file <PATH>       Write agent WAV here (required for file mode; optional with `--mic`)
       --force                    Overwrite an existing non-empty output file
       --local-only               Reject remote STT/TTS before encode/upload
-      --emit-json                Honesty JSON on stdout (no PCM)
+      --emit-json                Honesty JSON on stdout (no PCM). Incompatible with `--stdio`
+      --stdio                    JSONL sidecar for harnesses (pi, OpenCode, …). Stdout = events, stdin = commands. No in-process LLM. Logs stay on stderr. Requires `--mic` or a file
   -v, --verbose                  Verbose diagnostics
   -h, --help                     Print help
 ```

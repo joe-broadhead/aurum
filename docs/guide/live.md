@@ -5,7 +5,7 @@ STT → host/agent text → TTS WAV. It does **not** own the microphone, does **
 stream, and does **not** run an LLM.
 
 Library: `aurum_core::live::LiveSession` (requires the `tts` feature).  
-CLI: `aurum converse` (replay only; no mic).
+CLI: `aurum converse` (file replay, `--mic`, or `--stdio` sidecar).
 
 ## Defaults
 
@@ -34,7 +34,26 @@ aurum converse talk.wav --provider openai --tts-provider elevenlabs \
   -O /tmp/out.wav --force --emit-json
 ```
 
-`--reply-text` / `--reply-file` / `--llm-provider` are mutually exclusive.
+## Harnesses (Pi, OpenCode, …)
+
+`--stdio` makes Aurum a **speech sidecar**: no in-process LLM. JSONL on stdio
+(LF lines, optional CR). Logs stay on **stderr**. No PCM, no secrets.
+
+Stdout events: `ready`, `user_final`, `listening`, `error`, `shutdown`.  
+Stdin commands: `speak`, `end_turn`, `abort`, `shutdown`.
+
+```bash
+# Sidecar only (you wire the brain)
+cargo run -p aurum-stt -- converse --mic --stdio --model tiny-q5_1
+
+# Pi RPC glue (tools + MCPs in Pi)
+python3 scripts/aurum-pi-voice.py -- --mic --model tiny-q5_1
+```
+
+OpenCode: use the same JSONL against `opencode run --format json` / ACP / serve.
+Do not pass `--llm-provider` with `--stdio`.
+
+`--reply-text` / `--reply-file` / `--llm-provider` / `--stdio` are mutually exclusive.
 `--local-only` rejects remote STT/TTS **and** `--llm-provider`.
 `--emit-json` prints STT + TTS honesty metadata (no PCM); LLM provider/model/text
 when used.

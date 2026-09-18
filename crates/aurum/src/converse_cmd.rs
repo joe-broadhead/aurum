@@ -6,6 +6,7 @@
 
 use crate::audio_io::{play_i16_mono, resample_mono, MicCapture};
 use crate::llm::{complete_chat, stream_chat, take_speakable, ChatRequest, LlmProvider};
+use crate::stdio_proto::{self, InCmd, OutEvent, MAX_LINE_BYTES};
 use aurum_core::audio::WHISPER_SAMPLE_RATE;
 use aurum_core::config::Config;
 use aurum_core::error::{Result, UserError};
@@ -14,7 +15,7 @@ use aurum_core::live::{LivePhase, LiveSession, LiveSessionConfig};
 use aurum_core::output::CommitMode;
 use aurum_core::provider_platform::ProviderId;
 use clap::Parser;
-use std::io::{self, IsTerminal, Write};
+use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -89,9 +90,14 @@ pub struct ConverseCli {
     #[arg(long)]
     pub local_only: bool,
 
-    /// Honesty JSON on stdout (no PCM).
+    /// Honesty JSON on stdout (no PCM). Incompatible with `--stdio`.
     #[arg(long = "emit-json")]
     pub emit_json: bool,
+
+    /// JSONL sidecar for harnesses (pi, OpenCode, …). Stdout = events, stdin =
+    /// commands. No in-process LLM. Logs stay on stderr. Requires `--mic` or a file.
+    #[arg(long)]
+    pub stdio: bool,
 
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
@@ -151,6 +157,9 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
     }
 
     let engine = aurum_core::AurumEngine::from_config(cfg)?;
+    if cli.stdio {
+        return run_stdio_loop(cli, engine).await;
+    }
     if cli.mic {
         return run_mic_loop(cli, engine, agent).await;
     }
@@ -205,6 +214,12 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
                 text.clone(),
                 Some((provider.as_str().to_string(), model, text)),
             )
+        }
+        AgentSource::Harness => {
+            return Err(UserError::Other {
+                message: "--stdio does not use file+LLM path".into(),
+            }
+            .into());
         }
     };
     aurum_core::tts::validate::validate_text(&reply)?;
@@ -364,6 +379,214 @@ async fn run_mic_loop(
     Ok(())
 }
 
+async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Result<()> {
+    let stt_p = engine.stt_provider_id()?.as_str().to_string();
+    let tts_p = engine.tts_provider_id()?.as_str().to_string();
+    let live_cfg = LiveSessionConfig {
+        max_utterance_secs: 30.0,
+        min_speech_secs: 0.25,
+        trailing_silence_secs: 0.45,
+        min_rms: 0.02,
+        max_speak_ahead: 8,
+    };
+    let mut live = LiveSession::new(engine, live_cfg)?;
+    stdio_proto::write_event(&OutEvent::Ready {
+        stt_provider: stt_p,
+        tts_provider: tts_p,
+    })
+    .map_err(|e| UserError::Other {
+        message: format!("stdio write: {e}"),
+    })?;
+
+    let mic = if cli.mic {
+        Some(MicCapture::start()?)
+    } else {
+        None
+    };
+
+    if let Some(path) = cli.audio_file.as_ref() {
+        let audio = aurum_core::load_audio(path).await?;
+        live.push_pcm(audio.samples().as_ref())?;
+        live.end_user_turn()?;
+        match live.commit_user_turn().await {
+            Ok(stt) if !stt.text().trim().is_empty() => {
+                let _ = stdio_proto::write_event(&OutEvent::UserFinal {
+                    text: stt.text().to_string(),
+                    provider: stt.provider().to_string(),
+                    model: stt.model().to_string(),
+                });
+            }
+            Ok(_) => {
+                live.discard_turn();
+                let _ = stdio_proto::write_event(&OutEvent::Error {
+                    message: "empty transcript".into(),
+                });
+            }
+            Err(e) => {
+                live.discard_turn();
+                let _ = stdio_proto::write_event(&OutEvent::Error {
+                    message: e.to_string(),
+                });
+            }
+        }
+    }
+
+    let (cmd_tx, cmd_rx) = std::sync::mpsc::sync_channel::<std::result::Result<InCmd, String>>(64);
+    std::thread::spawn(move || {
+        let mut stdin = io::stdin().lock();
+        loop {
+            let mut line = String::new();
+            match stdin.read_line(&mut line) {
+                Ok(0) => {
+                    let _ = cmd_tx.send(Ok(InCmd::Shutdown));
+                    break;
+                }
+                Ok(_) => {
+                    if line.len() > MAX_LINE_BYTES {
+                        let _ = cmd_tx.send(Err("stdin line too long".into()));
+                        continue;
+                    }
+                    match stdio_proto::parse_line(&line) {
+                        Ok(c) => {
+                            if cmd_tx.send(Ok(c)).is_err() {
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            let _ = cmd_tx.send(Err(e));
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = cmd_tx.send(Err(format!("stdin: {e}")));
+                    break;
+                }
+            }
+        }
+    });
+
+    enum PlayMsg {
+        Clip(PlayClip),
+        Flush(std::sync::mpsc::Sender<()>),
+    }
+    let (play_tx, play_rx) = std::sync::mpsc::sync_channel::<PlayMsg>(8);
+    let play_thread = std::thread::spawn(move || {
+        while let Ok(msg) = play_rx.recv() {
+            match msg {
+                PlayMsg::Clip(clip) => {
+                    let _ = play_i16_mono(&clip.pcm, clip.rate);
+                }
+                PlayMsg::Flush(done) => {
+                    let _ = done.send(());
+                }
+            }
+        }
+    });
+
+    let stop = Arc::new(AtomicBool::new(false));
+    {
+        let stop = Arc::clone(&stop);
+        tokio::spawn(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            stop.store(true, Ordering::SeqCst);
+        });
+    }
+
+    let mut shutting = false;
+    while !stop.load(Ordering::SeqCst) && !shutting {
+        while let Ok(msg) = cmd_rx.try_recv() {
+            match msg {
+                Ok(InCmd::Speak { text }) => match live.speak_text(&text).await {
+                    Ok(tts) => {
+                        drain_live(&mut live);
+                        let _ = play_tx.send(PlayMsg::Clip(PlayClip {
+                            pcm: tts.pcm_i16_mono,
+                            rate: tts.sample_rate_hz,
+                        }));
+                    }
+                    Err(e) => {
+                        let _ = stdio_proto::write_event(&OutEvent::Error {
+                            message: e.to_string(),
+                        });
+                    }
+                },
+                Ok(InCmd::EndTurn) => {
+                    let (done_tx, done_rx) = std::sync::mpsc::channel();
+                    let _ = play_tx.send(PlayMsg::Flush(done_tx));
+                    let _ = done_rx.recv_timeout(Duration::from_secs(120));
+                    let _ = live.end_agent_turn();
+                    live.discard_turn();
+                    if let Some(m) = mic.as_ref() {
+                        m.drain();
+                    }
+                    let _ = stdio_proto::write_event(&OutEvent::Listening);
+                }
+                Ok(InCmd::Abort) => {
+                    live.discard_turn();
+                    if let Some(m) = mic.as_ref() {
+                        m.drain();
+                    }
+                    let _ = stdio_proto::write_event(&OutEvent::Listening);
+                }
+                Ok(InCmd::Shutdown) => {
+                    shutting = true;
+                    break;
+                }
+                Err(e) => {
+                    let _ = stdio_proto::write_event(&OutEvent::Error { message: e });
+                }
+            }
+        }
+        if shutting {
+            break;
+        }
+
+        if let Some(mic) = mic.as_ref() {
+            let chunk = tokio::task::block_in_place(|| mic.recv_timeout(Duration::from_millis(80)));
+            if let Some(chunk) = chunk {
+                if matches!(live.phase(), LivePhase::Listening | LivePhase::UserSpeaking) {
+                    let pcm16 = resample_mono(&chunk, mic.sample_rate, WHISPER_SAMPLE_RATE);
+                    if !pcm16.is_empty() {
+                        if let Err(e) = live.push_pcm(&pcm16) {
+                            let _ = stdio_proto::write_event(&OutEvent::Error {
+                                message: e.to_string(),
+                            });
+                        }
+                    }
+                    if live.phase() == LivePhase::Ending {
+                        match live.commit_user_turn().await {
+                            Ok(stt) if !stt.text().trim().is_empty() => {
+                                let _ = stdio_proto::write_event(&OutEvent::UserFinal {
+                                    text: stt.text().to_string(),
+                                    provider: stt.provider().to_string(),
+                                    model: stt.model().to_string(),
+                                });
+                            }
+                            Ok(_) => live.discard_turn(),
+                            Err(e) => {
+                                live.discard_turn();
+                                let _ = stdio_proto::write_event(&OutEvent::Error {
+                                    message: e.to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            tokio::task::block_in_place(|| {
+                std::thread::sleep(Duration::from_millis(40));
+            });
+        }
+    }
+
+    drop(play_tx);
+    let _ = play_thread.join();
+    live.shutdown();
+    let _ = stdio_proto::write_event(&OutEvent::Shutdown);
+    Ok(())
+}
+
 fn drain_live(live: &mut LiveSession) {
     loop {
         if let LiveEvent::Idle = live.poll() {
@@ -501,6 +724,12 @@ async fn speak_agent_turn(
             cons?;
             full?
         }
+        AgentSource::Harness => {
+            return Err(UserError::Other {
+                message: "--stdio does not use in-process agent TTS".into(),
+            }
+            .into());
+        }
     };
     drop(play_tx);
     let _ = play_thread.join();
@@ -516,10 +745,27 @@ enum AgentSource {
         model: String,
         system: Option<String>,
     },
+    /// Harness owns the LLM (`--stdio`).
+    Harness,
 }
 
 fn resolve_agent_source(cli: &ConverseCli) -> Result<AgentSource> {
     let has_reply = cli.reply_text.is_some() || cli.reply_file.is_some();
+    if cli.stdio {
+        if cli.emit_json {
+            return Err(UserError::Other {
+                message: "--stdio and --emit-json both need stdout; pick one".into(),
+            }
+            .into());
+        }
+        if has_reply || cli.llm_provider.is_some() {
+            return Err(UserError::Other {
+                message: "--stdio is harness-brain; do not pass --llm-provider or --reply-*".into(),
+            }
+            .into());
+        }
+        return Ok(AgentSource::Harness);
+    }
     match (cli.llm_provider.as_deref(), has_reply) {
         (Some(_), true) => Err(UserError::Other {
             message: "pass --llm-provider or --reply-text/--reply-file, not both".into(),
@@ -701,6 +947,7 @@ mod tests {
                 assert_eq!(model, "gpt-4o-mini");
             }
             AgentSource::Canned(_) => panic!("expected llm"),
+            AgentSource::Harness => panic!("expected llm"),
         }
     }
 
@@ -724,5 +971,40 @@ mod tests {
             }
             other => panic!("expected Converse, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn clap_parses_stdio_and_rejects_llm() {
+        let cli = crate::cli::Cli::try_parse_from([
+            "aurum",
+            "converse",
+            "--mic",
+            "--stdio",
+            "--model",
+            "tiny-q5_1",
+        ])
+        .unwrap();
+        let Some(crate::cli::Commands::Converse(c)) = cli.command else {
+            panic!("expected Converse");
+        };
+        assert!(c.stdio && c.mic);
+        assert!(matches!(
+            resolve_agent_source(&c).unwrap(),
+            AgentSource::Harness
+        ));
+
+        let cli = crate::cli::Cli::try_parse_from([
+            "aurum",
+            "converse",
+            "--mic",
+            "--stdio",
+            "--llm-provider",
+            "openai",
+        ])
+        .unwrap();
+        let Some(crate::cli::Commands::Converse(c)) = cli.command else {
+            panic!("expected Converse");
+        };
+        assert!(resolve_agent_source(&c).is_err());
     }
 }

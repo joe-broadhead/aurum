@@ -7,4 +7,5 @@ pub mod cli;
 pub mod completions_cmd;
 pub mod converse_cmd;
 pub mod llm;
+pub mod stdio_proto;
 pub mod support_cmd;

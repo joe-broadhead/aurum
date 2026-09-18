@@ -1,0 +1,84 @@
+schema_version = 1
+
+[defaults.stt]
+global = "base"
+[defaults.stt.language]
+pt-BR = "medium-ptbr-q5_0"
+pt-PT = "large-v3-ptpt-q5_0"
+
+[defaults.tts]
+global = "kitten-nano-int8"
+
+[[model]]
+id = "base"
+aliases = ["base-default"]
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "default full-precision"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-base.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin", size_bytes = 147951465, sha256 = "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe" }
+
+[[model]]
+id = "tiny"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "fastest full-precision"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-tiny.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin", size_bytes = 77691713, sha256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21" }
+
+[[model]]
+id = "medium-ptbr-q5_0"
+direction = "stt"
+provider = "local"
+tier = "experimental"
+languages = ["pt-BR"]
+notes = "Brazilian Portuguese specialist"
+license = "Apache-2.0"
+origin = { kind = "downloadable_local", filename = "whisper-medium-ptbr-q5_0.bin", url = "https://huggingface.co/nexorama-tech/whisper-medium-ptbr-q5_0/resolve/3ac780ce98aeafecfe2dcd8577833e00011a5bfb/whisper-medium-ptbr-q5_0.bin", size_bytes = 539212467, sha256 = "1f3a4ae2aa61c932dbfe585019c4f7ca63938a72cf3a9f8d4439d35252541096" }
+
+[[model]]
+id = "large-v3-ptpt-q5_0"
+direction = "stt"
+provider = "local"
+tier = "experimental"
+languages = ["pt-PT"]
+notes = "European Portuguese specialist; prepare locally"
+license = "Apache-2.0"
+origin = { kind = "prepared_local", filename = "ggml-large-v3-ptpt-q5_0.bin", size_bytes = 1081140203, sha256 = "92c6b30b24dc7b035505a1750bfd3dac51d0984ea7120bc518d3f5c3228030c7", source_url = "https://huggingface.co/inesc-id/WhisperLv3-FT/tree/77837e42b56d4be6ca15a66b5c41c9b8cf3e41b0", revision = "77837e42b56d4be6ca15a66b5c41c9b8cf3e41b0", preparation = "scripts/prepare_portuguese_models.sh --cache-root ${XDG_CACHE_HOME:-$HOME/.cache} --work-dir /tmp/aurum-portuguese-tools" }
+
+[[model]]
+id = "kitten-nano-int8"
+direction = "tts"
+provider = "local"
+tier = "supported"
+languages = ["en", "en-US"]
+notes = "KittenTTS nano int8"
+license = "Apache-2.0"
+[model.origin]
+kind = "tts_pack"
+adapter = "kitten-onnx-v1"
+max_phoneme_tokens = 400
+sample_rate_hz = 24000
+shipped = true
+[[model.origin.files]]
+filename = "kitten_tts_nano_v0_8.onnx"
+url = "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/kitten_tts_nano_v0_8.onnx"
+size_bytes = 24369971
+sha256 = "f7b0afcbee92870b32b8e0276d855b954dc25470c9f051b376ac7eee537c76fc"
+[[model.origin.files]]
+filename = "voices.npz"
+url = "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/voices.npz"
+size_bytes = 3278902
+sha256 = "8aa7cee235abb0739cb51e6559685f65a4dacd95568833d05699b1633f519b3f"
+[[model.origin.files]]
+filename = "config.json"
+url = "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/main/config.json"
+size_bytes = 688
+sha256 = "b66006ccbeccd4de5fc3c9272059c47f5725df7215fd889785c03602652fab64"
+[[model.origin.voices]]
+id = "Luna"
+internal_key = "expr-voice-3-f"
+language = "en"
+notes = "female default"

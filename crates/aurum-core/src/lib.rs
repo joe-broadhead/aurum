@@ -66,6 +66,7 @@ pub mod bench;
 pub mod cache;
 pub mod cancel;
 pub mod capabilities;
+pub mod catalogue;
 pub mod cleanup;
 pub mod config;
 pub mod doctor;

@@ -61,6 +61,36 @@ report API can detect extreme n-gram loops as `degeneration_repetition`;
 ordinary CLI/JSON transcript output does not currently surface that event
 unless hosts consume `NormalizationReport` directly.
 
+### Portuguese specialists (experimental)
+
+Two experimental Q5 models are selected automatically when an explicit dialect
+language is requested and no model is supplied: `--language pt-BR` selects
+`medium-ptbr-q5_0`; `--language pt-PT` selects `large-v3-ptpt-q5_0`. They can
+also be selected explicitly for evaluation:
+
+```bash
+aurum input.wav --model medium-ptbr-q5_0 --language pt -o json
+aurum input.wav --model large-v3-ptpt-q5_0 --language pt -o json
+```
+
+`medium-ptbr-q5_0` downloads from an immutable, digest-pinned Hugging Face
+revision. `large-v3-ptpt-q5_0` is generated from the pinned INESC-ID
+`WhisperLv3-FT` checkpoint and therefore must be prepared locally:
+
+```bash
+scripts/prepare_portuguese_models.sh \
+  --cache-root "${XDG_CACHE_HOME:-$HOME/.cache}" \
+  --work-dir /tmp/aurum-portuguese-tools
+```
+
+Both remain outside the speed/balance/quality profiles while dialect-specific
+quality, hallucination, and quantization evidence is reviewed.
+
+The Brazilian model downloads on first use. The European Portuguese model is
+prepared locally, so an explicit `--language pt-PT` fails with preparation
+guidance until the command above has completed. `language = auto` remains on
+the global local `base` default.
+
 ## Catalogue (aliases)
 
 | Name | Approx size | Notes |
@@ -70,8 +100,10 @@ unless hosts consume `NormalizationReport` directly.
 | `base` | ~142 MB | Default full-precision |
 | `small` / `small.en` | ~444 MB | Higher accuracy |
 | `medium` / `medium.en` | ~1.4 GB | Large download |
+| `medium-ptbr-q5_0` | ~514 MB | **Experimental — Brazilian Portuguese specialist** |
 | `turbo` / `large-v3-turbo` | ~1.5 GB | Fast large |
 | `large-v3-q5_0` | ~1.0 GB | **Experimental — not recommended** |
+| `large-v3-ptpt-q5_0` | ~1.0 GB | **Experimental — European Portuguese specialist; prepared locally** |
 
 Aliases: `large` → `large-v3`, `turbo` → `large-v3-turbo`.
 
@@ -90,8 +122,9 @@ Aliases: `large` → `large-v3`, `turbo` → `large-v3-turbo`.
 | Linux | `~/.cache/aurum/models/` |
 | Windows | `%LOCALAPPDATA%\aurum\cache\models\` |
 
-First use downloads from Hugging Face (`ggerganov/whisper.cpp`). Cross-process
-locks prevent double downloads.
+Most models download from Hugging Face (`ggerganov/whisper.cpp`); reviewed
+specialists may use their own immutable source revision. Prepared-local models
+never fabricate a download URL. Cross-process locks prevent double downloads.
 
 ## Offline / Local Only
 

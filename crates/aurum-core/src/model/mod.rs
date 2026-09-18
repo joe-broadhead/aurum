@@ -12,6 +12,13 @@ use std::sync::Arc;
 /// Content authenticity is enforced by reviewed SHA-256 pins (JOE-1590), not by
 /// mutable branch tip alone. Prefer pins over URL mutability.
 const HF_BASE: &str = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
+const MEDIUM_PTBR_REVISION: &str = "3ac780ce98aeafecfe2dcd8577833e00011a5bfb";
+const MEDIUM_PTBR_URL: &str = "https://huggingface.co/nexorama-tech/whisper-medium-ptbr-q5_0/resolve/3ac780ce98aeafecfe2dcd8577833e00011a5bfb/whisper-medium-ptbr-q5_0.bin";
+const LARGE_V3_PTPT_REVISION: &str = "77837e42b56d4be6ca15a66b5c41c9b8cf3e41b0";
+const LARGE_V3_PTPT_SOURCE_URL: &str =
+    "https://huggingface.co/inesc-id/WhisperLv3-FT/tree/77837e42b56d4be6ca15a66b5c41c9b8cf3e41b0";
+const PORTUGUESE_PREPARATION_COMMAND: &str =
+    "scripts/prepare_portuguese_models.sh --cache-root \"${XDG_CACHE_HOME:-$HOME/.cache}\" --work-dir /tmp/aurum-portuguese-tools";
 /// Manifest schema version for diagnostics (JOE-1590).
 pub const ARTIFACT_MANIFEST_VERSION: &str = "1";
 /// Provenance label for built-in pins.
@@ -136,6 +143,12 @@ pub const MODELS: &[ModelInfo] = &[
         approx_bytes: 1_500_000_000,
         notes: "english-only",
     },
+    ModelInfo {
+        name: "medium-ptbr-q5_0",
+        filename: "whisper-medium-ptbr-q5_0.bin",
+        approx_bytes: 539_212_467,
+        notes: "experimental — Brazilian Portuguese specialist",
+    },
     // ---- large ----
     ModelInfo {
         name: "large-v3",
@@ -148,6 +161,12 @@ pub const MODELS: &[ModelInfo] = &[
         filename: "ggml-large-v3-q5_0.bin",
         approx_bytes: 1_080_000_000,
         notes: "experimental — not recommended (degeneration risk; prefer large-v3-turbo)",
+    },
+    ModelInfo {
+        name: "large-v3-ptpt-q5_0",
+        filename: "ggml-large-v3-ptpt-q5_0.bin",
+        approx_bytes: 1_081_140_203,
+        notes: "experimental — European Portuguese specialist; prepare locally",
     },
     ModelInfo {
         name: "large",
@@ -425,6 +444,10 @@ pub async fn ensure_model_with_options(
         let _ = fs::remove_file(&path);
     }
 
+    if let ModelArtifactSource::PreparedLocal { .. } = model_artifact_source(info) {
+        return Err(prepared_model_error(info));
+    }
+
     if opts.local_only {
         return Err(UserError::ModelNotCached {
             model: model_name.to_string(),
@@ -512,7 +535,13 @@ async fn download_model(
         .into());
     };
 
-    let url = format!("{HF_BASE}/{}?download=true", info.filename);
+    let url = match model_artifact_source(info) {
+        ModelArtifactSource::OfficialWhisperCpp => {
+            format!("{HF_BASE}/{}?download=true", info.filename)
+        }
+        ModelArtifactSource::ImmutableDownload { url, .. } => url.to_string(),
+        ModelArtifactSource::PreparedLocal { .. } => return Err(prepared_model_error(info)),
+    };
     let req = DownloadRequest {
         id: info.name,
         filename: info.filename,
@@ -599,11 +628,17 @@ pub fn pinned_sha256(filename: &str) -> Option<&'static str> {
         "ggml-medium.en.bin" => {
             Some("cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356")
         }
+        "whisper-medium-ptbr-q5_0.bin" => {
+            Some("1f3a4ae2aa61c932dbfe585019c4f7ca63938a72cf3a9f8d4439d35252541096")
+        }
         "ggml-large-v3.bin" => {
             Some("64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2")
         }
         "ggml-large-v3-q5_0.bin" => {
             Some("d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1")
+        }
+        "ggml-large-v3-ptpt-q5_0.bin" => {
+            Some("92c6b30b24dc7b035505a1750bfd3dac51d0984ea7120bc518d3f5c3228030c7")
         }
         "ggml-large-v3-turbo.bin" => {
             Some("1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69")
@@ -627,7 +662,9 @@ pub enum ModelSupportTier {
 /// Support tier for a catalogue name (aliases resolve via [`lookup_model`]).
 pub fn model_support_tier(name: &str) -> ModelSupportTier {
     match name {
-        "large-v3-q5_0" => ModelSupportTier::Experimental,
+        "large-v3-q5_0" | "medium-ptbr-q5_0" | "large-v3-ptpt-q5_0" => {
+            ModelSupportTier::Experimental
+        }
         _ => ModelSupportTier::Supported,
     }
 }
@@ -652,8 +689,10 @@ pub fn pinned_exact_bytes(filename: &str) -> Option<u64> {
         "ggml-small.en-q5_1.bin" => Some(190_098_681),
         "ggml-medium.bin" => Some(1_533_763_059),
         "ggml-medium.en.bin" => Some(1_533_774_781),
+        "whisper-medium-ptbr-q5_0.bin" => Some(539_212_467),
         "ggml-large-v3.bin" => Some(3_095_033_483),
         "ggml-large-v3-q5_0.bin" => Some(1_081_140_203),
+        "ggml-large-v3-ptpt-q5_0.bin" => Some(1_081_140_203),
         "ggml-large-v3-turbo.bin" => Some(1_624_555_275),
         "ggml-large-v3-turbo-q5_0.bin" => Some(574_041_195),
         _ => None,
@@ -662,6 +701,35 @@ pub fn pinned_exact_bytes(filename: &str) -> Option<u64> {
 
 /// Diagnostic JSON for a catalogue entry (manifest provenance).
 pub fn artifact_manifest_json(info: &ModelInfo) -> serde_json::Value {
+    let source = model_artifact_source(info);
+    let (source_url, source_revision, download_url, prepared_locally, preparation_command) =
+        match source {
+            ModelArtifactSource::OfficialWhisperCpp => {
+                let url = format!("{HF_BASE}/{}", info.filename);
+                (url.clone(), "main", Some(url), false, None)
+            }
+            ModelArtifactSource::ImmutableDownload {
+                url,
+                source_revision,
+            } => (
+                url.to_string(),
+                source_revision,
+                Some(url.to_string()),
+                false,
+                None,
+            ),
+            ModelArtifactSource::PreparedLocal {
+                source_url,
+                source_revision,
+                preparation_command,
+            } => (
+                source_url.to_string(),
+                source_revision,
+                None,
+                true,
+                Some(preparation_command),
+            ),
+        };
     serde_json::json!({
         "manifest_version": ARTIFACT_MANIFEST_VERSION,
         "source": ARTIFACT_MANIFEST_SOURCE,
@@ -670,10 +738,61 @@ pub fn artifact_manifest_json(info: &ModelInfo) -> serde_json::Value {
         "approx_bytes": info.approx_bytes,
         "exact_bytes": pinned_exact_bytes(info.filename),
         "sha256": pinned_sha256(info.filename),
-        "license": "MIT (whisper.cpp weights via OpenAI Whisper terms)",
+        "license": model_artifact_license(info),
         "family": "whisper",
-        "download_url_template": format!("{HF_BASE}/{}", info.filename),
+        "source_url": source_url,
+        "source_revision": source_revision,
+        "download_url_template": download_url,
+        "prepared_locally": prepared_locally,
+        "preparation_command": preparation_command,
     })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModelArtifactSource {
+    OfficialWhisperCpp,
+    ImmutableDownload {
+        url: &'static str,
+        source_revision: &'static str,
+    },
+    PreparedLocal {
+        source_url: &'static str,
+        source_revision: &'static str,
+        preparation_command: &'static str,
+    },
+}
+
+fn model_artifact_source(info: &ModelInfo) -> ModelArtifactSource {
+    match info.filename {
+        "whisper-medium-ptbr-q5_0.bin" => ModelArtifactSource::ImmutableDownload {
+            url: MEDIUM_PTBR_URL,
+            source_revision: MEDIUM_PTBR_REVISION,
+        },
+        "ggml-large-v3-ptpt-q5_0.bin" => ModelArtifactSource::PreparedLocal {
+            source_url: LARGE_V3_PTPT_SOURCE_URL,
+            source_revision: LARGE_V3_PTPT_REVISION,
+            preparation_command: PORTUGUESE_PREPARATION_COMMAND,
+        },
+        _ => ModelArtifactSource::OfficialWhisperCpp,
+    }
+}
+
+fn model_artifact_license(info: &ModelInfo) -> &'static str {
+    match info.filename {
+        "whisper-medium-ptbr-q5_0.bin" | "ggml-large-v3-ptpt-q5_0.bin" => "Apache-2.0",
+        _ => "MIT (whisper.cpp weights via OpenAI Whisper terms)",
+    }
+}
+
+fn prepared_model_error(info: &ModelInfo) -> crate::error::AurumError {
+    ProviderError::ModelDownload {
+        model: info.name.to_string(),
+        reason: format!(
+            "this trusted artifact must be prepared locally from the pinned INESC checkpoint; \
+             run `{PORTUGUESE_PREPARATION_COMMAND}`, then retry"
+        ),
+    }
+    .into()
 }
 
 fn sweep_stale_partials(dir: &Path) {
@@ -832,6 +951,14 @@ mod tests {
             "ggml-large-v3-turbo.bin"
         );
         assert_eq!(lookup_model("turbo").unwrap().name, "turbo");
+        assert_eq!(
+            lookup_model("medium-ptbr-q5_0").unwrap().filename,
+            "whisper-medium-ptbr-q5_0.bin"
+        );
+        assert_eq!(
+            lookup_model("large-v3-ptpt-q5_0").unwrap().filename,
+            "ggml-large-v3-ptpt-q5_0.bin"
+        );
         assert!(lookup_model("nope").is_err());
     }
 
@@ -901,5 +1028,53 @@ mod tests {
             ModelSupportTier::Experimental
         );
         assert_eq!(model_support_tier("base"), ModelSupportTier::Supported);
+    }
+
+    #[test]
+    fn portuguese_models_are_canonical_and_experimental() {
+        let names = available_model_names();
+        assert!(names.contains("medium-ptbr-q5_0"));
+        assert!(names.contains("large-v3-ptpt-q5_0"));
+        assert_eq!(
+            model_support_tier("medium-ptbr-q5_0"),
+            ModelSupportTier::Experimental
+        );
+        assert_eq!(
+            model_support_tier("large-v3-ptpt-q5_0"),
+            ModelSupportTier::Experimental
+        );
+    }
+
+    #[test]
+    fn portuguese_model_provenance_is_specific_and_pinned() {
+        let medium = lookup_model("medium-ptbr-q5_0").unwrap();
+        let medium_manifest = artifact_manifest_json(medium);
+        assert_eq!(medium_manifest["license"], "Apache-2.0");
+        assert_eq!(medium_manifest["source_revision"], MEDIUM_PTBR_REVISION);
+        assert_eq!(medium_manifest["download_url_template"], MEDIUM_PTBR_URL);
+        assert_eq!(medium_manifest["prepared_locally"], false);
+
+        let ptpt = lookup_model("large-v3-ptpt-q5_0").unwrap();
+        let ptpt_manifest = artifact_manifest_json(ptpt);
+        assert_eq!(ptpt_manifest["license"], "Apache-2.0");
+        assert_eq!(ptpt_manifest["source_revision"], LARGE_V3_PTPT_REVISION);
+        assert!(ptpt_manifest["download_url_template"].is_null());
+        assert_eq!(ptpt_manifest["prepared_locally"], true);
+        assert_eq!(
+            ptpt_manifest["preparation_command"],
+            PORTUGUESE_PREPARATION_COMMAND
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_ptpt_model_returns_preparation_error_without_downloading() {
+        let cache = tempfile::tempdir().unwrap();
+        let err = ensure_model(cache.path(), "large-v3-ptpt-q5_0", false)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("must be prepared locally"));
+        assert!(err.contains("scripts/prepare_portuguese_models.sh"));
+        assert!(!models_dir(cache.path()).exists());
     }
 }

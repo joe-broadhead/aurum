@@ -84,10 +84,26 @@ provider = "rules"         # rules | openrouter
 
 # [providers.elevenlabs]
 # [providers.xai]
+
+# An optional reviewed deployment catalogue. Its records replace matching
+# built-ins by canonical id; `enabled = false` may name the canonical id or an
+# existing alias and removes that entire record. Defaults are resolved only
+# after the effective catalogue is assembled, so they may target built-ins.
+# Default records must always be local: catalogue data can never select a
+# remote provider or bypass explicit provider/credential requirements.
+# The path is explicit: Aurum never discovers, fetches, or falls back from it.
+# [catalogue]
+# path = "/absolute/path/to/model-catalogue.toml"
 ```
 
-Only canonical sections are accepted: `[stt]`, `[cleanup]`, `[tts]`, `[providers.*]`.
+Only canonical sections are accepted: `[stt]`, `[cleanup]`, `[tts]`, `[providers.*]`, `[catalogue]`.
 Unknown top-level sections (including old `[default]` / `[openrouter]`) fail closed.
+
+Catalogue language-default keys are canonical BCP-47 tags (for example
+`pt-BR`). Equivalent spellings are normalized before resolution; duplicate
+normalized keys fail closed. The diagnostic catalogue digest identifies the
+effective records, not the deployment file location, so relocating an
+unchanged catalogue does not invalidate a resumable batch.
 
 ### `local_only`
 

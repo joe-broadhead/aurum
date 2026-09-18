@@ -4,17 +4,26 @@ use aurum::cli::{self, Cli};
 use clap::Parser;
 use std::process::ExitCode;
 
-/// Windows default stack is 1 MiB; `converse --stdio` futures overflow it
-/// (`STATUS_STACK_OVERFLOW` / `-1073741571`).
-const WORKER_STACK: usize = 4 * 1024 * 1024;
+/// Windows default stack is 1 MiB; `converse --stdio` overflows it on the
+/// process main thread (`STATUS_STACK_OVERFLOW` / `thread 'main' has overflowed`).
+/// Tokio `thread_stack_size` does not apply to `block_on`'s caller.
+const WORKER_STACK: usize = 8 * 1024 * 1024;
 
 fn main() -> ExitCode {
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_stack_size(WORKER_STACK)
-        .build()
-        .expect("tokio runtime");
-    rt.block_on(async_main())
+    std::thread::Builder::new()
+        .name("aurum-main".into())
+        .stack_size(WORKER_STACK)
+        .spawn(|| {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .thread_stack_size(WORKER_STACK)
+                .build()
+                .expect("tokio runtime");
+            rt.block_on(async_main())
+        })
+        .expect("spawn aurum-main")
+        .join()
+        .unwrap_or(ExitCode::from(1))
 }
 
 async fn async_main() -> ExitCode {

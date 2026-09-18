@@ -81,7 +81,13 @@ impl LiveTurn {
 
         self.buf.push(chunk)?;
         let rms = chunk_rms(chunk);
-        let speech = rms >= self.cfg.min_rms;
+        // Hysteresis: once speaking, stay in speech until RMS drops well below
+        // the gate so word tails do not start the hangover clock.
+        let speech = if self.phase == LivePhase::UserSpeaking {
+            rms >= self.cfg.min_rms * 0.5
+        } else {
+            rms >= self.cfg.min_rms
+        };
         let mut became_speaking = false;
 
         if speech {
@@ -94,12 +100,30 @@ impl LiveTurn {
         } else if self.phase == LivePhase::UserSpeaking {
             self.silence_samples = self.silence_samples.saturating_add(chunk.len());
             if self.speech_samples >= self.cfg.min_speech_samples()
-                && self.silence_samples >= self.cfg.trailing_silence_samples()
+                && self.silence_samples >= self.hangover_samples()
             {
                 self.freeze_utterance()?;
             }
         }
         Ok(became_speaking)
+    }
+
+    /// Longer hangover at the start of a turn (thinking pause); floor after
+    /// ~2.5 s of speech. Not a neural VAD — still RMS-only.
+    fn hangover_samples(&self) -> usize {
+        let floor = self.cfg.trailing_silence_samples();
+        let think = self.cfg.thinking_pause_samples();
+        let ceiling = think.max(floor);
+        if ceiling <= floor {
+            return floor;
+        }
+        let saturate = (2.5 * f64::from(crate::audio::WHISPER_SAMPLE_RATE)).round() as usize;
+        if saturate == 0 {
+            return floor;
+        }
+        let spoken = self.speech_samples.min(saturate);
+        let extra = ceiling - floor;
+        ceiling - extra * spoken / saturate
     }
 
     /// Explicit endpoint (replay EOF). Bypasses min-speech / trailing-silence.
@@ -248,6 +272,7 @@ mod tests {
             max_utterance_secs: 2.0,
             min_speech_secs: 0.05,
             trailing_silence_secs: 0.05,
+            thinking_pause_secs: 0.05,
             min_rms: 0.1,
             max_speak_ahead: 2,
         }
@@ -307,6 +332,28 @@ mod tests {
         assert_eq!(t.phase(), LivePhase::Listening);
         t.push_pcm(&[0.4; 50]).unwrap();
         assert_eq!(t.phase(), LivePhase::UserSpeaking);
+    }
+
+    #[test]
+    fn thinking_pause_holds_a_one_second_gap() {
+        let cfg = LiveSessionConfig {
+            max_utterance_secs: 8.0,
+            min_speech_secs: 0.05,
+            trailing_silence_secs: 0.40,
+            thinking_pause_secs: 1.20,
+            min_rms: 0.1,
+            max_speak_ahead: 2,
+        };
+        let mut t = LiveTurn::new(cfg);
+        // ~0.2 s speech — still in the thinking-pause regime.
+        t.push_pcm(&vec![0.5f32; 3200]).unwrap();
+        assert_eq!(t.phase(), LivePhase::UserSpeaking);
+        // 1.0 s silence must not endpoint yet (hangover ≈ 1.1 s).
+        t.push_pcm(&vec![0.0f32; 16_000]).unwrap();
+        assert_eq!(t.phase(), LivePhase::UserSpeaking);
+        // Another 0.4 s silence crosses thinking pause.
+        t.push_pcm(&vec![0.0f32; 6400]).unwrap();
+        assert_eq!(t.phase(), LivePhase::Ending);
     }
 
     #[test]

@@ -32,7 +32,7 @@ Commands:
   cleanup         Clean existing text (stdin or file) without re-transcribing [alias: flow]
   tts             Synthesize speech from text (local ONNX TTS → mono WAV)
   batch           Bounded resumable multi-file transcription (JOE-1726)
-  converse        One file-in / WAV-out conversation turn (no microphone)
+  converse        One file-in / WAV-out conversation turn (no microphone). Boxed: Windows default stack is 1 MiB; this variant is large (clap + live)
   cache           Inspect and verify local model/voice-pack cache (JOE-1592)
   doctor          Read-only system, config, cache, and capability diagnostics (JOE-1628)
   support-bundle  Privacy-safe support bundle for issue reports (JOE-1728)
@@ -171,7 +171,7 @@ Options:
 ## `aurum converse`
 
 ```text
-One file-in / WAV-out conversation turn (no microphone)
+One file-in / WAV-out conversation turn (no microphone). Boxed: Windows default stack is 1 MiB; this variant is large (clap + live)
 
 Usage: aurum converse [OPTIONS] [AUDIO_FILE]
 
@@ -195,7 +195,9 @@ Options:
       --force                    Overwrite an existing non-empty output file
       --local-only               Reject remote STT/TTS before encode/upload
       --emit-json                Honesty JSON on stdout (no PCM). Incompatible with `--stdio`
-      --stdio                    JSONL sidecar for harnesses (pi, OpenCode, …). Stdout = events, stdin = commands. No in-process LLM. Logs stay on stderr. Requires `--mic` or a file
+      --stdio                    JSONL sidecar: host owns mic/brain (`transcribe`/`synthesize` paths). Does not require `--mic` or a file
+      --endpoint-silence <SECS>  Silence that ends a `--mic` turn after a full utterance (seconds, default 0.7)
+      --thinking-pause <SECS>    Extra `--mic` wait while the utterance is still short (seconds, default 1.2). Covers a ~1 s mid-thought pause. Still RMS energy, not a neural VAD
   -v, --verbose                  Verbose diagnostics
   -h, --help                     Print help
 ```

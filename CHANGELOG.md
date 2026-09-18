@@ -15,10 +15,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   agent is speaking. CLI: `aurum converse` (file in / WAV out, no mic). Mixed
   STT/TTS uses existing `[stt]` / `[tts]` providers (including ElevenLabs TTS).
   CLI `--llm-provider openai|openrouter|xai` is opt-in chat for the agent turn
-  (never inferred from keys; core stays LLM-free). Experimental `aurum converse --mic`
-  uses the default microphone and speakers (half-duplex, no AEC). `--stdio` JSONL
-  sidecar for harnesses (`transcribe`/`synthesize` on host-owned paths, plus
-  `speak` for local playback); `scripts/aurum-pi-voice.py` glues to `pi --mode rpc`.
+  (never inferred from keys; core stays LLM-free). `aurum converse --mic` uses the
+  default microphone and speakers (half-duplex, no AEC). `--stdio` JSONL sidecar
+  for harnesses (`transcribe`/`synthesize` on host-owned paths, plus `speak` for
+  local playback). `--mic` RMS endpoint uses a longer hangover at the start of a
+  turn (`--thinking-pause`, default 1.2s) so a ~1s mid-thought pause does not
+  cut the user off.
 
 ### Fixed
 

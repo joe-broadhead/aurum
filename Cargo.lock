@@ -144,11 +144,13 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
+ "reqwest",
  "serde_json",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "wiremock",
 ]
 
 [[package]]

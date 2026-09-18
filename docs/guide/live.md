@@ -17,17 +17,21 @@ Inbound PCM is **ignored while the agent is speaking**.
 ## CLI
 
 ```bash
-aurum converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/out.wav
+aurum converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/out.wav --force
 
-# Mixed cloud (explicit)
+# LLM agent turn (explicit provider; never inferred from keys)
+aurum converse talk.wav --llm-provider openai -O /tmp/out.wav --force --emit-json
+
+# Mixed cloud speech + LLM
 aurum converse talk.wav --provider openai --tts-provider elevenlabs \
-  --tts-model eleven_flash_v2_5 --voice 21m00Tcm4TlvDq8ikWAM \
-  --reply-file reply.txt -O /tmp/out.wav --emit-json
+  --voice 21m00Tcm4TlvDq8ikWAM --llm-provider openrouter \
+  -O /tmp/out.wav --force --emit-json
 ```
 
-`--reply-text` and `--reply-file` are mutually exclusive. `--local-only` rejects
-remote STT/TTS before encode/upload. `--emit-json` prints STT + TTS honesty
-metadata (no PCM).
+`--reply-text` / `--reply-file` / `--llm-provider` are mutually exclusive.
+`--local-only` rejects remote STT/TTS **and** `--llm-provider`.
+`--emit-json` prints STT + TTS honesty metadata (no PCM); LLM provider/model/text
+when used.
 
 When `--tts-provider elevenlabs` is set and `--tts-model` is omitted **and**
 config still has a local model id, converse prefers `eleven_flash_v2_5`. This
@@ -59,4 +63,4 @@ STT and TTS providers are whatever the engine config already has (`[stt]` /
 ## Non-goals
 
 Microphone capture · speaker playback · barge-in / AEC · streaming ASR/TTS ·
-FFI live jobs · LLM inside `aurum-core`.
+FFI live jobs · LLM inside `aurum-core` (CLI `--llm-provider` only).

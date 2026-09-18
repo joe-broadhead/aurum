@@ -14,7 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   commit a user turn, and enqueue agent PCM. Inbound audio is ignored while the
   agent is speaking. CLI: `aurum converse` (file in / WAV out, no mic). Mixed
   STT/TTS uses existing `[stt]` / `[tts]` providers (including ElevenLabs TTS).
-  No streaming claim, no new vendors.
+  CLI `--llm-provider openai|openrouter|xai` is opt-in chat for the agent turn
+  (never inferred from keys; core stays LLM-free). No streaming claim.
 
 ### Fixed
 

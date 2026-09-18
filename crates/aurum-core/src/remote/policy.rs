@@ -282,9 +282,10 @@ impl ProviderHttpPolicy for XaiHttpPolicy {
     }
 
     fn allows_path(&self, path: &str) -> bool {
-        // Official Voice REST (JOE-1976): POST /v1/stt and POST /v1/tts only.
+        // Official Voice REST (JOE-1976): POST /v1/stt and POST /v1/tts.
+        // `chat/completions` is the official Grok chat path (CLI converse LLM only).
         // OpenAI-shaped /audio/* and realtime/WebSocket remain denied.
-        path_allowed(path, &["stt", "tts"], &[])
+        path_allowed(path, &["stt", "tts", "chat/completions"], &[])
     }
 }
 
@@ -426,9 +427,9 @@ mod tests {
 
         assert!(XaiHttpPolicy.allows_path("stt"));
         assert!(XaiHttpPolicy.allows_path("tts"));
+        assert!(XaiHttpPolicy.allows_path("chat/completions"));
         assert!(!XaiHttpPolicy.allows_path("audio/transcriptions"));
         assert!(!XaiHttpPolicy.allows_path("audio/speech"));
-        assert!(!XaiHttpPolicy.allows_path("chat/completions"));
         assert!(!XaiHttpPolicy.allows_path("realtime"));
     }
 

@@ -185,8 +185,11 @@ Options:
       --tts-provider <PROVIDER>  TTS provider (registry id; default `local`)
       --tts-model <NAME>         TTS model id
       --voice <NAME>             TTS voice id (required for ElevenLabs; never remapped from Luna)
-      --reply-text <TEXT>        Agent reply text (exactly one of `--reply-text` / `--reply-file`)
+      --reply-text <TEXT>        Agent reply text (mutually exclusive with `--reply-file` and `--llm-provider`)
       --reply-file <PATH>        Read agent reply UTF-8 from this file
+      --llm-provider <PROVIDER>  Chat backend for the agent turn: `openai` | `openrouter` | `xai`. Never selected just because a key is set
+      --llm-model <NAME>         Chat model id (defaults: openai=`gpt-4o-mini`, openrouter=`google/gemini-2.5-flash-lite`; xAI requires this flag)
+      --llm-system <TEXT>        Optional system prompt override for `--llm-provider`
   -O, --output-file <PATH>       Write agent WAV here
       --force                    Overwrite an existing non-empty output file
       --local-only               Reject remote STT/TTS before encode/upload

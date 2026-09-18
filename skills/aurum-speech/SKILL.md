@@ -82,6 +82,7 @@ aurum models
 aurum tests/fixtures/sample.wav --model tiny-q5_1
 aurum tts "Hello from aurum" -O /tmp/hello.wav --force --emit-json
 aurum converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/hello.wav --force
+# LLM agent (explicit): aurum converse talk.wav --llm-provider openai -O /tmp/out.wav --force
 aurum tts models && aurum tts voices
 ```
 

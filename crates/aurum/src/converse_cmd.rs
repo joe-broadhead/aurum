@@ -121,9 +121,9 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
             }
             .into());
         }
-        (false, false) => {
+        (false, false) if !cli.stdio => {
             return Err(UserError::Other {
-                message: "pass AUDIO_FILE or --mic".into(),
+                message: "pass AUDIO_FILE, --mic, or --stdio".into(),
             }
             .into());
         }
@@ -496,6 +496,20 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
     while !stop.load(Ordering::SeqCst) && !shutting {
         while let Ok(msg) = cmd_rx.try_recv() {
             match msg {
+                Ok(InCmd::Transcribe { path }) => {
+                    if let Err(e) = sidecar_transcribe(&mut live, &path).await {
+                        let _ = stdio_proto::write_event(&OutEvent::Error {
+                            message: e.to_string(),
+                        });
+                    }
+                }
+                Ok(InCmd::Synthesize { text, path }) => {
+                    if let Err(e) = sidecar_synthesize(&mut live, &text, &path).await {
+                        let _ = stdio_proto::write_event(&OutEvent::Error {
+                            message: e.to_string(),
+                        });
+                    }
+                }
                 Ok(InCmd::Speak { text }) => match live.speak_text(&text).await {
                     Ok(tts) => {
                         drain_live(&mut live);
@@ -584,6 +598,86 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
     let _ = play_thread.join();
     live.shutdown();
     let _ = stdio_proto::write_event(&OutEvent::Shutdown);
+    Ok(())
+}
+
+fn require_absolute_path(path: &str) -> Result<&std::path::Path> {
+    let p = std::path::Path::new(path);
+    if !p.is_absolute() {
+        return Err(UserError::Other {
+            message: "sidecar path must be absolute".into(),
+        }
+        .into());
+    }
+    Ok(p)
+}
+
+async fn sidecar_transcribe(live: &mut LiveSession, path: &str) -> Result<()> {
+    live.discard_turn();
+    let path = require_absolute_path(path)?;
+    let audio = aurum_core::load_audio(path).await?;
+    live.push_pcm(audio.samples().as_ref())?;
+    live.end_user_turn()?;
+    let stt = live.commit_user_turn().await?;
+    if stt.text().trim().is_empty() {
+        live.discard_turn();
+        return Err(UserError::Other {
+            message: "empty transcript".into(),
+        }
+        .into());
+    }
+    stdio_proto::write_event(&OutEvent::UserFinal {
+        text: stt.text().to_string(),
+        provider: stt.provider().to_string(),
+        model: stt.model().to_string(),
+    })
+    .map_err(|e| UserError::Other {
+        message: format!("stdio write: {e}"),
+    })?;
+    Ok(())
+}
+
+async fn sidecar_synthesize(live: &mut LiveSession, text: &str, path: &str) -> Result<()> {
+    let path = require_absolute_path(path)?;
+    aurum_core::tts::validate::validate_output_path(path)?;
+    aurum_core::tts::validate::validate_text(text)?;
+    let engine = live.engine();
+    let cfg = engine.config();
+    let id = engine.tts_provider_id()?;
+    let model = aurum_core::resolve_tts_model(id.as_str(), None, &cfg.tts_model)?;
+    let voice_cfg = cfg.tts_voice.trim();
+    let voice = aurum_core::resolve_tts_voice(
+        id.as_str(),
+        (!voice_cfg.is_empty()).then_some(voice_cfg),
+        &cfg.tts_voice,
+    )?;
+    let opts = aurum_core::SynthesisOptions {
+        model,
+        voice,
+        language: cfg.tts_language.clone(),
+        speaking_rate: cfg.tts_speaking_rate,
+        timeout_ms: cfg.tts_timeout_ms,
+        local_only: cfg.local_only,
+        ..Default::default()
+    };
+    let tts = engine.synthesize(text, &opts).await?;
+    aurum_core::write_wav_i16_mono_transaction(
+        path,
+        &tts.pcm_i16_mono,
+        tts.sample_rate_hz,
+        CommitMode::Replace,
+    )?;
+    stdio_proto::write_event(&OutEvent::Synthesized {
+        path: path.display().to_string(),
+        duration_ms: tts.duration_ms,
+        provider: tts.provider,
+        model: tts.model,
+        voice: tts.voice,
+        sample_rate_hz: tts.sample_rate_hz,
+    })
+    .map_err(|e| UserError::Other {
+        message: format!("stdio write: {e}"),
+    })?;
     Ok(())
 }
 

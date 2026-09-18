@@ -50,7 +50,20 @@ cargo run -p aurum-stt -- converse --mic --stdio --model tiny-q5_1
 python3 scripts/aurum-pi-voice.py -- --mic --model tiny-q5_1
 ```
 
-OpenCode: use the same JSONL against `opencode run --format json` / ACP / serve.
+Desktop hosts (e.g. Jelly) should **keep the microphone in the app** (TCC),
+write a private WAV, and use a long-lived sidecar — no `--mic`, no `--llm-provider`:
+
+```json
+{"v":1,"type":"transcribe","path":"/abs/recording.wav"}
+{"v":1,"type":"synthesize","text":"Hello.","path":"/abs/reply.wav"}
+{"v":1,"type":"end_turn"}
+```
+
+`transcribe` / `synthesize` use host-owned **absolute** paths. `synthesize` writes
+WAV and does not play (the app owns speakers). `speak` still plays locally for
+CLI/Pi glue.
+
+OpenCode: map `user_final` → session prompt and assistant sentences → `synthesize`.
 Do not pass `--llm-provider` with `--stdio`.
 
 `--reply-text` / `--reply-file` / `--llm-provider` / `--stdio` are mutually exclusive.

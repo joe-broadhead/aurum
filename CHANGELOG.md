@@ -17,7 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CLI `--llm-provider openai|openrouter|xai` is opt-in chat for the agent turn
   (never inferred from keys; core stays LLM-free). Experimental `aurum converse --mic`
   uses the default microphone and speakers (half-duplex, no AEC). `--stdio` JSONL
-  sidecar for harnesses; `scripts/aurum-pi-voice.py` glues to `pi --mode rpc`.
+  sidecar for harnesses (`transcribe`/`synthesize` on host-owned paths, plus
+  `speak` for local playback); `scripts/aurum-pi-voice.py` glues to `pi --mode rpc`.
 
 ### Fixed
 

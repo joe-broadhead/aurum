@@ -13,7 +13,19 @@ pub const MAX_LINE_BYTES: usize = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InCmd {
-    Speak { text: String },
+    /// Host-owned recording (absolute path). Aurum does not capture.
+    Transcribe {
+        path: String,
+    },
+    /// Write TTS WAV to a host-owned absolute path. Does not play.
+    Synthesize {
+        text: String,
+        path: String,
+    },
+    /// Play TTS on the default speaker (optional; desktop hosts prefer synthesize).
+    Speak {
+        text: String,
+    },
     EndTurn,
     Abort,
     Shutdown,
@@ -31,6 +43,14 @@ pub enum OutEvent {
         model: String,
     },
     Listening,
+    Synthesized {
+        path: String,
+        duration_ms: u64,
+        provider: String,
+        model: String,
+        voice: String,
+        sample_rate_hz: u32,
+    },
     Error {
         message: String,
     },
@@ -55,16 +75,17 @@ pub fn parse_line(line: &str) -> Result<InCmd, String> {
         .and_then(|x| x.as_str())
         .ok_or_else(|| "missing type".to_string())?;
     match typ {
+        "transcribe" => {
+            let path = required_path(&v, "path")?;
+            Ok(InCmd::Transcribe { path })
+        }
+        "synthesize" => {
+            let text = required_text(&v, "text")?;
+            let path = required_path(&v, "path")?;
+            Ok(InCmd::Synthesize { text, path })
+        }
         "speak" => {
-            let text = v
-                .get("text")
-                .and_then(|x| x.as_str())
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            if text.is_empty() {
-                return Err("speak.text is empty".into());
-            }
+            let text = required_text(&v, "text")?;
             Ok(InCmd::Speak { text })
         }
         "end_turn" => Ok(InCmd::EndTurn),
@@ -97,6 +118,23 @@ pub fn event_json(ev: &OutEvent) -> Value {
             "model": model,
         }),
         OutEvent::Listening => json!({ "v": PROTO_V, "type": "listening" }),
+        OutEvent::Synthesized {
+            path,
+            duration_ms,
+            provider,
+            model,
+            voice,
+            sample_rate_hz,
+        } => json!({
+            "v": PROTO_V,
+            "type": "synthesized",
+            "path": path,
+            "duration_ms": duration_ms,
+            "provider": provider,
+            "model": model,
+            "voice": voice,
+            "sample_rate_hz": sample_rate_hz,
+        }),
         OutEvent::Error { message } => json!({
             "v": PROTO_V,
             "type": "error",
@@ -104,6 +142,35 @@ pub fn event_json(ev: &OutEvent) -> Value {
         }),
         OutEvent::Shutdown => json!({ "v": PROTO_V, "type": "shutdown" }),
     }
+}
+
+fn required_text(v: &Value, key: &str) -> Result<String, String> {
+    let text = v
+        .get(key)
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if text.is_empty() {
+        return Err(format!("{key} is empty"));
+    }
+    Ok(text)
+}
+
+fn required_path(v: &Value, key: &str) -> Result<String, String> {
+    let path = v
+        .get(key)
+        .and_then(|x| x.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
+    if path.is_empty() {
+        return Err(format!("{key} is empty"));
+    }
+    if path.contains('\n') || path.contains('\0') {
+        return Err(format!("{key} contains invalid characters"));
+    }
+    Ok(path)
 }
 
 /// Write one event and flush. Callers must use stdout only for this protocol.
@@ -164,5 +231,29 @@ mod tests {
         assert!(!s.contains('\n'));
         assert!(s.contains("user_final"));
         assert!(!s.to_ascii_lowercase().contains("pcm"));
+    }
+
+    #[test]
+    fn parse_transcribe_and_synthesize() {
+        let t = parse_line("{\"type\":\"transcribe\",\"path\":\"/tmp/a.wav\"}").unwrap();
+        assert_eq!(
+            t,
+            InCmd::Transcribe {
+                path: "/tmp/a.wav".into()
+            }
+        );
+        let s = parse_line("{\"type\":\"synthesize\",\"text\":\"Hi.\",\"path\":\"/tmp/out.wav\"}")
+            .unwrap();
+        assert_eq!(
+            s,
+            InCmd::Synthesize {
+                text: "Hi.".into(),
+                path: "/tmp/out.wav".into()
+            }
+        );
+        assert!(parse_line("{\"type\":\"transcribe\",\"path\":\"\"}").is_err());
+        assert!(
+            parse_line("{\"type\":\"synthesize\",\"text\":\"Hi.\",\"path\":\"x\\ny\"}").is_err()
+        );
     }
 }

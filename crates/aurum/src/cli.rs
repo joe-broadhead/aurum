@@ -135,7 +135,8 @@ pub enum Commands {
     Batch(crate::batch_cmd::BatchCli),
 
     /// One file-in / WAV-out conversation turn (no microphone).
-    Converse(crate::converse_cmd::ConverseCli),
+    /// Boxed: Windows default stack is 1 MiB; this variant is large (clap + live).
+    Converse(Box<crate::converse_cmd::ConverseCli>),
 
     /// Inspect and verify local model/voice-pack cache (JOE-1592).
     Cache(CacheCli),
@@ -480,7 +481,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
         Some(Commands::Tts(tts)) => run_tts_cli(tts).await,
         Some(Commands::Batch(batch)) => crate::batch_cmd::run_batch(batch).await,
-        Some(Commands::Converse(c)) => crate::converse_cmd::run_converse(c).await,
+        Some(Commands::Converse(c)) => Box::pin(crate::converse_cmd::run_converse(*c)).await,
         Some(Commands::Cache(cache)) => run_cache_cmd(cache).await,
         Some(Commands::Doctor(doc)) => run_doctor_cmd(doc),
         Some(Commands::SupportBundle(sb)) => crate::support_cmd::run_support_bundle(sb),

@@ -161,7 +161,9 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
 
     let engine = aurum_core::AurumEngine::from_config(cfg)?;
     if cli.stdio {
-        return run_stdio_loop(cli, engine).await;
+        // Heap-allocate the sidecar future: many .await points + LiveSession
+        // overflow the 1 MiB Windows default stack (STATUS_STACK_OVERFLOW).
+        return Box::pin(run_stdio_loop(cli, engine)).await;
     }
     if cli.mic {
         return run_mic_loop(cli, engine, agent).await;

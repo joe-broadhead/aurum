@@ -82,7 +82,7 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev
       - name: Test gate
         run: cargo test --workspace --locked
       - name: Security gate
@@ -149,7 +149,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
@@ -217,7 +217,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev
 
       - name: Install deps (macOS)
         if: runner.os == 'macOS'
@@ -442,7 +442,7 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev
 
       - name: Download primary linux binary (builder A)
         uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16  # v4.1.8

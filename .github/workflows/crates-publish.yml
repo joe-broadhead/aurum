@@ -81,7 +81,7 @@ jobs:
       - name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev
 
       - name: Publication policy gate (JOE-1915 / JOE-1920)
         run: |

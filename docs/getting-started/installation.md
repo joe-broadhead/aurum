@@ -14,7 +14,7 @@ brew install rustup-init cmake ffmpeg
 rustup default stable
 
 # Ubuntu / Debian
-sudo apt install build-essential cmake pkg-config ffmpeg
+sudo apt install build-essential cmake pkg-config libasound2-dev ffmpeg
 # install rustup from https://rustup.rs
 ```
 

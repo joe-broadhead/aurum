@@ -64,7 +64,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake pkg-config ffmpeg
+          sudo apt-get install -y build-essential cmake pkg-config libasound2-dev ffmpeg
 
       - name: Install macOS ffmpeg
         if: runner.os == 'macOS'

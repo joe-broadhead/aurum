@@ -184,8 +184,9 @@ do not assume a stable major version yet.
 
 ## Non-goals (0.0.x)
 
-Built-in microphone capture · speaker diarization · stable library major API ·
-remote execution on the C ABI · multi-tenant isolation in one process.
+Speaker diarization · stable library major API · remote execution on the C ABI ·
+multi-tenant isolation in one process. Microphone I/O is **experimental** and
+CLI-only (`aurum converse --mic`); `aurum-core` / FFI still do not own devices.
 
 ## License
 

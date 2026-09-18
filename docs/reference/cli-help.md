@@ -173,12 +173,13 @@ Options:
 ```text
 One file-in / WAV-out conversation turn (no microphone)
 
-Usage: aurum converse [OPTIONS] --output-file <PATH> <AUDIO_FILE>
+Usage: aurum converse [OPTIONS] [AUDIO_FILE]
 
 Arguments:
-  <AUDIO_FILE>  Audio file for the user turn (decoded to 16 kHz mono)
+  [AUDIO_FILE]  Audio file for a single user turn (omit when using `--mic`)
 
 Options:
+      --mic                      Use the default microphone and speakers (half-duplex). Experimental
       --provider <PROVIDER>      STT provider (registry id; default `local`)
       --model <NAME>             STT model id (local ggml name or reviewed remote id)
       --language <CODE>          STT language (default from config / auto)
@@ -190,7 +191,7 @@ Options:
       --llm-provider <PROVIDER>  Chat backend for the agent turn: `openai` | `openrouter` | `xai`. Never selected just because a key is set
       --llm-model <NAME>         Chat model id (defaults: openai=`gpt-4o-mini`, openrouter=`google/gemini-2.5-flash-lite`; xAI requires this flag)
       --llm-system <TEXT>        Optional system prompt override for `--llm-provider`
-  -O, --output-file <PATH>       Write agent WAV here
+  -O, --output-file <PATH>       Write agent WAV here (required for file mode; optional with `--mic`)
       --force                    Overwrite an existing non-empty output file
       --local-only               Reject remote STT/TTS before encode/upload
       --emit-json                Honesty JSON on stdout (no PCM)

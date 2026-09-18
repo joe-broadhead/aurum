@@ -215,6 +215,13 @@ impl LiveSession {
         Ok(())
     }
 
+    /// Abort the current user/agent turn and return to listening.
+    pub fn discard_turn(&mut self) {
+        self.turn.discard_to_listening();
+        self.pending_agent = 0;
+        self.events.clear();
+    }
+
     /// Close the session and shut down the engine (Metal-safe).
     pub fn shutdown(&mut self) {
         self.turn.close();

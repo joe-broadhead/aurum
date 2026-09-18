@@ -80,6 +80,8 @@ pub struct ChatRequest<'a> {
     pub base_url: Option<&'a str>,
     pub user_text: &'a str,
     pub system: &'a str,
+    /// Prior turns as (role, content), excluding the new user text.
+    pub prior: &'a [(&'a str, &'a str)],
 }
 
 /// One-shot chat completion. Non-streaming (full reply then TTS).
@@ -126,13 +128,16 @@ pub async fn complete_chat(req: ChatRequest<'_>) -> Result<String> {
     } else {
         req.system.trim()
     };
+    let mut messages = Vec::with_capacity(2 + req.prior.len());
+    messages.push(json!({ "role": "system", "content": system }));
+    for (role, content) in req.prior {
+        messages.push(json!({ "role": role, "content": content }));
+    }
+    messages.push(json!({ "role": "user", "content": user }));
     let body = json!({
         "model": model,
         "temperature": 0.4,
-        "messages": [
-            { "role": "system", "content": system },
-            { "role": "user", "content": user },
-        ],
+        "messages": messages,
     });
 
     let response = http
@@ -232,6 +237,7 @@ mod tests {
             base_url: Some(&server.uri()),
             user_text: "hi",
             system: DEFAULT_SYSTEM,
+            prior: &[],
         })
         .await
         .unwrap();

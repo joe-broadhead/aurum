@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   agent is speaking. CLI: `aurum converse` (file in / WAV out, no mic). Mixed
   STT/TTS uses existing `[stt]` / `[tts]` providers (including ElevenLabs TTS).
   CLI `--llm-provider openai|openrouter|xai` is opt-in chat for the agent turn
-  (never inferred from keys; core stays LLM-free). No streaming claim.
+  (never inferred from keys; core stays LLM-free). Experimental `aurum converse --mic`
+  uses the default microphone and speakers (half-duplex, no AEC). No streaming claim.
 
 ### Fixed
 

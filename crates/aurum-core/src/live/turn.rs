@@ -186,6 +186,13 @@ impl LiveTurn {
         self.utterance.clear();
     }
 
+    /// Drop a stuck/empty turn and return to listening (mic loop).
+    pub(crate) fn discard_to_listening(&mut self) {
+        if self.phase != LivePhase::Closed {
+            self.reset_listen();
+        }
+    }
+
     fn freeze_utterance(&mut self) -> Result<()> {
         let mut samples = Vec::new();
         self.buf.copy_samples_into(&mut samples);

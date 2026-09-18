@@ -4,22 +4,31 @@
 //! Speech providers come from the same flags/config as `aurum` / `aurum tts`.
 //! `--llm-provider` is never inferred from API keys.
 
+use crate::audio_io::{play_i16_mono, resample_mono, MicCapture};
 use crate::llm::{complete_chat, ChatRequest, LlmProvider};
+use aurum_core::audio::WHISPER_SAMPLE_RATE;
 use aurum_core::config::Config;
 use aurum_core::error::{Result, UserError};
-use aurum_core::live::{LiveSession, LiveSessionConfig};
+use aurum_core::live::{LivePhase, LiveSession, LiveSessionConfig};
 use aurum_core::output::CommitMode;
 use aurum_core::provider_platform::ProviderId;
 use clap::Parser;
 use std::io::{self, IsTerminal, Write};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
 
-/// `aurum converse` — one user turn from a file, one agent turn to a WAV.
+/// `aurum converse` — one user turn from a file, or `--mic` for a live loop.
 #[derive(Debug, Parser)]
 pub struct ConverseCli {
-    /// Audio file for the user turn (decoded to 16 kHz mono).
+    /// Audio file for a single user turn (omit when using `--mic`).
     #[arg(value_name = "AUDIO_FILE")]
-    pub audio_file: PathBuf,
+    pub audio_file: Option<PathBuf>,
+
+    /// Use the default microphone and speakers (half-duplex). Experimental.
+    #[arg(long)]
+    pub mic: bool,
 
     /// STT provider (registry id; default `local`).
     #[arg(long, value_name = "PROVIDER")]
@@ -67,9 +76,9 @@ pub struct ConverseCli {
     #[arg(long = "llm-system", value_name = "TEXT")]
     pub llm_system: Option<String>,
 
-    /// Write agent WAV here.
+    /// Write agent WAV here (required for file mode; optional with `--mic`).
     #[arg(long = "output-file", short = 'O', value_name = "PATH")]
-    pub output_file: PathBuf,
+    pub output_file: Option<PathBuf>,
 
     /// Overwrite an existing non-empty output file.
     #[arg(long)]
@@ -98,13 +107,21 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
         }
         .into());
     }
-    aurum_core::tts::validate::validate_output_path(&cli.output_file)?;
-    let commit_mode = if cli.force {
-        CommitMode::Replace
-    } else {
-        CommitMode::NoClobber
-    };
-    aurum_core::OutputTransaction::new(&cli.output_file, commit_mode).preflight()?;
+    match (cli.mic, cli.audio_file.is_some()) {
+        (true, true) => {
+            return Err(UserError::Other {
+                message: "pass a file or --mic, not both".into(),
+            }
+            .into());
+        }
+        (false, false) => {
+            return Err(UserError::Other {
+                message: "pass AUDIO_FILE or --mic".into(),
+            }
+            .into());
+        }
+        _ => {}
+    }
 
     let mut cfg = Config::load()?;
     if let Some(p) = cli.provider.as_deref() {
@@ -130,7 +147,23 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
     }
 
     let engine = aurum_core::AurumEngine::from_config(cfg)?;
-    let audio = aurum_core::load_audio(&cli.audio_file).await?;
+    if cli.mic {
+        return run_mic_loop(cli, engine, agent).await;
+    }
+    let audio_file = cli.audio_file.as_ref().ok_or_else(|| UserError::Other {
+        message: "pass AUDIO_FILE or --mic".into(),
+    })?;
+    let output_file = cli.output_file.as_ref().ok_or_else(|| UserError::Other {
+        message: "-O/--output-file is required unless --mic".into(),
+    })?;
+    aurum_core::tts::validate::validate_output_path(output_file)?;
+    let commit_mode = if cli.force {
+        CommitMode::Replace
+    } else {
+        CommitMode::NoClobber
+    };
+    aurum_core::OutputTransaction::new(output_file, commit_mode).preflight()?;
+    let audio = aurum_core::load_audio(audio_file).await?;
     let live_cfg = LiveSessionConfig {
         max_utterance_secs: audio.duration_secs().max(1.0),
         ..Default::default()
@@ -161,6 +194,7 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
                 base_url: base.as_deref(),
                 user_text: stt.text(),
                 system: system.as_deref().unwrap_or(""),
+                prior: &[],
             })
             .await?;
             (
@@ -174,7 +208,7 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
     live.end_agent_turn()?;
 
     aurum_core::write_wav_i16_mono_transaction(
-        &cli.output_file,
+        output_file,
         &tts.pcm_i16_mono,
         tts.sample_rate_hz,
         commit_mode,
@@ -186,7 +220,7 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
             stt.provider(),
             stt.text(),
             tts.provider,
-            cli.output_file.display(),
+            output_file.display(),
             tts.duration_ms as f64 / 1000.0
         );
         if let Some((p, m, t)) = &llm_meta {
@@ -195,7 +229,7 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
     }
 
     if cli.emit_json {
-        let abs = std::fs::canonicalize(&cli.output_file).unwrap_or(cli.output_file.clone());
+        let abs = std::fs::canonicalize(output_file).unwrap_or_else(|_| output_file.clone());
         let stt_dto = aurum_core::dto::SttResultDto::from_result(&stt);
         let mut tts_dto = serde_json::to_value(aurum_core::dto::TtsMetaDto::from_result(&tts))
             .map_err(|e| UserError::Other {
@@ -236,6 +270,151 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
 
     live.shutdown();
     Ok(())
+}
+
+async fn run_mic_loop(
+    cli: ConverseCli,
+    engine: aurum_core::AurumEngine,
+    agent: AgentSource,
+) -> Result<()> {
+    eprintln!("aurum converse --mic: headphones recommended (half-duplex, no echo cancel)");
+    eprintln!("Speak, pause ~1s, wait for the reply. Ctrl+C to stop.");
+    let mic = MicCapture::start()?;
+    let live_cfg = LiveSessionConfig {
+        max_utterance_secs: 30.0,
+        min_speech_secs: 0.35,
+        trailing_silence_secs: 0.8,
+        min_rms: 0.02,
+        max_speak_ahead: 2,
+    };
+    let mut live = LiveSession::new(engine, live_cfg)?;
+    let stop = Arc::new(AtomicBool::new(false));
+    {
+        let stop = Arc::clone(&stop);
+        tokio::spawn(async move {
+            let _ = tokio::signal::ctrl_c().await;
+            stop.store(true, Ordering::SeqCst);
+        });
+    }
+    let mut prior: Vec<(String, String)> = Vec::new();
+    while !stop.load(Ordering::SeqCst) {
+        let chunk = tokio::task::block_in_place(|| mic.recv_timeout(Duration::from_millis(150)));
+        let Some(chunk) = chunk else {
+            continue;
+        };
+        if live.phase() == LivePhase::Speaking || live.phase() == LivePhase::Thinking {
+            continue;
+        }
+        let pcm16 = resample_mono(&chunk, mic.sample_rate, WHISPER_SAMPLE_RATE);
+        if pcm16.is_empty() {
+            continue;
+        }
+        live.push_pcm(&pcm16)?;
+        if live.phase() != LivePhase::Ending {
+            continue;
+        }
+        let stt = match live.commit_user_turn().await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("aurum: STT failed ({e}); listening");
+                live.discard_turn();
+                mic.drain();
+                continue;
+            }
+        };
+        if stt.text().trim().is_empty() {
+            live.discard_turn();
+            continue;
+        }
+        eprintln!("you: {}", stt.text());
+        let reply = match agent_reply(&agent, live.engine().config(), stt.text(), &prior).await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("aurum: agent failed ({e}); listening");
+                live.discard_turn();
+                mic.drain();
+                continue;
+            }
+        };
+        eprintln!("aurum: {reply}");
+        match live.speak_text(&reply).await {
+            Ok(tts) => {
+                mic.drain();
+                let play = tokio::task::block_in_place(|| {
+                    play_i16_mono(&tts.pcm_i16_mono, tts.sample_rate_hz)
+                });
+                if let Err(e) = play {
+                    eprintln!("aurum: playback failed ({e})");
+                }
+                if let Some(path) = cli.output_file.as_ref() {
+                    let mode = CommitMode::Replace;
+                    if let Err(e) = aurum_core::write_wav_i16_mono_transaction(
+                        path,
+                        &tts.pcm_i16_mono,
+                        tts.sample_rate_hz,
+                        mode,
+                    ) {
+                        eprintln!("aurum: write {path:?} failed ({e})");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("aurum: TTS failed ({e})");
+                live.discard_turn();
+                mic.drain();
+                continue;
+            }
+        }
+        let _ = live.end_agent_turn();
+        mic.drain();
+        if matches!(agent, AgentSource::Llm { .. }) {
+            prior.push(("user".into(), stt.text().to_string()));
+            prior.push(("assistant".into(), reply));
+            if prior.len() > 16 {
+                prior.drain(0..2);
+            }
+        }
+    }
+    live.shutdown();
+    eprintln!("aurum converse: stopped");
+    Ok(())
+}
+
+async fn agent_reply(
+    agent: &AgentSource,
+    cfg: &Config,
+    user_text: &str,
+    prior: &[(String, String)],
+) -> Result<String> {
+    match agent {
+        AgentSource::Canned(text) => Ok(text.clone()),
+        AgentSource::Llm {
+            provider,
+            model,
+            system,
+        } => {
+            let key = cfg
+                .provider_secret(&ProviderId::parse(provider.as_str())?)
+                .ok_or_else(|| UserError::MissingProviderCredential {
+                    provider: provider.as_str().into(),
+                })?;
+            let base = llm_base_url(cfg, *provider);
+            let prior_refs: Vec<(&str, &str)> = prior
+                .iter()
+                .map(|(r, c)| (r.as_str(), c.as_str()))
+                .collect();
+            complete_chat(ChatRequest {
+                provider: *provider,
+                model,
+                api_key: &key,
+                base_url: base.as_deref(),
+                user_text,
+                system: system.as_deref().unwrap_or(""),
+                prior: &prior_refs,
+            })
+            .await
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -431,6 +610,28 @@ mod tests {
                 assert_eq!(model, "gpt-4o-mini");
             }
             AgentSource::Canned(_) => panic!("expected llm"),
+        }
+    }
+
+    #[test]
+    fn clap_parses_mic() {
+        let cli = crate::cli::Cli::try_parse_from([
+            "aurum",
+            "converse",
+            "--mic",
+            "--llm-provider",
+            "openai",
+            "--model",
+            "tiny-q5_1",
+        ])
+        .unwrap();
+        match cli.command {
+            Some(crate::cli::Commands::Converse(c)) => {
+                assert!(c.mic);
+                assert!(c.audio_file.is_none());
+                assert_eq!(c.llm_provider.as_deref(), Some("openai"));
+            }
+            other => panic!("expected Converse, got {other:?}"),
         }
     }
 }

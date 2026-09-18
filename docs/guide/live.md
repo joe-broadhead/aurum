@@ -17,6 +17,9 @@ Inbound PCM is **ignored while the agent is speaking**.
 ## CLI
 
 ```bash
+# Live mic (headphones recommended; Ctrl+C to stop)
+aurum converse --mic --model tiny-q5_1 --llm-provider openai --force
+
 aurum converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/out.wav --force
 
 # LLM agent turn (explicit provider; never inferred from keys)
@@ -62,5 +65,5 @@ STT and TTS providers are whatever the engine config already has (`[stt]` /
 
 ## Non-goals
 
-Microphone capture · speaker playback · barge-in / AEC · streaming ASR/TTS ·
-FFI live jobs · LLM inside `aurum-core` (CLI `--llm-provider` only).
+AEC / barge-in · streaming ASR/TTS · FFI live jobs · LLM inside `aurum-core`
+(CLI `--llm-provider` only). `aurum converse --mic` is experimental CLI device I/O.

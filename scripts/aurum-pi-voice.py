@@ -93,17 +93,33 @@ def main() -> int:
     assert aurum.stdin and aurum.stdout and pi.stdin and pi.stdout
 
     speak_buf: list[str] = []
-    lock = threading.Lock()
+    buf_lock = threading.Lock()
+    aurum_in_lock = threading.Lock()
+    pi_in_lock = threading.Lock()
     agent_busy = threading.Event()
 
+    def write_aurum(obj: dict[str, Any]) -> None:
+        with aurum_in_lock:
+            try:
+                write_json(aurum.stdin, obj)
+            except BrokenPipeError:
+                pass
+
+    def write_pi(obj: dict[str, Any]) -> None:
+        with pi_in_lock:
+            try:
+                write_json(pi.stdin, obj)
+            except BrokenPipeError:
+                pass
+
     def flush_speak(end_turn: bool) -> None:
-        with lock:
+        with buf_lock:
             rest = "".join(speak_buf).strip()
             speak_buf.clear()
         if rest:
-            write_json(aurum.stdin, {"v": PROTO_V, "type": "speak", "text": rest})
+            write_aurum({"v": PROTO_V, "type": "speak", "text": rest})
         if end_turn:
-            write_json(aurum.stdin, {"v": PROTO_V, "type": "end_turn"})
+            write_aurum({"v": PROTO_V, "type": "end_turn"})
 
     def from_aurum() -> None:
         for raw in aurum.stdout:
@@ -118,7 +134,7 @@ def main() -> int:
                     continue
                 sys.stderr.write(f"you: {text}\n")
                 cmd = "steer" if agent_busy.is_set() else "prompt"
-                write_json(pi.stdin, {"type": cmd, "message": text})
+                write_pi({"type": cmd, "message": text})
             elif typ == "error":
                 sys.stderr.write(f"aurum error: {ev.get('message')}\n")
             elif typ == "shutdown":
@@ -142,13 +158,16 @@ def main() -> int:
                     piece = delta.get("delta") or ""
                     if not piece:
                         continue
-                    with lock:
+                    with buf_lock:
                         speak_buf.append(piece)
+                        flushed: list[str] = []
                         while True:
                             s = take_speakable(speak_buf)
                             if not s:
                                 break
-                            write_json(aurum.stdin, {"v": PROTO_V, "type": "speak", "text": s})
+                            flushed.append(s)
+                    for s in flushed:
+                        write_aurum({"v": PROTO_V, "type": "speak", "text": s})
 
     ta = threading.Thread(target=from_aurum, daemon=True)
     tp = threading.Thread(target=from_pi, daemon=True)
@@ -158,11 +177,8 @@ def main() -> int:
         ta.join()
     except KeyboardInterrupt:
         pass
-    write_json(aurum.stdin, {"v": PROTO_V, "type": "shutdown"})
-    try:
-        write_json(pi.stdin, {"type": "abort"})
-    except BrokenPipeError:
-        pass
+    write_aurum({"v": PROTO_V, "type": "shutdown"})
+    write_pi({"type": "abort"})
     aurum.terminate()
     pi.terminate()
     return 0

@@ -298,6 +298,18 @@ mod tests {
     }
 
     #[test]
+    fn discard_from_ending_after_take() {
+        let mut t = LiveTurn::new(cfg_fast());
+        t.push_pcm(&[0.4; 100]).unwrap();
+        t.end_user_turn().unwrap();
+        let _ = t.take_utterance().unwrap();
+        t.discard_to_listening();
+        assert_eq!(t.phase(), LivePhase::Listening);
+        t.push_pcm(&[0.4; 50]).unwrap();
+        assert_eq!(t.phase(), LivePhase::UserSpeaking);
+    }
+
+    #[test]
     fn overflow_bounded_buffer() {
         let cfg = LiveSessionConfig {
             max_utterance_secs: 0.01, // 160 samples

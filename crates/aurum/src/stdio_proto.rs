@@ -105,6 +105,7 @@ pub fn event_json(ev: &OutEvent) -> Value {
             "type": "ready",
             "stt_provider": stt_provider,
             "tts_provider": tts_provider,
+            "caps": ["transcribe", "synthesize", "speak"],
         }),
         OutEvent::UserFinal {
             text,
@@ -231,6 +232,12 @@ mod tests {
         assert!(!s.contains('\n'));
         assert!(s.contains("user_final"));
         assert!(!s.to_ascii_lowercase().contains("pcm"));
+        let ready = event_json(&OutEvent::Ready {
+            stt_provider: "local".into(),
+            tts_provider: "local".into(),
+        })
+        .to_string();
+        assert!(ready.contains("transcribe") && ready.contains("synthesize"));
     }
 
     #[test]

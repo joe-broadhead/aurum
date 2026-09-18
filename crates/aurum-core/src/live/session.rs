@@ -115,8 +115,14 @@ impl LiveSession {
             cancel: Some(self.cancel.clone()),
             op: None,
         };
-        let result = self.engine.transcribe_pcm(&samples, &opts).await?;
-        self.finish_user_result(result)
+        match self.engine.transcribe_pcm(&samples, &opts).await {
+            Ok(result) => self.finish_user_result(result),
+            Err(e) => {
+                // take_utterance already consumed the buffer; do not stay in Ending.
+                self.discard_turn();
+                Err(e)
+            }
+        }
     }
 
     /// Host-supplied final transcript (tests / external ASR). Still requires an
@@ -436,6 +442,17 @@ mod tests {
         let mut live = LiveSession::new(engine, LiveSessionConfig::default()).unwrap();
         live.shutdown();
         assert!(live.push_pcm(&[0.1; 10]).is_err());
+    }
+
+    #[tokio::test]
+    async fn stt_failure_returns_to_listening() {
+        let (_dir, engine) = isolated_engine();
+        let mut live = LiveSession::new(engine, LiveSessionConfig::default()).unwrap();
+        live.push_pcm(&[0.3; 1600]).unwrap();
+        live.end_user_turn().unwrap();
+        assert_eq!(live.phase(), LivePhase::Ending);
+        assert!(live.commit_user_turn().await.is_err());
+        assert_eq!(live.phase(), LivePhase::Listening);
     }
 
     #[tokio::test]

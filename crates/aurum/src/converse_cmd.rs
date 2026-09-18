@@ -328,7 +328,12 @@ async fn run_mic_loop(
         if pcm16.is_empty() {
             continue;
         }
-        live.push_pcm(&pcm16)?;
+        if let Err(e) = live.push_pcm(&pcm16) {
+            eprintln!("aurum: capture overflow ({e}); listening");
+            live.discard_turn();
+            mic.drain();
+            continue;
+        }
         if live.phase() != LivePhase::Ending {
             continue;
         }
@@ -562,6 +567,7 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                     let pcm16 = resample_mono(&chunk, mic.sample_rate, WHISPER_SAMPLE_RATE);
                     if !pcm16.is_empty() {
                         if let Err(e) = live.push_pcm(&pcm16) {
+                            live.discard_turn();
                             let _ = stdio_proto::write_event(&OutEvent::Error {
                                 message: e.to_string(),
                             });

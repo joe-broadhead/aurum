@@ -1,4 +1,4 @@
-//! Experimental device I/O for `aurum converse --mic` (CLI only).
+//! Device I/O for supported `aurum converse --mic` (CLI). Not used by `--stdio` daemon.
 //!
 //! `aurum-core` stays device-agnostic. Capture is downmixed to mono in the
 //! callback; resample to 16 kHz happens on the worker.

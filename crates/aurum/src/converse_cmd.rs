@@ -1,7 +1,10 @@
-//! `aurum converse` — turn-based half-duplex replay (GitHub #140).
+//! `aurum converse` (GitHub #140).
 //!
-//! File in → STT → canned reply or CLI LLM → TTS → WAV. No microphone.
-//! Speech providers come from the same flags/config as `aurum` / `aurum tts`.
+//! Supported modes:
+//! - `--stdio` — speech sidecar (host mic/brain; `transcribe`/`synthesize` paths)
+//! - `--mic` — CLI device loop (optional `--llm-provider` chat)
+//! - file + `--reply-*` / `--llm-provider` — one-shot replay
+//!
 //! `--llm-provider` is never inferred from API keys.
 
 use crate::audio_io::{play_i16_mono, resample_mono, MicCapture};
@@ -28,7 +31,7 @@ pub struct ConverseCli {
     #[arg(value_name = "AUDIO_FILE")]
     pub audio_file: Option<PathBuf>,
 
-    /// Use the default microphone and speakers (half-duplex). Experimental.
+    /// Use the default microphone and speakers (half-duplex CLI loop).
     #[arg(long)]
     pub mic: bool,
 

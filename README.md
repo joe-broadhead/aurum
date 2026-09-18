@@ -185,9 +185,11 @@ do not assume a stable major version yet.
 ## Non-goals (0.0.x)
 
 Speaker diarization · stable library major API · remote execution on the C ABI ·
-multi-tenant isolation in one process · microphone ownership in `aurum-core` / FFI.
-Session hosts use [`aurum converse --stdio`](docs/guide/live.md) (host-owned paths).
-`converse --mic` is CLI-only device I/O and is not the embed contract.
+multi-tenant isolation in one process · microphone ownership in `aurum-core` / FFI ·
+AEC / barge-in.
+
+Two supported converse modes: [`--stdio` sidecar](docs/guide/live.md) (host owns
+mic/brain) and `--mic` + optional `--llm-provider` (standalone CLI voice loop).
 
 ## License
 

@@ -1,10 +1,13 @@
-# Speech sidecar (live / session hosts)
+# Live speech (`aurum converse`)
 
-Aurum is **ears and mouth**. The host owns the microphone, speakers, and the
-agent brain (OpenCode, Pi, Jelly, …). This is the supported embed contract.
+Two supported products, same engine:
 
-Library: `aurum_core::live::LiveSession` (`tts` feature).  
-CLI daemon: `aurum converse --stdio`.
+| Mode | Who owns mic / brain |
+|------|----------------------|
+| **`--stdio` sidecar** | Host app (Jelly, OpenCode, Pi RPC) |
+| **`--mic` CLI loop** | Aurum CLI (`--llm-provider` optional chat) |
+
+Library: `aurum_core::live::LiveSession` (`tts` feature) — no devices, no LLM.
 
 Defaults remain **local** STT + local TTS. Remote needs explicit `--provider` /
 `--tts-provider` **and** the matching key. Keys never select a provider.
@@ -68,19 +71,35 @@ Prefer `AurumEngine` + `LiveSession` in-process when the host is Rust.
 calls `commit_user_turn`, and uses `engine.synthesize` (or `speak_text`) for TTS.
 Call `shutdown` then `clear_context_cache()` before process exit (Metal).
 
-## CLI-only (not the embed contract)
+## Standalone CLI conversation
 
-`aurum converse --mic` and `--llm-provider` are **CLI demos**: they open local
-devices and/or call chat completions inside Aurum. Session apps must not use
-them. Glue example: `scripts/aurum-pi-voice.py` (unsupported).
+`converse --mic` and `--llm-provider` are **supported CLI modes** for a
+self-contained voice loop (Aurum opens the default mic/speakers and may call
+chat). Use this when there is no session host.
+
+Session apps (Jelly, OpenCode, Pi with tools) must still use `--stdio` so the
+harness stays the brain. Do not pass `--llm-provider` on a sidecar.
 
 ```bash
-# Demo only — not for Jelly/OpenCode
+# Local STT/TTS + OpenAI chat (headphones; half-duplex; Ctrl+C to stop)
 aurum converse --mic --model tiny-q5_1 --llm-provider openai
+
+# All OpenAI speech + chat
+aurum converse --mic \
+  --provider openai --model gpt-4o-mini-transcribe \
+  --tts-provider openai --tts-model tts-1 --voice alloy \
+  --llm-provider openai --llm-model gpt-4o-mini
 ```
 
-The `aurum` CLI links `cpal`. `converse --stdio` without `--mic` never opens an
-audio device.
+Constraints (supported, not “try at your own risk”):
+
+- Half-duplex: mic is ignored while the agent speaks; no AEC / barge-in
+- Headphones recommended
+- RMS endpoint (~0.45 s silence); not a neural VAD
+- Chat is non-session: no tools/MCPs; streaming sentences + TTS overlap
+- `converse --stdio` without `--mic` never opens an audio device
+
+Pi glue (CLI mic + Pi brain): `python3 scripts/aurum-pi-voice.py -- --mic --model tiny-q5_1`.
 
 ## Non-goals
 

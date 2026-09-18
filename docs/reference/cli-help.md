@@ -179,7 +179,7 @@ Arguments:
   [AUDIO_FILE]  Audio file for a single user turn (omit when using `--mic`)
 
 Options:
-      --mic                      Use the default microphone and speakers (half-duplex). Experimental
+      --mic                      Use the default microphone and speakers (half-duplex CLI loop)
       --provider <PROVIDER>      STT provider (registry id; default `local`)
       --model <NAME>             STT model id (local ggml name or reviewed remote id)
       --language <CODE>          STT language (default from config / auto)

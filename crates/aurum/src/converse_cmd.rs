@@ -5,10 +5,11 @@
 //! `--llm-provider` is never inferred from API keys.
 
 use crate::audio_io::{play_i16_mono, resample_mono, MicCapture};
-use crate::llm::{complete_chat, ChatRequest, LlmProvider};
+use crate::llm::{complete_chat, stream_chat, take_speakable, ChatRequest, LlmProvider};
 use aurum_core::audio::WHISPER_SAMPLE_RATE;
 use aurum_core::config::Config;
 use aurum_core::error::{Result, UserError};
+use aurum_core::live::LiveEvent;
 use aurum_core::live::{LivePhase, LiveSession, LiveSessionConfig};
 use aurum_core::output::CommitMode;
 use aurum_core::provider_platform::ProviderId;
@@ -129,6 +130,9 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
     }
     if let Some(m) = cli.model.as_deref() {
         cfg.model = Some(m.to_string());
+    } else if cli.mic && cfg.provider == "openai" {
+        // Faster than whisper-1 for turn-taking (reviewed OpenAI STT id).
+        cfg.model = Some("gpt-4o-mini-transcribe".into());
     }
     if let Some(l) = cli.language.as_deref() {
         cfg.language = l.to_string();
@@ -278,14 +282,14 @@ async fn run_mic_loop(
     agent: AgentSource,
 ) -> Result<()> {
     eprintln!("aurum converse --mic: headphones recommended (half-duplex, no echo cancel)");
-    eprintln!("Speak, pause ~1s, wait for the reply. Ctrl+C to stop.");
+    eprintln!("Speak, pause briefly, reply starts on the first sentence. Ctrl+C to stop.");
     let mic = MicCapture::start()?;
     let live_cfg = LiveSessionConfig {
         max_utterance_secs: 30.0,
-        min_speech_secs: 0.35,
-        trailing_silence_secs: 0.8,
+        min_speech_secs: 0.25,
+        trailing_silence_secs: 0.45,
         min_rms: 0.02,
-        max_speak_ahead: 2,
+        max_speak_ahead: 8,
     };
     let mut live = LiveSession::new(engine, live_cfg)?;
     let stop = Arc::new(AtomicBool::new(false));
@@ -327,7 +331,16 @@ async fn run_mic_loop(
             continue;
         }
         eprintln!("you: {}", stt.text());
-        let reply = match agent_reply(&agent, live.engine().config(), stt.text(), &prior).await {
+        mic.drain();
+        let reply = match speak_agent_turn(
+            &mut live,
+            &agent,
+            stt.text(),
+            &prior,
+            cli.output_file.as_deref(),
+        )
+        .await
+        {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("aurum: agent failed ({e}); listening");
@@ -336,35 +349,6 @@ async fn run_mic_loop(
                 continue;
             }
         };
-        eprintln!("aurum: {reply}");
-        match live.speak_text(&reply).await {
-            Ok(tts) => {
-                mic.drain();
-                let play = tokio::task::block_in_place(|| {
-                    play_i16_mono(&tts.pcm_i16_mono, tts.sample_rate_hz)
-                });
-                if let Err(e) = play {
-                    eprintln!("aurum: playback failed ({e})");
-                }
-                if let Some(path) = cli.output_file.as_ref() {
-                    let mode = CommitMode::Replace;
-                    if let Err(e) = aurum_core::write_wav_i16_mono_transaction(
-                        path,
-                        &tts.pcm_i16_mono,
-                        tts.sample_rate_hz,
-                        mode,
-                    ) {
-                        eprintln!("aurum: write {path:?} failed ({e})");
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("aurum: TTS failed ({e})");
-                live.discard_turn();
-                mic.drain();
-                continue;
-            }
-        }
         let _ = live.end_agent_turn();
         mic.drain();
         if matches!(agent, AgentSource::Llm { .. }) {
@@ -380,41 +364,148 @@ async fn run_mic_loop(
     Ok(())
 }
 
-async fn agent_reply(
+fn drain_live(live: &mut LiveSession) {
+    loop {
+        if let LiveEvent::Idle = live.poll() {
+            break;
+        }
+    }
+}
+
+struct PlayClip {
+    pcm: Vec<i16>,
+    rate: u32,
+}
+
+async fn speak_agent_turn(
+    live: &mut LiveSession,
     agent: &AgentSource,
-    cfg: &Config,
     user_text: &str,
     prior: &[(String, String)],
+    save: Option<&std::path::Path>,
 ) -> Result<String> {
-    match agent {
-        AgentSource::Canned(text) => Ok(text.clone()),
+    let (play_tx, play_rx) = std::sync::mpsc::sync_channel::<PlayClip>(8);
+    let play_thread = std::thread::spawn(move || {
+        while let Ok(clip) = play_rx.recv() {
+            if let Err(e) = play_i16_mono(&clip.pcm, clip.rate) {
+                eprintln!("aurum: playback failed ({e})");
+            }
+        }
+    });
+
+    let send_clip = |clip: PlayClip, tx: &std::sync::mpsc::SyncSender<PlayClip>| -> Result<()> {
+        if let Some(path) = save {
+            let _ = aurum_core::write_wav_i16_mono_transaction(
+                path,
+                &clip.pcm,
+                clip.rate,
+                CommitMode::Replace,
+            );
+        }
+        tx.send(clip).map_err(|_| UserError::Other {
+            message: "playback queue closed".into(),
+        })?;
+        Ok(())
+    };
+
+    let full = match agent {
+        AgentSource::Canned(text) => {
+            eprintln!("aurum: {text}");
+            let tts = live.speak_text(text).await?;
+            drain_live(live);
+            send_clip(
+                PlayClip {
+                    pcm: tts.pcm_i16_mono,
+                    rate: tts.sample_rate_hz,
+                },
+                &play_tx,
+            )?;
+            text.clone()
+        }
         AgentSource::Llm {
             provider,
             model,
             system,
         } => {
+            let cfg = live.engine().config();
             let key = cfg
                 .provider_secret(&ProviderId::parse(provider.as_str())?)
                 .ok_or_else(|| UserError::MissingProviderCredential {
                     provider: provider.as_str().into(),
                 })?;
             let base = llm_base_url(cfg, *provider);
-            let prior_refs: Vec<(&str, &str)> = prior
-                .iter()
-                .map(|(r, c)| (r.as_str(), c.as_str()))
-                .collect();
-            complete_chat(ChatRequest {
-                provider: *provider,
-                model,
-                api_key: &key,
-                base_url: base.as_deref(),
-                user_text,
-                system: system.as_deref().unwrap_or(""),
-                prior: &prior_refs,
-            })
-            .await
+            let prior_owned = prior.to_vec();
+            let (sent_tx, mut sent_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+            let produce = {
+                let key = key.clone();
+                let model = model.clone();
+                let system = system.clone();
+                let base = base.clone();
+                let user_text = user_text.to_string();
+                let provider = *provider;
+                async move {
+                    let prior_refs: Vec<(&str, &str)> = prior_owned
+                        .iter()
+                        .map(|(r, c)| (r.as_str(), c.as_str()))
+                        .collect();
+                    let mut buf = String::new();
+                    let req = ChatRequest {
+                        provider,
+                        model: &model,
+                        api_key: &key,
+                        base_url: base.as_deref(),
+                        user_text: &user_text,
+                        system: system.as_deref().unwrap_or(""),
+                        prior: &prior_refs,
+                    };
+                    let full = stream_chat(req, |d| {
+                        buf.push_str(d);
+                        while let Some(s) = take_speakable(&mut buf) {
+                            let _ = sent_tx.send(s);
+                        }
+                    })
+                    .await?;
+                    if !buf.trim().is_empty() {
+                        let _ = sent_tx.send(buf.trim().to_string());
+                    }
+                    Ok::<_, aurum_core::error::AurumError>(full)
+                }
+            };
+            let consume = async {
+                let mut shown = false;
+                while let Some(s) = sent_rx.recv().await {
+                    if s.trim().is_empty() {
+                        continue;
+                    }
+                    if !shown {
+                        eprint!("aurum: ");
+                        shown = true;
+                    }
+                    eprint!("{s} ");
+                    let tts = live.speak_text(&s).await?;
+                    drain_live(live);
+                    send_clip(
+                        PlayClip {
+                            pcm: tts.pcm_i16_mono,
+                            rate: tts.sample_rate_hz,
+                        },
+                        &play_tx,
+                    )?;
+                }
+                if shown {
+                    eprintln!();
+                }
+                Ok::<_, aurum_core::error::AurumError>(())
+            };
+            let (full, cons) = tokio::join!(produce, consume);
+            cons?;
+            full?
         }
-    }
+    };
+    drop(play_tx);
+    let _ = play_thread.join();
+    aurum_core::tts::validate::validate_text(&full)?;
+    Ok(full)
 }
 
 #[derive(Debug)]

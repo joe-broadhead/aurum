@@ -17,8 +17,11 @@ Inbound PCM is **ignored while the agent is speaking**.
 ## CLI
 
 ```bash
-# Live mic (headphones recommended; Ctrl+C to stop)
-aurum converse --mic --model tiny-q5_1 --llm-provider openai --force
+# Live mic, snappy OpenAI (headphones; Ctrl+C to stop)
+cargo run -p aurum-stt -- converse --mic \
+  --provider openai --model gpt-4o-mini-transcribe \
+  --tts-provider openai --tts-model tts-1 --voice alloy \
+  --llm-provider openai --llm-model gpt-4o-mini
 
 aurum converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/out.wav --force
 

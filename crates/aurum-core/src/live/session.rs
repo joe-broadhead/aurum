@@ -23,6 +23,7 @@ pub struct LiveSession {
     events: VecDeque<LiveEvent>,
     cancel: CancelFlag,
     pending_agent: usize,
+    sidecar_busy: bool,
 }
 
 impl LiveSession {
@@ -43,6 +44,7 @@ impl LiveSession {
             events: VecDeque::new(),
             cancel: CancelFlag::new(),
             pending_agent: 0,
+            sidecar_busy: false,
         })
     }
 
@@ -65,6 +67,31 @@ impl LiveSession {
     /// Cooperative cancel for in-flight STT/TTS (does not change phase).
     pub fn cancel(&self) {
         self.cancel.cancel();
+    }
+
+    /// Clone of the session cancel flag (stdin watchers / abort).
+    pub fn cancel_flag(&self) -> CancelFlag {
+        self.cancel.clone()
+    }
+
+    /// Exclusive sidecar op (transcribe/synthesize). Fail closed if busy.
+    pub fn begin_sidecar_op(&mut self) -> Result<()> {
+        if self.sidecar_busy {
+            return Err(ProviderError::Overload {
+                reason: "sidecar is busy".into(),
+            }
+            .into());
+        }
+        self.sidecar_busy = true;
+        Ok(())
+    }
+
+    pub fn end_sidecar_op(&mut self) {
+        self.sidecar_busy = false;
+    }
+
+    pub fn is_sidecar_busy(&self) -> bool {
+        self.sidecar_busy
     }
 
     /// Push 16 kHz mono f32. Ignored while [`LivePhase::Speaking`].

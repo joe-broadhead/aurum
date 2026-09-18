@@ -33,6 +33,7 @@ aurum-core = { workspace = true, features = ["tts"] }
 clap = { workspace = true }
 clap_complete = { workspace = true }
 clap_mangen = { workspace = true }
+# Linked always; `converse --stdio` without `--mic` never opens a device.
 cpal = "0.15"
 reqwest = { workspace = true }
 serde_json = { workspace = true }

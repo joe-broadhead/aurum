@@ -80,6 +80,7 @@ python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
 - Prefer small, focused diffs
 - Call `clear_context_cache()` / `aurum_shutdown()` before process exit when using local whisper (Metal)
 - Treat `aurum-ffi` as a **provisional** embed surface: local STT, rules cleanup, **local** TTS jobs (ABI v2); **no remote** on FFI, no mic ownership
+- Session/voice hosts use `aurum converse --stdio` (host-owned paths). Do not put LLM or mic ownership in `aurum-core`
 - Pin model/voice downloads; fail closed on integrity mismatch
 - TTS: MIT-safe default path (no GPL phonemizer); document model licenses
 - Never invent CLI flags or unreviewed model IDs — use help + provider matrix

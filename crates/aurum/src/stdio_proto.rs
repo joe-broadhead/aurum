@@ -53,8 +53,19 @@ pub enum OutEvent {
     },
     Error {
         message: String,
+        /// Coarse group: user | environment | provider | internal.
+        category: String,
     },
     Shutdown,
+}
+
+impl OutEvent {
+    pub fn error(category: &str, message: impl Into<String>) -> Self {
+        Self::Error {
+            message: message.into(),
+            category: category.to_string(),
+        }
+    }
 }
 
 pub fn parse_line(line: &str) -> Result<InCmd, String> {
@@ -136,9 +147,10 @@ pub fn event_json(ev: &OutEvent) -> Value {
             "voice": voice,
             "sample_rate_hz": sample_rate_hz,
         }),
-        OutEvent::Error { message } => json!({
+        OutEvent::Error { message, category } => json!({
             "v": PROTO_V,
             "type": "error",
+            "category": category,
             "message": message,
         }),
         OutEvent::Shutdown => json!({ "v": PROTO_V, "type": "shutdown" }),

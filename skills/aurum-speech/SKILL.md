@@ -21,6 +21,8 @@ inventing flags, over-claiming providers, or leaking secrets.
 If you only need install/doctor basics, see also `skills/aurum-cli/`.  
 For multi-file resume only, see `skills/aurum-batch/`.  
 For host embeds only, see `skills/aurum-embed/`.  
+For **session/voice sidecar** (Jelly, Pi, OpenCode), use `aurum converse --stdio`
+— see `docs/guide/live.md`. Never `--llm-provider` or `--mic` inside those apps.  
 **This skill is the speech authority** when the task is “transcribe / synthesize.”
 
 ## First principles (always)

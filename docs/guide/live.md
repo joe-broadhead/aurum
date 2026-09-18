@@ -1,104 +1,88 @@
-# Live conversation (turn-based)
+# Speech sidecar (live / session hosts)
 
-Aurum can drive a **half-duplex conversation turn**: audio file (or host PCM) →
-STT → host/agent text → TTS WAV. It does **not** own the microphone, does **not**
-stream, and does **not** run an LLM.
+Aurum is **ears and mouth**. The host owns the microphone, speakers, and the
+agent brain (OpenCode, Pi, Jelly, …). This is the supported embed contract.
 
-Library: `aurum_core::live::LiveSession` (requires the `tts` feature).  
-CLI: `aurum converse` (file replay, `--mic`, or `--stdio` sidecar).
+Library: `aurum_core::live::LiveSession` (`tts` feature).  
+CLI daemon: `aurum converse --stdio`.
 
-## Defaults
+Defaults remain **local** STT + local TTS. Remote needs explicit `--provider` /
+`--tts-provider` **and** the matching key. Keys never select a provider.
+`streaming_advertised` is **false**.
 
-Local STT + local TTS. Remote providers need an explicit `--provider` /
-`--tts-provider` **and** the matching key. Key presence never selects a provider.
+## Sidecar (`--stdio`)
 
-Inbound PCM is **ignored while the agent is speaking**.
-
-## CLI
-
-```bash
-# Live mic, snappy OpenAI (headphones; Ctrl+C to stop)
-cargo run -p aurum-stt -- converse --mic \
-  --provider openai --model gpt-4o-mini-transcribe \
-  --tts-provider openai --tts-model tts-1 --voice alloy \
-  --llm-provider openai --llm-model gpt-4o-mini
-
-aurum converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/out.wav --force
-
-# LLM agent turn (explicit provider; never inferred from keys)
-aurum converse talk.wav --llm-provider openai -O /tmp/out.wav --force --emit-json
-
-# Mixed cloud speech + LLM
-aurum converse talk.wav --provider openai --tts-provider elevenlabs \
-  --voice 21m00Tcm4TlvDq8ikWAM --llm-provider openrouter \
-  -O /tmp/out.wav --force --emit-json
-```
-
-## Harnesses (Pi, OpenCode, …)
-
-`--stdio` makes Aurum a **speech sidecar**: no in-process LLM. JSONL on stdio
-(LF lines, optional CR). Logs stay on **stderr**. No PCM, no secrets.
-
-Stdout events: `ready`, `user_final`, `listening`, `error`, `shutdown`.  
-Stdin commands: `speak`, `end_turn`, `abort`, `shutdown`.
+Long-lived process. JSONL on stdio (LF; optional CR). **stderr** = logs.
+No PCM and no secrets on the wire.
 
 ```bash
-# Sidecar only (you wire the brain)
-cargo run -p aurum-stt -- converse --mic --stdio --model tiny-q5_1
-
-# Pi RPC glue (tools + MCPs in Pi)
-python3 scripts/aurum-pi-voice.py -- --mic --model tiny-q5_1
+aurum converse --stdio --local-only --model tiny-q5_1
 ```
 
-Desktop hosts (e.g. Jelly) should **keep the microphone in the app** (TCC),
-write a private WAV, and use a long-lived sidecar — no `--mic`, no `--llm-provider`:
+Do **not** pass `--mic` or `--llm-provider`. Desktop apps keep TCC on the app
+bundle; they write private WAVs and call `transcribe` / `synthesize`.
+
+### `ready`
 
 ```json
-{"v":1,"type":"transcribe","path":"/abs/recording.wav"}
-{"v":1,"type":"synthesize","text":"Hello.","path":"/abs/reply.wav"}
-{"v":1,"type":"end_turn"}
+{"v":1,"type":"ready","stt_provider":"local","tts_provider":"local","caps":["transcribe","synthesize","speak"]}
 ```
 
-`transcribe` / `synthesize` use host-owned **absolute** paths. `synthesize` writes
-WAV and does not play (the app owns speakers). `speak` still plays locally for
-CLI/Pi glue.
+`speak` is only honored when the process was started with `--mic` (local
+playback). Hosts that own speakers use `synthesize`.
 
-OpenCode: map `user_final` → session prompt and assistant sentences → `synthesize`.
-Do not pass `--llm-provider` with `--stdio`.
+### Commands (stdin)
 
-`--reply-text` / `--reply-file` / `--llm-provider` / `--stdio` are mutually exclusive.
-`--local-only` rejects remote STT/TTS **and** `--llm-provider`.
-`--emit-json` prints STT + TTS honesty metadata (no PCM); LLM provider/model/text
-when used.
+| type | fields | effect |
+|------|--------|--------|
+| `transcribe` | `path` (absolute file) | STT; emits `user_final` |
+| `synthesize` | `text`, `path` (absolute WAV out) | TTS write; **does not play**; emits `synthesized` |
+| `speak` | `text` | Play on default speaker; **requires `--mic`** |
+| `end_turn` | | Drain playback if any; back to listening |
+| `abort` | | Cancel in-flight STT/TTS; reset turn |
+| `shutdown` | | Exit after `shutdown` event |
 
-When `--tts-provider elevenlabs` is set and `--tts-model` is omitted **and**
-config still has a local model id, converse prefers `eleven_flash_v2_5`. This
-does not change `aurum tts` defaults. ElevenLabs still requires a real
-`voice_id` (never remapped from Luna).
+Paths must be absolute (no NUL/newline). Relative paths → `error` `category=user`.
 
-## Library
+### Events (stdout)
 
-```rust,no_run
-use aurum_core::live::{LiveSession, LiveSessionConfig};
-use aurum_core::AurumEngine;
+| type | notes |
+|------|--------|
+| `user_final` | `text`, `provider`, `model` |
+| `synthesized` | `path`, `duration_ms`, `provider`, `model`, `voice`, `sample_rate_hz` |
+| `listening` | after `end_turn` / `abort` |
+| `error` | `category` (`user` \| `environment` \| `provider` \| `internal`) + `message` |
+| `shutdown` | process exiting |
 
-# async fn demo() -> aurum_core::Result<()> {
-let engine = AurumEngine::load()?;
-let mut live = LiveSession::new(engine, LiveSessionConfig::default())?;
-live.push_pcm(&/* 16 kHz mono f32 */ vec![0.0; 1600])?;
-live.end_user_turn()?;
-let _stt = live.commit_user_turn().await?;
-let _tts = live.speak_text("Hello from aurum").await?;
-live.end_agent_turn()?;
-live.shutdown();
-# Ok(())
-# }
+Broken stdout (EPIPE) exits the sidecar with a non-zero status. Overlapping
+`transcribe`/`synthesize` while one is running returns `error` `category=provider`
+(`busy`). `abort` sets the session cancel flag immediately.
+
+`--stdio` is incompatible with `--llm-provider`, `--reply-text`, `--reply-file`,
+and `--emit-json`.
+
+## Library hosts
+
+Prefer `AurumEngine` + `LiveSession` in-process when the host is Rust.
+`LiveSession` is **not** in `prelude`. The host resamples to 16 kHz mono f32,
+calls `commit_user_turn`, and uses `engine.synthesize` (or `speak_text`) for TTS.
+Call `shutdown` then `clear_context_cache()` before process exit (Metal).
+
+## CLI-only (not the embed contract)
+
+`aurum converse --mic` and `--llm-provider` are **CLI demos**: they open local
+devices and/or call chat completions inside Aurum. Session apps must not use
+them. Glue example: `scripts/aurum-pi-voice.py` (unsupported).
+
+```bash
+# Demo only — not for Jelly/OpenCode
+aurum converse --mic --model tiny-q5_1 --llm-provider openai
 ```
 
-STT and TTS providers are whatever the engine config already has (`[stt]` /
-`[tts]`). `LiveSessionConfig` is endpoint/speak-ahead policy only.
+The `aurum` CLI links `cpal`. `converse --stdio` without `--mic` never opens an
+audio device.
 
 ## Non-goals
 
-AEC / barge-in · streaming ASR/TTS · FFI live jobs · LLM inside `aurum-core`
-(CLI `--llm-provider` only). `aurum converse --mic` is experimental CLI device I/O.
+AEC / barge-in · streaming ASR/TTS · FFI live jobs · LLM inside `aurum-core` ·
+microphone ownership in the library.

@@ -415,27 +415,24 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
         live.end_user_turn()?;
         match live.commit_user_turn().await {
             Ok(stt) if !stt.text().trim().is_empty() => {
-                let _ = stdio_proto::write_event(&OutEvent::UserFinal {
+                emit_stdio(&OutEvent::UserFinal {
                     text: stt.text().to_string(),
                     provider: stt.provider().to_string(),
                     model: stt.model().to_string(),
-                });
+                })?;
             }
             Ok(_) => {
                 live.discard_turn();
-                let _ = stdio_proto::write_event(&OutEvent::Error {
-                    message: "empty transcript".into(),
-                });
+                emit_stdio(&OutEvent::error("user", "empty transcript"))?;
             }
             Err(e) => {
                 live.discard_turn();
-                let _ = stdio_proto::write_event(&OutEvent::Error {
-                    message: e.to_string(),
-                });
+                emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
             }
         }
     }
 
+    let cancel = live.cancel_flag();
     let (cmd_tx, cmd_rx) = std::sync::mpsc::sync_channel::<std::result::Result<InCmd, String>>(64);
     std::thread::spawn(move || {
         let mut stdin = io::stdin().lock();
@@ -443,6 +440,7 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
             let mut line = String::new();
             match stdin.read_line(&mut line) {
                 Ok(0) => {
+                    cancel.cancel();
                     let _ = cmd_tx.send(Ok(InCmd::Shutdown));
                     break;
                 }
@@ -453,6 +451,9 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                     }
                     match stdio_proto::parse_line(&line) {
                         Ok(c) => {
+                            if matches!(c, InCmd::Abort | InCmd::Shutdown) {
+                                cancel.cancel();
+                            }
                             if cmd_tx.send(Ok(c)).is_err() {
                                 break;
                             }
@@ -474,19 +475,24 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
         Clip(PlayClip),
         Flush(std::sync::mpsc::Sender<()>),
     }
-    let (play_tx, play_rx) = std::sync::mpsc::sync_channel::<PlayMsg>(8);
-    let play_thread = std::thread::spawn(move || {
-        while let Ok(msg) = play_rx.recv() {
-            match msg {
-                PlayMsg::Clip(clip) => {
-                    let _ = play_i16_mono(&clip.pcm, clip.rate);
-                }
-                PlayMsg::Flush(done) => {
-                    let _ = done.send(());
+    let play = if cli.mic {
+        let (play_tx, play_rx) = std::sync::mpsc::sync_channel::<PlayMsg>(8);
+        let play_thread = std::thread::spawn(move || {
+            while let Ok(msg) = play_rx.recv() {
+                match msg {
+                    PlayMsg::Clip(clip) => {
+                        let _ = play_i16_mono(&clip.pcm, clip.rate);
+                    }
+                    PlayMsg::Flush(done) => {
+                        let _ = done.send(());
+                    }
                 }
             }
-        }
-    });
+        });
+        Some((play_tx, play_thread))
+    } else {
+        None
+    };
 
     let stop = Arc::new(AtomicBool::new(false));
     {
@@ -503,56 +509,63 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
             match msg {
                 Ok(InCmd::Transcribe { path }) => {
                     if let Err(e) = sidecar_transcribe(&mut live, &path).await {
-                        let _ = stdio_proto::write_event(&OutEvent::Error {
-                            message: e.to_string(),
-                        });
+                        emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                     }
                 }
                 Ok(InCmd::Synthesize { text, path }) => {
                     if let Err(e) = sidecar_synthesize(&mut live, &text, &path).await {
-                        let _ = stdio_proto::write_event(&OutEvent::Error {
-                            message: e.to_string(),
-                        });
+                        emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                     }
                 }
-                Ok(InCmd::Speak { text }) => match live.speak_text(&text).await {
-                    Ok(tts) => {
-                        drain_live(&mut live);
-                        let _ = play_tx.send(PlayMsg::Clip(PlayClip {
-                            pcm: tts.pcm_i16_mono,
-                            rate: tts.sample_rate_hz,
-                        }));
+                Ok(InCmd::Speak { text }) => {
+                    if let Some((play_tx, _)) = play.as_ref() {
+                        match live.speak_text(&text).await {
+                            Ok(tts) => {
+                                drain_live(&mut live);
+                                let _ = play_tx.send(PlayMsg::Clip(PlayClip {
+                                    pcm: tts.pcm_i16_mono,
+                                    rate: tts.sample_rate_hz,
+                                }));
+                            }
+                            Err(e) => {
+                                emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
+                            }
+                        }
+                    } else {
+                        emit_stdio(&OutEvent::error(
+                            "user",
+                            "speak requires --mic; desktop hosts must use synthesize",
+                        ))?;
                     }
-                    Err(e) => {
-                        let _ = stdio_proto::write_event(&OutEvent::Error {
-                            message: e.to_string(),
-                        });
-                    }
-                },
+                }
                 Ok(InCmd::EndTurn) => {
-                    let (done_tx, done_rx) = std::sync::mpsc::channel();
-                    let _ = play_tx.send(PlayMsg::Flush(done_tx));
-                    let _ = done_rx.recv_timeout(Duration::from_secs(120));
+                    if let Some((play_tx, _)) = play.as_ref() {
+                        let (done_tx, done_rx) = std::sync::mpsc::channel();
+                        let _ = play_tx.send(PlayMsg::Flush(done_tx));
+                        let _ = done_rx.recv_timeout(Duration::from_secs(120));
+                    }
                     let _ = live.end_agent_turn();
                     live.discard_turn();
                     if let Some(m) = mic.as_ref() {
                         m.drain();
                     }
-                    let _ = stdio_proto::write_event(&OutEvent::Listening);
+                    emit_stdio(&OutEvent::Listening)?;
                 }
                 Ok(InCmd::Abort) => {
+                    live.cancel();
                     live.discard_turn();
+                    live.end_sidecar_op();
                     if let Some(m) = mic.as_ref() {
                         m.drain();
                     }
-                    let _ = stdio_proto::write_event(&OutEvent::Listening);
+                    emit_stdio(&OutEvent::Listening)?;
                 }
                 Ok(InCmd::Shutdown) => {
                     shutting = true;
                     break;
                 }
                 Err(e) => {
-                    let _ = stdio_proto::write_event(&OutEvent::Error { message: e });
+                    emit_stdio(&OutEvent::error("user", e))?;
                 }
             }
         }
@@ -568,26 +581,22 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                     if !pcm16.is_empty() {
                         if let Err(e) = live.push_pcm(&pcm16) {
                             live.discard_turn();
-                            let _ = stdio_proto::write_event(&OutEvent::Error {
-                                message: e.to_string(),
-                            });
+                            emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                         }
                     }
                     if live.phase() == LivePhase::Ending {
                         match live.commit_user_turn().await {
                             Ok(stt) if !stt.text().trim().is_empty() => {
-                                let _ = stdio_proto::write_event(&OutEvent::UserFinal {
+                                emit_stdio(&OutEvent::UserFinal {
                                     text: stt.text().to_string(),
                                     provider: stt.provider().to_string(),
                                     model: stt.model().to_string(),
-                                });
+                                })?;
                             }
                             Ok(_) => live.discard_turn(),
                             Err(e) => {
                                 live.discard_turn();
-                                let _ = stdio_proto::write_event(&OutEvent::Error {
-                                    message: e.to_string(),
-                                });
+                                emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                             }
                         }
                     }
@@ -600,11 +609,22 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
         }
     }
 
-    drop(play_tx);
-    let _ = play_thread.join();
+    if let Some((play_tx, play_thread)) = play {
+        drop(play_tx);
+        let _ = play_thread.join();
+    }
     live.shutdown();
-    let _ = stdio_proto::write_event(&OutEvent::Shutdown);
+    let _ = emit_stdio(&OutEvent::Shutdown);
     Ok(())
+}
+
+fn emit_stdio(ev: &OutEvent) -> Result<()> {
+    stdio_proto::write_event(ev).map_err(|e| {
+        UserError::Other {
+            message: format!("stdio stdout closed: {e}"),
+        }
+        .into()
+    })
 }
 
 fn require_absolute_path(path: &str) -> Result<&std::path::Path> {
@@ -619,6 +639,13 @@ fn require_absolute_path(path: &str) -> Result<&std::path::Path> {
 }
 
 async fn sidecar_transcribe(live: &mut LiveSession, path: &str) -> Result<()> {
+    live.begin_sidecar_op()?;
+    let result = sidecar_transcribe_inner(live, path).await;
+    live.end_sidecar_op();
+    result
+}
+
+async fn sidecar_transcribe_inner(live: &mut LiveSession, path: &str) -> Result<()> {
     live.discard_turn();
     let path = require_absolute_path(path)?;
     let audio = aurum_core::load_audio(path).await?;
@@ -632,18 +659,22 @@ async fn sidecar_transcribe(live: &mut LiveSession, path: &str) -> Result<()> {
         }
         .into());
     }
-    stdio_proto::write_event(&OutEvent::UserFinal {
+    emit_stdio(&OutEvent::UserFinal {
         text: stt.text().to_string(),
         provider: stt.provider().to_string(),
         model: stt.model().to_string(),
-    })
-    .map_err(|e| UserError::Other {
-        message: format!("stdio write: {e}"),
     })?;
     Ok(())
 }
 
 async fn sidecar_synthesize(live: &mut LiveSession, text: &str, path: &str) -> Result<()> {
+    live.begin_sidecar_op()?;
+    let result = sidecar_synthesize_inner(live, text, path).await;
+    live.end_sidecar_op();
+    result
+}
+
+async fn sidecar_synthesize_inner(live: &mut LiveSession, text: &str, path: &str) -> Result<()> {
     let path = require_absolute_path(path)?;
     aurum_core::tts::validate::validate_output_path(path)?;
     aurum_core::tts::validate::validate_text(text)?;
@@ -673,16 +704,13 @@ async fn sidecar_synthesize(live: &mut LiveSession, text: &str, path: &str) -> R
         tts.sample_rate_hz,
         CommitMode::Replace,
     )?;
-    stdio_proto::write_event(&OutEvent::Synthesized {
+    emit_stdio(&OutEvent::Synthesized {
         path: path.display().to_string(),
         duration_ms: tts.duration_ms,
         provider: tts.provider,
         model: tts.model,
         voice: tts.voice,
         sample_rate_hz: tts.sample_rate_hz,
-    })
-    .map_err(|e| UserError::Other {
-        message: format!("stdio write: {e}"),
     })?;
     Ok(())
 }

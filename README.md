@@ -147,7 +147,7 @@ aurum tts "Hello" --provider openai --model tts-1 --voice alloy -O /tmp/oai.wav
 | Models | [docs/guide/models.md](docs/guide/models.md) |
 | Cleanup | [docs/guide/cleanup.md](docs/guide/cleanup.md) |
 | TTS | [docs/guide/tts.md](docs/guide/tts.md) |
-| Live conversation | [docs/guide/live.md](docs/guide/live.md) |
+| Speech sidecar | [docs/guide/live.md](docs/guide/live.md) |
 | Configuration | [docs/guide/configuration.md](docs/guide/configuration.md) |
 | Native embeds (FFI) | [docs/library/ffi.md](docs/library/ffi.md) |
 | Architecture | [docs/development/architecture.md](docs/development/architecture.md) |
@@ -185,8 +185,9 @@ do not assume a stable major version yet.
 ## Non-goals (0.0.x)
 
 Speaker diarization · stable library major API · remote execution on the C ABI ·
-multi-tenant isolation in one process. Microphone I/O is **experimental** and
-CLI-only (`aurum converse --mic`); `aurum-core` / FFI still do not own devices.
+multi-tenant isolation in one process · microphone ownership in `aurum-core` / FFI.
+Session hosts use [`aurum converse --stdio`](docs/guide/live.md) (host-owned paths).
+`converse --mic` is CLI-only device I/O and is not the embed contract.
 
 ## License
 

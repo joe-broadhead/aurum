@@ -27,8 +27,11 @@ pub struct LiveSessionConfig {
     pub max_utterance_secs: f64,
     /// Minimum speech duration before energy-based endpoint may fire.
     pub min_speech_secs: f64,
-    /// Trailing near-silence that ends a user turn (energy path only).
+    /// Floor hangover after a substantial utterance (energy path only).
     pub trailing_silence_secs: f64,
+    /// Hangover while the utterance is still short (thinking pause).
+    /// When `<= trailing_silence_secs`, endpoint is constant (tests).
+    pub thinking_pause_secs: f64,
     /// RMS gate for “speech” vs “silence” (chunk-level).
     pub min_rms: f32,
     /// Max unconsumed [`LiveEvent::AgentPcm`] units (speak-ahead cap).
@@ -39,8 +42,9 @@ impl Default for LiveSessionConfig {
     fn default() -> Self {
         Self {
             max_utterance_secs: 30.0,
-            min_speech_secs: 0.25,
-            trailing_silence_secs: 0.6,
+            min_speech_secs: 0.30,
+            trailing_silence_secs: 0.70,
+            thinking_pause_secs: 1.20,
             min_rms: 0.01,
             max_speak_ahead: 2,
         }
@@ -67,6 +71,12 @@ impl LiveSessionConfig {
             }
             .into());
         }
+        if !self.thinking_pause_secs.is_finite() || self.thinking_pause_secs < 0.0 {
+            return Err(UserError::InvalidConfig {
+                reason: "live thinking_pause_secs must be finite and >= 0".into(),
+            }
+            .into());
+        }
         if !self.min_rms.is_finite() || self.min_rms < 0.0 {
             return Err(UserError::InvalidConfig {
                 reason: "live min_rms must be finite and >= 0".into(),
@@ -88,6 +98,10 @@ impl LiveSessionConfig {
 
     pub(crate) fn trailing_silence_samples(&self) -> usize {
         secs_to_samples(self.trailing_silence_secs)
+    }
+
+    pub(crate) fn thinking_pause_samples(&self) -> usize {
+        secs_to_samples(self.thinking_pause_secs)
     }
 }
 

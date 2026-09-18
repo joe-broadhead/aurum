@@ -97,14 +97,34 @@ pub struct ConverseCli {
     #[arg(long = "emit-json")]
     pub emit_json: bool,
 
-    /// JSONL sidecar for harnesses (pi, OpenCode, …). Stdout = events, stdin =
-    /// commands. No in-process LLM. Logs stay on stderr. Requires `--mic` or a file.
+    /// JSONL sidecar: host owns mic/brain (`transcribe`/`synthesize` paths).
+    /// Does not require `--mic` or a file.
     #[arg(long)]
     pub stdio: bool,
+
+    /// Silence that ends a `--mic` turn after a full utterance (seconds, default 0.7).
+    #[arg(long = "endpoint-silence", value_name = "SECS")]
+    pub endpoint_silence: Option<f64>,
+
+    /// Extra `--mic` wait while the utterance is still short (seconds, default 1.2).
+    /// Covers a ~1 s mid-thought pause. Still RMS energy, not a neural VAD.
+    #[arg(long = "thinking-pause", value_name = "SECS")]
+    pub thinking_pause: Option<f64>,
 
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
     pub verbose: bool,
+}
+
+fn mic_live_config(cli: &ConverseCli, max_utterance_secs: f64) -> LiveSessionConfig {
+    LiveSessionConfig {
+        max_utterance_secs,
+        min_speech_secs: 0.30,
+        trailing_silence_secs: cli.endpoint_silence.unwrap_or(0.70),
+        thinking_pause_secs: cli.thinking_pause.unwrap_or(1.20),
+        min_rms: 0.02,
+        max_speak_ahead: 8,
+    }
 }
 
 pub async fn run_converse(cli: ConverseCli) -> Result<()> {
@@ -139,9 +159,6 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
     }
     if let Some(m) = cli.model.as_deref() {
         cfg.model = Some(m.to_string());
-    } else if cli.mic && cfg.provider == "openai" {
-        // Faster than whisper-1 for turn-taking (reviewed OpenAI STT id).
-        cfg.model = Some("gpt-4o-mini-transcribe".into());
     }
     if let Some(l) = cli.language.as_deref() {
         cfg.language = l.to_string();
@@ -302,15 +319,9 @@ async fn run_mic_loop(
     agent: AgentSource,
 ) -> Result<()> {
     eprintln!("aurum converse --mic: headphones recommended (half-duplex, no echo cancel)");
-    eprintln!("Speak, pause briefly, reply starts on the first sentence. Ctrl+C to stop.");
+    eprintln!("Finish a thought, then pause (~1s). Mid-sentence pauses should not cut you off.");
     let mic = MicCapture::start()?;
-    let live_cfg = LiveSessionConfig {
-        max_utterance_secs: 30.0,
-        min_speech_secs: 0.25,
-        trailing_silence_secs: 0.45,
-        min_rms: 0.02,
-        max_speak_ahead: 8,
-    };
+    let live_cfg = mic_live_config(&cli, 30.0);
     let mut live = LiveSession::new(engine, live_cfg)?;
     let stop = Arc::new(AtomicBool::new(false));
     {
@@ -392,13 +403,7 @@ async fn run_mic_loop(
 async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Result<()> {
     let stt_p = engine.stt_provider_id()?.as_str().to_string();
     let tts_p = engine.tts_provider_id()?.as_str().to_string();
-    let live_cfg = LiveSessionConfig {
-        max_utterance_secs: 30.0,
-        min_speech_secs: 0.25,
-        trailing_silence_secs: 0.45,
-        min_rms: 0.02,
-        max_speak_ahead: 8,
-    };
+    let live_cfg = mic_live_config(&cli, 30.0);
     let mut live = LiveSession::new(engine, live_cfg)?;
     stdio_proto::write_event(&OutEvent::Ready {
         stt_provider: stt_p,

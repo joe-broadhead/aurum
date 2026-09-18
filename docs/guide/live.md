@@ -96,11 +96,11 @@ Constraints (supported, not “try at your own risk”):
 
 - Half-duplex: mic is ignored while the agent speaks; no AEC / barge-in
 - Headphones recommended
-- RMS endpoint (~0.45 s silence); not a neural VAD
+- RMS endpoint, not a neural VAD: ~1.2 s hangover at the start of a turn
+  (thinking pause), easing to ~0.7 s after a couple of seconds of speech.
+  Tune with `--thinking-pause` / `--endpoint-silence`.
 - Chat is non-session: no tools/MCPs; streaming sentences + TTS overlap
 - `converse --stdio` without `--mic` never opens an audio device
-
-Pi glue (CLI mic + Pi brain): `python3 scripts/aurum-pi-voice.py -- --mic --model tiny-q5_1`.
 
 ## Non-goals
 

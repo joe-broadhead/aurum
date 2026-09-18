@@ -12,6 +12,7 @@ aurum batch <INPUT> --output-dir <DIR> [OPTIONS]
 aurum cleanup [TEXT_FILE] [OPTIONS]     # alias: aurum flow
 aurum tts "Hello" --output-file out.wav
 aurum tts models | voices | adapters | inspect | verify | add
+aurum converse <AUDIO_FILE> --reply-text "Hello" -O out.wav
 aurum doctor [--json]
 aurum cache status | verify | repair
 aurum support-bundle

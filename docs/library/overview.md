@@ -17,6 +17,7 @@ Aurum is split so the CLI, Rust embeds, and native embeds share one engine.
 | Audio | `load_audio`, `AudioInput::from_pcm`, safety limits |
 | PCM / mic hosts | `PcmBuffer`, `transcribe_pcm`, `preload`, `local_only` |
 | Partials (host-driven) | `PartialWindowPolicy`, `PartialClock` |
+| Live conversation | `live::LiveSession` (half-duplex, no mic; feature `tts`) |
 | Cancel | `CancelFlag` / `OpContext` in options |
 | Models | catalogue, download, pins, progress callbacks |
 | Cleanup | `RulesCleanup`, `OpenRouterCleanup`, `apply_cleanup*` |

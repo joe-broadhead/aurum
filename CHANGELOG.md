@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Live session (#140):** `aurum_core::live::LiveSession` — device-agnostic,
+  half-duplex conversation loop on `AurumEngine`. Hosts push 16 kHz mono f32,
+  commit a user turn, and enqueue agent PCM. Inbound audio is ignored while the
+  agent is speaking. CLI: `aurum converse` (file in / WAV out, no mic). Mixed
+  STT/TTS uses existing `[stt]` / `[tts]` providers (including ElevenLabs TTS).
+  No streaming claim, no new vendors.
+
 ### Fixed
 
 - **Build/lint compatibility with Rust 1.98:** replaced `slice::chunks_exact` with

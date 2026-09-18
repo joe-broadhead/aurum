@@ -21,7 +21,7 @@ fi
   cargo run -q -p aurum-stt -- --help
   echo '```'
   echo
-  for sub in models batch doctor cache tts cleanup completions man "support-bundle"; do
+  for sub in models batch converse doctor cache tts cleanup completions man "support-bundle"; do
     echo "## \`aurum ${sub}\`"
     echo
     echo '```text'

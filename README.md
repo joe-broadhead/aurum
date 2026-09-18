@@ -117,6 +117,7 @@ aurum models recommend --profile balance
 aurum batch <INPUT> -O <DIR> [--resume] [--retry-failed]
 aurum cleanup [TEXT_FILE] --style clean   # alias: aurum flow
 aurum tts "Hello" -O out.wav [--voice Luna]
+aurum converse talk.wav --reply-text "Hello" -O out.wav
 aurum tts models && aurum tts voices
 aurum support-bundle -O support.json
 aurum completions zsh
@@ -146,6 +147,7 @@ aurum tts "Hello" --provider openai --model tts-1 --voice alloy -O /tmp/oai.wav
 | Models | [docs/guide/models.md](docs/guide/models.md) |
 | Cleanup | [docs/guide/cleanup.md](docs/guide/cleanup.md) |
 | TTS | [docs/guide/tts.md](docs/guide/tts.md) |
+| Live conversation | [docs/guide/live.md](docs/guide/live.md) |
 | Configuration | [docs/guide/configuration.md](docs/guide/configuration.md) |
 | Native embeds (FFI) | [docs/library/ffi.md](docs/library/ffi.md) |
 | Architecture | [docs/development/architecture.md](docs/development/architecture.md) |

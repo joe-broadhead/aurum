@@ -4,4 +4,5 @@
 pub mod batch_cmd;
 pub mod cli;
 pub mod completions_cmd;
+pub mod converse_cmd;
 pub mod support_cmd;

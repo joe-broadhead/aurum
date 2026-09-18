@@ -8,11 +8,13 @@ Aurum is private speech I/O on your machine:
 • cleanup — post-transcript flow styles (rules or OpenRouter)
 • TTS — text → mono WAV (local ONNX by default; opt-in openrouter|openai|elevenlabs|xai)
 • batch — resumable multi-file transcription
+• converse — one file-in / WAV-out conversation turn (no mic)
 
 Quick start:
  aurum meeting.m4a
  aurum meeting.m4a --cleanup clean
  aurum tts "Hello from aurum" --output-file /tmp/a.wav
+ aurum converse talk.wav --reply-text "Hello" -O /tmp/out.wav
  aurum cleanup --style bullets < notes.txt
  aurum batch ./lectures -O ./out
  aurum models
@@ -30,6 +32,7 @@ Commands:
   cleanup         Clean existing text (stdin or file) without re-transcribing [alias: flow]
   tts             Synthesize speech from text (local ONNX TTS → mono WAV)
   batch           Bounded resumable multi-file transcription (JOE-1726)
+  converse        One file-in / WAV-out conversation turn (no microphone)
   cache           Inspect and verify local model/voice-pack cache (JOE-1592)
   doctor          Read-only system, config, cache, and capability diagnostics (JOE-1628)
   support-bundle  Privacy-safe support bundle for issue reports (JOE-1728)
@@ -124,13 +127,17 @@ Options:
       --recursive
           Recurse into subdirectories when INPUT is a directory
       --resume
-          Resume from an existing `aurum-batch-manifest.json` in --output-dir
+          Exact-match resume only (full source/output SHA-256 + operation fingerprint)
       --retry-failed
-          Retry items marked failed when resuming
+          Retry items marked failed or interrupted when resuming
+      --reprocess-changed
+          Opt in to reprocessing stale source/config/output items
+      --verify-only
+          Report resume decisions without transcription
       --dry-run
           Dry-run: write/update the manifest only (no transcription)
-      --provider <local|openrouter>
-          Transcription provider [possible values: local, openrouter]
+      --provider <PROVIDER>
+          Transcription provider (validated against the provider registry)
       --model <NAME>
           Explicit model id (overrides --profile)
       --profile <PROFILE>
@@ -159,6 +166,33 @@ Options:
           
   -h, --help
           Print help
+```
+
+## `aurum converse`
+
+```text
+One file-in / WAV-out conversation turn (no microphone)
+
+Usage: aurum converse [OPTIONS] --output-file <PATH> <AUDIO_FILE>
+
+Arguments:
+  <AUDIO_FILE>  Audio file for the user turn (decoded to 16 kHz mono)
+
+Options:
+      --provider <PROVIDER>      STT provider (registry id; default `local`)
+      --model <NAME>             STT model id (local ggml name or reviewed remote id)
+      --language <CODE>          STT language (default from config / auto)
+      --tts-provider <PROVIDER>  TTS provider (registry id; default `local`)
+      --tts-model <NAME>         TTS model id
+      --voice <NAME>             TTS voice id (required for ElevenLabs; never remapped from Luna)
+      --reply-text <TEXT>        Agent reply text (exactly one of `--reply-text` / `--reply-file`)
+      --reply-file <PATH>        Read agent reply UTF-8 from this file
+  -O, --output-file <PATH>       Write agent WAV here
+      --force                    Overwrite an existing non-empty output file
+      --local-only               Reject remote STT/TTS before encode/upload
+      --emit-json                Honesty JSON on stdout (no PCM)
+  -v, --verbose                  Verbose diagnostics
+  -h, --help                     Print help
 ```
 
 ## `aurum doctor`

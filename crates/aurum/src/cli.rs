@@ -65,6 +65,7 @@ fn wants_json_errors(cli: &Cli) -> bool {
                     .as_deref()
                     .is_some_and(|o| o.eq_ignore_ascii_case("json"))
         }
+        Some(Commands::Converse(c)) => c.emit_json,
         Some(Commands::Cache(cache)) => cache.json,
         Some(Commands::Doctor(doc)) => doc.json,
         Some(Commands::SupportBundle(sb)) => sb.stdout,
@@ -85,11 +86,13 @@ fn wants_json_errors(cli: &Cli) -> bool {
   • STT — audio → text (whisper.cpp local by default; opt-in openrouter|openai|xai)\n\
   • cleanup — post-transcript flow styles (rules or OpenRouter)\n\
   • TTS — text → mono WAV (local ONNX by default; opt-in openrouter|openai|elevenlabs|xai)\n\
-  • batch — resumable multi-file transcription\n\n\
+  • batch — resumable multi-file transcription\n\
+  • converse — one file-in / WAV-out conversation turn (no mic)\n\n\
  Quick start:\n \
  aurum meeting.m4a\n \
  aurum meeting.m4a --cleanup clean\n \
  aurum tts \"Hello from aurum\" --output-file /tmp/a.wav\n \
+ aurum converse talk.wav --reply-text \"Hello\" -O /tmp/out.wav\n \
  aurum cleanup --style bullets < notes.txt\n \
  aurum batch ./lectures -O ./out\n \
  aurum models\n \
@@ -130,6 +133,9 @@ pub enum Commands {
 
     /// Bounded resumable multi-file transcription (JOE-1726).
     Batch(crate::batch_cmd::BatchCli),
+
+    /// One file-in / WAV-out conversation turn (no microphone).
+    Converse(crate::converse_cmd::ConverseCli),
 
     /// Inspect and verify local model/voice-pack cache (JOE-1592).
     Cache(CacheCli),
@@ -474,6 +480,7 @@ pub async fn run(cli: Cli) -> Result<()> {
         Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
         Some(Commands::Tts(tts)) => run_tts_cli(tts).await,
         Some(Commands::Batch(batch)) => crate::batch_cmd::run_batch(batch).await,
+        Some(Commands::Converse(c)) => crate::converse_cmd::run_converse(c).await,
         Some(Commands::Cache(cache)) => run_cache_cmd(cache).await,
         Some(Commands::Doctor(doc)) => run_doctor_cmd(doc),
         Some(Commands::SupportBundle(sb)) => crate::support_cmd::run_support_bundle(sb),
@@ -1393,7 +1400,7 @@ fn format_approx(n: u64) -> String {
     }
 }
 
-fn init_tracing(verbose: bool) {
+pub(crate) fn init_tracing(verbose: bool) {
     let filter = if verbose {
         "aurum=debug,aurum_core=debug,info"
     } else {

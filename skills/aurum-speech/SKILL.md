@@ -28,7 +28,7 @@ For host embeds only, see `skills/aurum-embed/`.
 1. **Local-first** — STT default `local` (whisper.cpp); TTS default `local` (Kitten ONNX). No API key required.
 2. **Remote is opt-in** — requires explicit `--provider` **and** the matching env key. Presence of a key never changes the default provider.
 3. **Do not invent** — flags, config keys, model IDs, or voice IDs. Prefer:
-   - `aurum --help` / `aurum tts --help` / `aurum models` / `aurum tts models` / `aurum tts voices`
+   - `aurum --help` / `aurum tts --help` / `aurum converse --help` / `aurum models` / `aurum tts models` / `aurum tts voices`
    - `docs/reference/cli-help.md` (generated snapshot)
    - `docs/guide/provider-matrix.md` (reviewed catalogues)
 4. **Honesty** — report `provider`, model, and when timestamps are unreliable. Do not claim WER/RTF without a retained eval report.
@@ -81,6 +81,7 @@ aurum doctor
 aurum models
 aurum tests/fixtures/sample.wav --model tiny-q5_1
 aurum tts "Hello from aurum" -O /tmp/hello.wav --force --emit-json
+aurum converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/hello.wav --force
 aurum tts models && aurum tts voices
 ```
 

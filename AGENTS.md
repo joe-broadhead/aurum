@@ -48,6 +48,7 @@ cargo run -p aurum-stt -- tests/fixtures/sample.wav --model tiny-q5_1
 cargo run -p aurum-stt -- models
 cargo run -p aurum-stt -- models recommend --profile balance
 cargo run -p aurum-stt -- tts "Hello from aurum" -O /tmp/a.wav --force
+cargo run -p aurum-stt -- converse tests/fixtures/sample.wav --reply-text "Hello" -O /tmp/a.wav --force
 cargo run -p aurum-stt -- tts models
 cargo run -p aurum-stt -- tts voices
 cargo run -p aurum-stt -- batch tests/fixtures -O /tmp/aurum-batch --dry-run

@@ -109,6 +109,7 @@ nav:
       - Text-to-speech: guide/tts.md
       - Remote audio formats: guide/remote-audio.md
       - Cleanup: guide/cleanup.md
+      - Live conversation: guide/live.md
       - Configuration: guide/configuration.md
       - Output formats: guide/output.md
   - Library:

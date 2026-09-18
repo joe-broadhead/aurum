@@ -75,6 +75,8 @@ pub mod dto;
 pub mod engine;
 pub mod error;
 pub mod eval;
+#[cfg(feature = "tts")]
+pub mod live;
 pub mod model;
 pub mod observability;
 pub mod output;

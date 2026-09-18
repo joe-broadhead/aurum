@@ -21,9 +21,9 @@ inventing flags, over-claiming providers, or leaking secrets.
 If you only need install/doctor basics, see also `skills/aurum-cli/`.  
 For multi-file resume only, see `skills/aurum-batch/`.  
 For host embeds only, see `skills/aurum-embed/`.  
-Session hosts (Jelly, OpenCode): `aurum converse --stdio` (host-owned WAV paths).
+Session/harness hosts: `aurum converse --stdio` (host-owned WAV paths).
 Standalone CLI voice: `aurum converse --mic` with optional `--llm-provider`.
-Do not use `--llm-provider` or `--mic` *inside* those apps — they own mic + brain.
+Do not use `--llm-provider` or `--mic` inside a host that already owns mic + brain.
 See `docs/guide/live.md`.  
 **This skill is the speech authority** when the task is “transcribe / synthesize.”
 

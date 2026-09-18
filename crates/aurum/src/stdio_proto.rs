@@ -22,7 +22,7 @@ pub enum InCmd {
         text: String,
         path: String,
     },
-    /// Play TTS on the default speaker (optional; desktop hosts prefer synthesize).
+    /// Play TTS on the default speaker (optional; path-based hosts prefer synthesize).
     Speak {
         text: String,
     },

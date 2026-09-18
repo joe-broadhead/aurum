@@ -537,7 +537,7 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                     } else {
                         emit_stdio(&OutEvent::error(
                             "user",
-                            "speak requires --mic; desktop hosts must use synthesize",
+                            "speak requires --mic; path-based hosts must use synthesize",
                         ))?;
                     }
                 }

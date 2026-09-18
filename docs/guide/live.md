@@ -4,7 +4,7 @@ Two supported products, same engine:
 
 | Mode | Who owns mic / brain |
 |------|----------------------|
-| **`--stdio` sidecar** | Host app (Jelly, OpenCode, Pi RPC) |
+| **`--stdio` sidecar** | Host app (session runtime / agent harness) |
 | **`--mic` CLI loop** | Aurum CLI (`--llm-provider` optional chat) |
 
 Library: `aurum_core::live::LiveSession` (`tts` feature) — no devices, no LLM.
@@ -22,8 +22,9 @@ No PCM and no secrets on the wire.
 aurum converse --stdio --local-only --model tiny-q5_1
 ```
 
-Do **not** pass `--mic` or `--llm-provider`. Desktop apps keep TCC on the app
-bundle; they write private WAVs and call `transcribe` / `synthesize`.
+Do **not** pass `--mic` or `--llm-provider`. The host keeps OS microphone
+permission on its own process, writes private WAVs, and calls `transcribe` /
+`synthesize`.
 
 ### `ready`
 
@@ -77,8 +78,8 @@ Call `shutdown` then `clear_context_cache()` before process exit (Metal).
 self-contained voice loop (Aurum opens the default mic/speakers and may call
 chat). Use this when there is no session host.
 
-Session apps (Jelly, OpenCode, Pi with tools) must still use `--stdio` so the
-harness stays the brain. Do not pass `--llm-provider` on a sidecar.
+Hosts that already have a session brain (tools, MCP, etc.) must use `--stdio`
+so Aurum does not call chat. Do not pass `--llm-provider` on a sidecar.
 
 ```bash
 # Local STT/TTS + OpenAI chat (headphones; half-duplex; Ctrl+C to stop)

@@ -5,6 +5,14 @@ Stack: **Rust 1.89+**, Cargo workspace (`aurum-core`, `aurum-stt` CLI, `aurum-ff
 Version source of truth: `VERSION` (must match workspace `version` and CHANGELOG).  
 Product tip: **0.0.23**. Continuous **0.0.x** line; correctness patch **0.0.23** after product-outcomes cut **0.0.22** (not 1.0).
 
+## Cloud Agent environment
+
+Repo-managed config: `.cursor/environment.json` (Dockerfile + `bash .cursor/install.sh`).
+
+Install is idempotent. It installs CI Linux packages (`build-essential`, `cmake`, `pkg-config`, `libasound2-dev`, `ffmpeg`), ensures Rust **stable** with `rustfmt`/`clippy` plus MSRV **1.89.0**, runs `cargo fetch --locked`, creates `.venv` for docs, and installs pinned `cargo-audit@0.22.2` / `cargo-deny@0.19.0` (same pins as the CI security job).
+
+No long-running `start` services are required for normal development.
+
 ## Agent skills
 
 Load repository skills under `skills/` **before** improvising CLI flags or
@@ -32,18 +40,58 @@ skills/              # agent skill packs (SKILL.md + references/)
 evals/               # smoke corpus + synthetic audio
 tests/fixtures/      # sample audio (STT)
 scripts/             # install, version_check, fixtures, tts demos, publish dry-run
+.cursor/             # Cloud Agent Dockerfile + install bootstrap
 ```
 
 ## Commands
 
-```bash
-cargo test --workspace --locked
-cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo fmt --all -- --check
-cargo build -p aurum-stt --release
-cargo build -p aurum-ffi --release
+### Fast subset (run first on every change)
 
-# STT / TTS smokes (see skills/aurum-speech/)
+Matches the CI **lint** job plus the default **test** job (Linux):
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+./scripts/version_check.sh
+./scripts/check_action_pins.sh
+./scripts/check_crates_publish_policy.sh
+cargo test --workspace --locked
+```
+
+Optional quick compile checks used elsewhere in CI:
+
+```bash
+cargo check -p aurum-core --no-default-features --locked   # STT-only feature gate
+cargo +1.89.0 check --workspace --locked                   # MSRV
+```
+
+### Full local CI-shaped suite (when touching the named area)
+
+```bash
+# Release builds (CI test job)
+cargo build -p aurum-stt --release --locked
+cargo build -p aurum-ffi --release --locked --no-default-features
+# Native C11/C++17 examples (Linux; see ci.yml)
+cc -std=c11 -I crates/aurum-ffi/include crates/aurum-ffi/examples/job_cleanup.c \
+  target/release/libaurum_ffi.a -lpthread -ldl -lm -lstdc++ -o /tmp/aurum_job_cleanup
+c++ -std=c++17 -I crates/aurum-ffi/include crates/aurum-ffi/examples/engine_raii.cpp \
+  target/release/libaurum_ffi.a -lpthread -ldl -lm -lstdc++ -o /tmp/aurum_engine_raii
+
+# Security job
+./scripts/check_security_tool_pins.sh
+cargo audit
+cargo deny check
+
+# Docs job (Python 3.12; .venv created by .cursor/install.sh)
+.venv/bin/mkdocs build --strict
+
+# Provider smoke dry-run (no credentials)
+AURUM_SMOKE_SKIP_RELEASE_GATE=1 ./scripts/protected_provider_smoke.sh --dry-run --out /tmp/aurum-provider-smoke
+```
+
+### Product smokes (optional; may download models)
+
+```bash
 cargo run -p aurum-stt -- tests/fixtures/sample.wav --model tiny-q5_1
 cargo run -p aurum-stt -- models
 cargo run -p aurum-stt -- models recommend --profile balance
@@ -55,19 +103,44 @@ cargo run -p aurum-stt -- batch tests/fixtures -O /tmp/aurum-batch --dry-run
 cargo run -p aurum-stt -- support-bundle --stdout
 cargo run -p aurum-stt -- completions zsh
 cargo run -p aurum-stt -- man | head
-
-cargo test -p aurum-core --test local_integration -- --ignored --nocapture
-cargo test -p aurum-core --test tts_synth -- --ignored --nocapture
-cargo test -p aurum-ffi --locked
-./scripts/generate_tts_demos.sh
-./scripts/generate_cli_reference.sh
-./scripts/check_security_tool_pins.sh
-
-python3 -m venv .venv && .venv/bin/pip install -r docs/requirements.txt
-.venv/bin/mkdocs build --strict
-
-./scripts/version_check.sh
 ```
+
+### Makefile shortcuts
+
+`make fmt`, `make lint`, `make test`, `make build`, `make ci` (fmt + lint + test + version-check).
+
+## Tests that need special infrastructure (skip in default Cloud VMs)
+
+| Suite | Why it cannot run here by default | How to skip / gate |
+|-------|-----------------------------------|--------------------|
+| `local_integration` (`#[ignore]`) | Downloads whisper `tiny-q5_1`; CI runs it on **macOS** with Metal (`AURUM_INTEGRATION=1`) | Omit `--ignored`; do not set `AURUM_INTEGRATION` |
+| `tts_synth` / `kokoro_real_synth` (`#[ignore]`) | Downloads TTS voice packs on first run | Omit `--ignored`; do not set `AURUM_TTS_INTEGRATION` |
+| Provider **live** smokes / catalogue probes | Need `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ELEVENLABS_API_KEY`, `XAI_API_KEY` (and related) | Use `--dry-run` only; never invent credentials |
+| Fuzz smoke (`fuzz/`) | Needs **nightly** + `cargo-fuzz@0.12.0` | Skip unless the ticket requires fuzz work |
+| Miri / ASan / UBSan / mutants / coverage | Extra toolchains or long runtimes (`scripts/run_miri.sh`, `run_sanitizers.sh`, `run_mutants.sh`, `coverage_trust.sh`) | Skip unless the ticket names them |
+| macOS / Windows matrix | Cloud Agent VMs are Linux | Rely on GitHub Actions for those OSes |
+| GPU / Metal paths | No Apple Metal or dedicated GPU in default cloud VMs | Local whisper on Linux uses CPU; Metal teardown notes apply to macOS hosts only |
+| Release publish / crates.io / GitHub Releases | Credentials + maintainer approval | Never run publish/release workflows from agents |
+
+Default `cargo test --workspace --locked` already skips `#[ignore]` tests. That is the expected cloud default.
+
+## Conventions
+
+- **Commits**: conventional style used on `master` (`fix:`, `chore:`, `docs:`, …). Keep messages short and imperative.
+- **DCO / sign-off**: not required by CI or `CONTRIBUTING.md` (no Signed-off-by gate).
+- **Branches**: one focused branch per ticket/PR. Cloud agents use `cursor/<short-description>-<id>` when that template is supplied.
+- **Changelog**: update `CHANGELOG.md` under `[Unreleased]` for user-visible changes.
+- **PRs**: keep focused; fill `.github/pull_request_template.md`. Do not merge.
+
+## Ticket / write-set rules (Cloud Agents)
+
+- **One Linear ticket per PR.** Do not bundle unrelated fixes.
+- **Stay inside the ticket’s named write set.** If a change is required outside it, stop and report rather than expanding scope.
+- **Never merge** PRs (humans merge).
+- **Never publish or release** (no crates.io, tags, GitHub Releases, or docs deploy).
+- **Never weaken tests or CI** (no deleting assertions, skipping gates, or relaxing pins to “make green”).
+- **Never commit secrets** (no `.env` with real keys, tokens, or credentials). Use `.env.example` patterns only.
+- Prefer small, focused diffs. Do not change product code except trivial fixes strictly required for verified tests to run — and document those.
 
 ## Boundaries
 

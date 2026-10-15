@@ -16,8 +16,13 @@ need_cmd() {
 }
 
 ensure_apt_packages() {
+  # libstdc++-14-dev: Cursor default images often point /usr/bin/c++ at clang,
+  # which selects the GCC 14 installation; without 14's libstdc++.a, whisper-rs
+  # cmake configure fails with "cannot find -lstdc++".
   local pkgs=(
     build-essential
+    g++
+    libstdc++-14-dev
     cmake
     pkg-config
     libasound2-dev

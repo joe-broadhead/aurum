@@ -19,6 +19,8 @@ RUN apt-get update \
         git \
         xz-utils \
         build-essential \
+        g++ \
+        libstdc++-14-dev \
         cmake \
         pkg-config \
         libasound2-dev \

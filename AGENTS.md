@@ -9,7 +9,7 @@ Product tip: **0.0.23**. Continuous **0.0.x** line; correctness patch **0.0.23**
 
 Repo-managed config: `.cursor/environment.json` (Dockerfile + `bash .cursor/install.sh`).
 
-Install is idempotent. It installs CI Linux packages (`build-essential`, `cmake`, `pkg-config`, `libasound2-dev`, `ffmpeg`), ensures Rust **stable** with `rustfmt`/`clippy` plus MSRV **1.89.0**, runs `cargo fetch --locked`, creates `.venv` for docs, and installs pinned `cargo-audit@0.22.2` / `cargo-deny@0.19.0` (same pins as the CI security job).
+Install is idempotent. It installs CI Linux packages (`build-essential`, `cmake`, `pkg-config`, `libasound2-dev`, `ffmpeg`) plus `libstdc++-14-dev` (needed when `/usr/bin/c++` is clang, as on Cursor’s default image), ensures Rust **stable** with `rustfmt`/`clippy` plus MSRV **1.89.0**, runs `cargo fetch --locked`, creates `.venv` for docs, and installs pinned `cargo-audit@0.22.2` / `cargo-deny@0.19.0` (same pins as the CI security job).
 
 No long-running `start` services are required for normal development.
 

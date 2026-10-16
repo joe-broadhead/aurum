@@ -263,19 +263,19 @@ pub fn kitten_builtin_manifest() -> ModelPackManifest {
                 role: "onnx".into(),
                 filename: info.onnx.filename.into(),
                 sha256: Some(info.onnx.sha256.into()),
-                size_bytes: Some(info.onnx.approx_bytes),
+                size_bytes: Some(info.onnx.size_bytes),
             },
             super::adapter::ManifestArtifact {
                 role: "voices".into(),
                 filename: info.voices.filename.into(),
                 sha256: Some(info.voices.sha256.into()),
-                size_bytes: Some(info.voices.approx_bytes),
+                size_bytes: Some(info.voices.size_bytes),
             },
             super::adapter::ManifestArtifact {
                 role: "config".into(),
                 filename: info.config.filename.into(),
                 sha256: Some(info.config.sha256.into()),
-                size_bytes: Some(info.config.approx_bytes),
+                size_bytes: Some(info.config.size_bytes),
             },
         ],
         voices: super::catalogue::VOICES

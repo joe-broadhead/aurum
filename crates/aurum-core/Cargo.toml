@@ -29,6 +29,12 @@ rustdoc-args = ["--cfg", "docsrs"]
 default = ["tts"]
 tts = ["dep:ort", "dep:misaki-rs", "dep:zip"]
 
+# The provider catalogue probe reads the TTS registries, which only exist with
+# the `tts` feature, so it is skipped in STT-only builds.
+[[example]]
+name = "probe_provider_catalogues"
+required-features = ["tts"]
+
 [dependencies]
 async-trait = { workspace = true }
 base64 = { workspace = true }
@@ -37,6 +43,7 @@ futures-util = { workspace = true }
 hex = { workspace = true }
 hound = { workspace = true }
 indicatif = { workspace = true }
+language-tags = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }

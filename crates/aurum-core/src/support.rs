@@ -76,6 +76,9 @@ pub fn build_support_bundle(cfg: &Config, user_notes: Option<String>) -> Support
     if let Some(p) = diag.tts_pack_dir.as_mut() {
         *p = redact_path_str(p);
     }
+    if let Some(p) = diag.catalogue_path.as_mut() {
+        *p = redact_path_str(p);
+    }
     // Never emit raw key material (Config already maps to "***" or None).
     if diag.openrouter_api_key.is_some() {
         diag.openrouter_api_key = Some("***".into());

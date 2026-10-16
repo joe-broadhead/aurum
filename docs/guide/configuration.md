@@ -84,10 +84,85 @@ provider = "rules"         # rules | openrouter
 
 # [providers.elevenlabs]
 # [providers.xai]
+
+# An optional reviewed deployment catalogue. It can only narrow the built-in
+# catalogue: an `enabled = false` record disables a built-in STT model (by
+# canonical id or alias), and `[defaults.stt].global` picks the default from
+# the remaining `supported` records (never experimental). Records that add or
+# replace a model, and TTS records, are rejected for now.
+# The path is explicit: Aurum never discovers, fetches, or falls back from it.
+# A relative path resolves against this config file's directory (not the cwd).
+# [catalogue]
+# path = "/absolute/path/to/model-catalogue.toml"
 ```
 
-Only canonical sections are accepted: `[stt]`, `[cleanup]`, `[tts]`, `[providers.*]`.
+Only canonical sections are accepted: `[stt]`, `[cleanup]`, `[tts]`, `[providers.*]`, `[catalogue]`.
 Unknown top-level sections (including old `[default]` / `[openrouter]`) fail closed.
+
+A catalogue can only set a single global default per direction, and that
+default must be a local `supported` record. Experimental and explicit-only
+records (such as the Portuguese specialists) are reachable through an explicit
+`[stt].model` / `--model` only; `language` never selects a model. The
+diagnostic catalogue digest covers the effective records and defaults, not the
+deployment file location, so relocating an unchanged catalogue keeps the same
+digest. Because a deployment can only narrow, every remaining record reports
+`source = builtin`. The deployment's effect shows as `catalogue_disabled` (the
+canonical ids it disabled) and as a changed digest.
+
+#### Deployment catalogue trust model
+
+`[catalogue].path` is a **trusted, operator-owned input**: it decides which
+local speech-to-text models this installation may use.
+
+- **Narrowing only.** A deployment catalogue can disable built-in STT models
+  and choose the default STT model. A disabled model is rejected on every
+  CLI and `AurumEngine` path: `--model`, `[stt].model`, `aurum batch`,
+  `aurum converse`, `aurum cache repair` (whatever `[stt].provider` is), and
+  `AurumEngine` transcription and preload. It is also hidden from
+  `aurum models` and never recommended: `aurum models recommend` and
+  `--profile` fall back to the profile's first enabled alternative, and fail
+  when none is enabled. `aurum cache status` / `verify` still check a disabled
+  model's file on disk, mark it as disabled, and never re-download it.
+  `aurum doctor` reports a configured model that the catalogue disables. When
+  no `[stt].model` is set, every path uses the deployment's
+  `[defaults.stt].global`.
+- **Not covered: `aurum-ffi`.** C/FFI hosts pass model names to the engine
+  directly and do not read a config file, so `[catalogue].path` does not bind
+  them yet. An opt-in engine option for this is tracked in
+  [the deployment records issue](https://github.com/joe-broadhead/aurum/issues/146).
+  An FFI host that must honour the policy has to enforce it itself. Model downloads, cache pins and
+  TTS selection still come from the built-in catalogue, so a deployment record
+  that adds or replaces a model, or any TTS record, fails closed. Supporting
+  those records is tracked in
+  [the deployment records issue](https://github.com/joe-broadhead/aurum/issues/146).
+- **Disable entries.** A disable entry uses the full v1 record schema, so it
+  still needs a syntactically valid origin (HTTPS URL, nonzero size, 64-hex
+  SHA-256). Those values are only validated, never fetched or compared with the
+  built-in pins: the entry matches a built-in STT model by id or alias and
+  removes it. An entry that names a TTS model is rejected. Disabling a model
+  and one of its aliases in the same file is accepted.
+- **Path resolution.** A relative path resolves against the directory of the
+  config file that names it. It never resolves against the process working
+  directory, and it is an error when no config file is in use. An absolute
+  path is recommended.
+- **File policy.** The target must be a regular file of at most 1 MiB. A
+  symlink is refused, not followed. Aurum reads the file once at startup and
+  fails closed on any read, size, schema, or validation error. There is no
+  environment-variable, discovery, or built-in fallback.
+- **Directory scope.** Only the final path component is checked for a
+  symlink; parent directories are followed. On Unix, Aurum also checks that
+  the opened file is the one it inspected (same device and inode); Windows
+  has no such check. Keep the catalogue in a directory that only the operator
+  can write to.
+
+The embedded catalogue is held to a stricter rule. Its URLs may only use the
+reviewed hosts, and every Hugging Face URL must name an immutable revision.
+GitHub is allowed only for an explicitly reviewed release, which today is
+`thewh1teagle/kokoro-onnx` tag `model-files-v1.0` (the Kokoro ONNX model and
+voices). Release tags can be moved, so for those assets the exact size and
+SHA-256 pins are the identity. Both are enforced when the file is downloaded
+and every time the cache is verified, so a replaced or truncated asset fails
+closed rather than being used.
 
 ### `local_only`
 

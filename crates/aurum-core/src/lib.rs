@@ -66,6 +66,7 @@ pub mod bench;
 pub mod cache;
 pub mod cancel;
 pub mod capabilities;
+pub mod catalogue;
 pub mod cleanup;
 pub mod config;
 pub mod doctor;
@@ -166,8 +167,8 @@ pub use product_contracts::{
     ProductProviderRecord, PRODUCT_CONTRACTS_SCHEMA_VERSION,
 };
 pub use profile::{
-    format_recommendation, resolve_profile, ProfileResolution, QualityProfile,
-    PROFILE_EVIDENCE_VERSION,
+    format_recommendation, resolve_profile, resolve_profile_with, ProfileResolution,
+    QualityProfile, PROFILE_EVIDENCE_VERSION,
 };
 pub use provider_platform::{
     capabilities_for, check_builtin_conformance, detect_catalogue_drift,

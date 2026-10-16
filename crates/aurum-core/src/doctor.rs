@@ -141,6 +141,32 @@ pub fn run_doctor(cfg: &Config) -> DoctorReport {
         }),
     }
 
+    // A configured local model that the deployment catalogue disables would be
+    // rejected on first use; surface it here instead.
+    if let Some(path) = cfg.catalogue_path.as_ref() {
+        let model = cfg
+            .model
+            .as_deref()
+            .unwrap_or_else(|| cfg.default_local_stt_model());
+        if let Err(e) = cfg.check_local_stt_model_allowed(model) {
+            checks.push(DoctorCheck {
+                id: "catalogue_model".into(),
+                ok: false,
+                severity: DoctorSeverity::Error,
+                summary: format!(
+                    "configured model `{model}` is disabled by the deployment catalogue"
+                ),
+                detail: Some(e.to_string()),
+                hint: Some(format!(
+                    "choose an enabled model (`aurum models`) or update {}",
+                    path.file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "[catalogue].path".into())
+                )),
+            });
+        }
+    }
+
     // Capability surface (static).
     let stt = crate::capabilities::local_whisper_capabilities(
         cfg.model

@@ -372,6 +372,14 @@ impl AurumEngine {
             .with_decoded_bytes(decoded_bytes),
         );
 
+        // A deployment catalogue's disabled models stay unusable for library
+        // hosts too, not only for CLI paths that call `resolve_model`.
+        if id == ProviderId::local() {
+            if let Err(e) = self.config().check_local_model_allowed(&options.model) {
+                self.finish_guard(&mut guard, &e);
+                return Err(e);
+            }
+        }
         let provider = match self.stt_provider(&id) {
             Ok(p) => p,
             Err(e) => {
@@ -425,6 +433,9 @@ impl AurumEngine {
     /// Preload a local STT model into **this** engine's pool.
     pub async fn preload_stt(&self, model: &str) -> Result<std::path::PathBuf> {
         self.ensure_open()?;
+        // Preload downloads weights, so it honours a deployment catalogue's
+        // disabled models exactly like `run_stt`.
+        self.config().check_local_model_allowed(model)?;
         self.local_whisper()?.preload(model).await
     }
 
@@ -636,6 +647,46 @@ mod tests {
             "expected Terminal event"
         );
         assert!(snap.decoded_bytes_total > 0);
+    }
+
+    #[tokio::test]
+    async fn transcribe_request_rejects_a_deployment_disabled_model() {
+        use crate::audio::AudioInput;
+        use crate::sdk::TranscriptionRequest;
+
+        let dir = tempfile::tempdir().unwrap();
+        let catalogue = dir.path().join("catalogue.toml");
+        std::fs::write(
+            &catalogue,
+            r#"schema_version = 1
+[[model]]
+id = "tiny-q5_1"
+direction = "stt"
+provider = "local"
+enabled = false
+tier = "supported"
+origin = { kind = "downloadable_local", filename = "unused.bin", url = "https://example.invalid/unused.bin", size_bytes = 1, sha256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+"#,
+        )
+        .unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, format!("[catalogue]\npath = {:?}\n", catalogue)).unwrap();
+        let mut cfg = Config::load_from_required(&config).unwrap();
+        cfg.cache_dir = dir.path().join("cache");
+        let e = AurumEngine::from_config(cfg).unwrap();
+
+        // A library host bypasses `resolve_model`; the engine must still refuse
+        // the disabled model before the local provider can download it.
+        let audio =
+            AudioInput::from_pcm(vec![0.0f32; 1600], crate::audio::WHISPER_SAMPLE_RATE).unwrap();
+        let err = e
+            .transcribe_request(&audio, TranscriptionRequest::new("tiny-q5_1"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tiny-q5_1"), "{err}");
+        assert!(!crate::model::models_dir(&dir.path().join("cache")).exists());
+        assert!(e.metrics_snapshot().ops_failed >= 1);
     }
 
     #[test]

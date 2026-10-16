@@ -177,20 +177,19 @@ fn config_oversized_file_fails_closed() {
     assert!(Config::load_from(&path).is_err());
 }
 
+#[cfg(feature = "tts")]
 #[test]
 fn config_duplicate_custom_tts_rejected_when_pack_exists() {
     use aurum_core::config::Config;
-    #[cfg(feature = "tts")]
-    {
-        use aurum_core::tts::write_fake_sine_pack;
-        let dir = tempdir().unwrap();
-        let pack = dir.path().join("pack");
-        write_fake_sine_pack(&pack, "my-fake").unwrap();
-        let path = dir.path().join("cfg.toml");
-        fs::write(
-            &path,
-            format!(
-                r#"
+    use aurum_core::tts::write_fake_sine_pack;
+    let dir = tempdir().unwrap();
+    let pack = dir.path().join("pack");
+    write_fake_sine_pack(&pack, "my-fake").unwrap();
+    let path = dir.path().join("cfg.toml");
+    fs::write(
+        &path,
+        format!(
+            r#"
 [tts]
 model = "kitten-nano-int8"
 
@@ -206,17 +205,12 @@ adapter = "fake-sine-v1"
 pack_dir = "{}"
 trust = "verified"
 "#,
-                pack.display(),
-                pack.display()
-            ),
-        )
-        .unwrap();
-        assert!(Config::load_from(&path).is_err());
-    }
-    #[cfg(not(feature = "tts"))]
-    {
-        let _ = Config::default();
-    }
+            pack.display(),
+            pack.display()
+        ),
+    )
+    .unwrap();
+    assert!(Config::load_from(&path).is_err());
 }
 
 #[test]

@@ -75,10 +75,23 @@ pub struct ProfileResolution {
 /// - Prefer English-only quantised models when language is clearly English.
 /// - Network is never required; resolution is pure catalogue lookup.
 pub fn resolve_profile(profile: QualityProfile, language: &str) -> Result<ProfileResolution> {
+    resolve_profile_with(profile, language, |_| true)
+}
+
+/// [`resolve_profile`] restricted to the models `allowed` accepts, normally
+/// [`crate::Config::local_model_allowed`] so a deployment catalogue's disabled
+/// models are never recommended or selected. When the profile's primary pick
+/// is not allowed, the first allowed alternative is used and the reasons say
+/// so; when none is allowed, resolution fails closed.
+pub fn resolve_profile_with(
+    profile: QualityProfile,
+    language: &str,
+    allowed: impl Fn(&str) -> bool,
+) -> Result<ProfileResolution> {
     let lang = language.trim().to_ascii_lowercase();
     let english = lang == "en" || lang == "eng" || lang.starts_with("en-");
 
-    let (model, reasons): (&str, Vec<String>) = match profile {
+    let (model, mut reasons): (&str, Vec<String>) = match profile {
         QualityProfile::Speed => {
             if english {
                 (
@@ -142,6 +155,35 @@ pub fn resolve_profile(profile: QualityProfile, language: &str) -> Result<Profil
         }
     };
 
+    let candidates: &[&str] = match profile {
+        QualityProfile::Speed => &["tiny", "tiny-q8_0", "base-q5_1"],
+        QualityProfile::Balance => &["base-q5_1", "base-q8_0", "small-q5_1"],
+        QualityProfile::Quality => &["small-q5_1", "medium", "large-v3-turbo"],
+    };
+    let usable =
+        |m: &str| lookup_model(m).is_ok() && model_support_tier(m) == ModelSupportTier::Supported;
+
+    let model = if allowed(model) {
+        model
+    } else {
+        let fallback = candidates
+            .iter()
+            .copied()
+            .find(|m| usable(m) && allowed(m))
+            .ok_or_else(|| UserError::Other {
+                message: format!(
+                    "{} profile has no model enabled by the deployment catalogue \
+                     ('{model}' and its alternatives are disabled)\n  \
+                     Hint: pass --model <id> with an enabled model (see `aurum models`)",
+                    profile.as_str()
+                ),
+            })?;
+        reasons.push(format!(
+            "'{model}' is disabled by the deployment catalogue → first enabled alternative"
+        ));
+        fallback
+    };
+
     let info = lookup_model(model)?;
     match model_support_tier(info.name) {
         ModelSupportTier::Supported => {}
@@ -156,15 +198,10 @@ pub fn resolve_profile(profile: QualityProfile, language: &str) -> Result<Profil
         }
     }
 
-    let candidates: &[&str] = match profile {
-        QualityProfile::Speed => &["tiny", "tiny-q8_0", "base-q5_1"],
-        QualityProfile::Balance => &["base-q5_1", "base-q8_0", "small-q5_1"],
-        QualityProfile::Quality => &["small-q5_1", "medium", "large-v3-turbo"],
-    };
     let alternatives: Vec<String> = candidates
         .iter()
         .copied()
-        .filter(|m| lookup_model(m).is_ok() && model_support_tier(m) == ModelSupportTier::Supported)
+        .filter(|m| usable(m) && allowed(m))
         .filter(|m| *m != info.name)
         .map(str::to_string)
         .collect();
@@ -230,6 +267,26 @@ mod tests {
         let r = resolve_profile(QualityProfile::Quality, "auto").unwrap();
         assert_eq!(r.model, "small");
         assert_ne!(r.model, "large-v3-q5_0");
+    }
+
+    #[test]
+    fn disabled_primary_falls_back_to_an_enabled_alternative() {
+        let r = resolve_profile_with(QualityProfile::Speed, "auto", |m| {
+            m != "tiny-q5_1" && m != "tiny"
+        })
+        .unwrap();
+        assert_eq!(r.model, "tiny-q8_0");
+        assert!(!r
+            .alternatives
+            .iter()
+            .any(|m| m == "tiny" || m == "tiny-q5_1"));
+        assert!(r.reasons.iter().any(|reason| reason.contains("disabled")));
+    }
+
+    #[test]
+    fn profile_fails_closed_when_nothing_is_enabled() {
+        let err = resolve_profile_with(QualityProfile::Quality, "auto", |_| false).unwrap_err();
+        assert!(err.to_string().contains("no model enabled"), "{err}");
     }
 
     #[test]

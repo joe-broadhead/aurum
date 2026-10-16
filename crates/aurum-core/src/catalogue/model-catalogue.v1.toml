@@ -1,0 +1,476 @@
+# Aurum reviewed model catalogue, schema v1.
+#
+# This file is the single reviewed source of truth for built-in local model
+# identity: ids, aliases, support tiers, licenses, immutable source URLs, exact
+# sizes and SHA-256 pins. Parity tests keep the legacy Rust tables
+# (`model::MODELS`, `tts::catalogue::MODELS`) identical to it while their
+# consumers migrate (#125).
+#
+# Rules enforced by the loader and tests:
+# - local records only (remote providers own their capabilities elsewhere);
+# - downloadable Hugging Face URLs use an immutable 40-hex revision, never `main`;
+# - defaults are a single global per direction and must be `supported`;
+#   experimental records are reachable by explicit model id only.
+schema_version = 1
+
+[defaults.stt]
+global = "base"
+
+[defaults.tts]
+global = "kitten-nano-int8"
+
+# ---- Local STT: whisper.cpp ggml (ggerganov/whisper.cpp @ 5359861c) ----
+
+[[model]]
+id = "tiny"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "fastest full-precision"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-tiny.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.bin", size_bytes = 77691713, sha256 = "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21" }
+
+[[model]]
+id = "tiny-q5_1"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "quantized ~32MB — best first-run trial"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-tiny-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny-q5_1.bin", size_bytes = 32152673, sha256 = "818710568da3ca15689e31a743197b520007872ff9576237bda97bd1b469c3d7" }
+
+[[model]]
+id = "tiny-q8_0"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "quantized"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-tiny-q8_0.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny-q8_0.bin", size_bytes = 43537433, sha256 = "c2085835d3f50733e2ff6e4b41ae8a2b8d8110461e18821b09a15c40c42d1cca" }
+
+[[model]]
+id = "tiny.en"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "english-only"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-tiny.en.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.en.bin", size_bytes = 77704715, sha256 = "921e4cf8686fdd993dcd081a5da5b6c365bfde1162e72b08d75ac75289920b1f" }
+
+[[model]]
+id = "tiny.en-q5_1"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "english-only quantized"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-tiny.en-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-tiny.en-q5_1.bin", size_bytes = 32166155, sha256 = "c77c5766f1cef09b6b7d47f21b546cbddd4157886b3b5d6d4f709e91e66c7c2b" }
+
+[[model]]
+id = "base"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "default full-precision"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-base.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.bin", size_bytes = 147951465, sha256 = "60ed5bc3dd14eea856493d334349b405782ddcaf0028d4b5df4088345fba2efe" }
+
+[[model]]
+id = "base-q5_1"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "quantized ~60MB"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-base-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q5_1.bin", size_bytes = 59707625, sha256 = "422f1ae452ade6f30a004d7e5c6a43195e4433bc370bf23fac9cc591f01a8898" }
+
+[[model]]
+id = "base-q8_0"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "quantized"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-base-q8_0.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base-q8_0.bin", size_bytes = 81768585, sha256 = "c577b9a86e7e048a0b7eada054f4dd79a56bbfa911fbdacf900ac5b567cbb7d9" }
+
+[[model]]
+id = "base.en"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "english-only"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-base.en.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en.bin", size_bytes = 147964211, sha256 = "a03779c86df3323075f5e796cb2ce5029f00ec8869eee3fdfb897afe36c6d002" }
+
+[[model]]
+id = "base.en-q5_1"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "english-only quantized"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-base.en-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-base.en-q5_1.bin", size_bytes = 59721011, sha256 = "4baf70dd0d7c4247ba2b81fafd9c01005ac77c2f9ef064e00dcf195d0e2fdd2f" }
+
+[[model]]
+id = "small"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "higher accuracy"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-small.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.bin", size_bytes = 487601967, sha256 = "1be3a9b2063867b937e64e2ec7483364a79917e157fa98c5d94b5c1fffea987b" }
+
+[[model]]
+id = "small-q5_1"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "quantized"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-small-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q5_1.bin", size_bytes = 190085487, sha256 = "ae85e4a935d7a567bd102fe55afc16bb595bdb618e11b2fc7591bc08120411bb" }
+
+[[model]]
+id = "small-q8_0"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "quantized"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-small-q8_0.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q8_0.bin", size_bytes = 264464607, sha256 = "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f" }
+
+[[model]]
+id = "small.en"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "english-only"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-small.en.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.en.bin", size_bytes = 487614201, sha256 = "c6138d6d58ecc8322097e0f987c32f1be8bb0a18532a3f88f734d1bbf9c41e5d" }
+
+[[model]]
+id = "small.en-q5_1"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "english-only quantized"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-small.en-q5_1.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small.en-q5_1.bin", size_bytes = 190098681, sha256 = "bfdff4894dcb76bbf647d56263ea2a96645423f1669176f4844a1bf8e478ad30" }
+
+[[model]]
+id = "medium"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "large download"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-medium.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-medium.bin", size_bytes = 1533763059, sha256 = "6c14d5adee5f86394037b4e4e8b59f1673b6cee10e3cf0b11bbdbee79c156208" }
+
+[[model]]
+id = "medium.en"
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "english-only"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-medium.en.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-medium.en.bin", size_bytes = 1533774781, sha256 = "cc37e93478338ec7700281a7ac30a10128929eb8f427dda2e865faa8f6da4356" }
+
+[[model]]
+id = "medium-ptbr-q5_0"
+direction = "stt"
+provider = "local"
+tier = "experimental"
+languages = ["pt-BR"]
+notes = "experimental — Brazilian Portuguese specialist"
+license = "Apache-2.0"
+origin = { kind = "downloadable_local", filename = "whisper-medium-ptbr-q5_0.bin", url = "https://huggingface.co/nexorama-tech/whisper-medium-ptbr-q5_0/resolve/3ac780ce98aeafecfe2dcd8577833e00011a5bfb/whisper-medium-ptbr-q5_0.bin", size_bytes = 539212467, sha256 = "1f3a4ae2aa61c932dbfe585019c4f7ca63938a72cf3a9f8d4439d35252541096" }
+
+[[model]]
+id = "large-v3"
+aliases = ["large"]
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "highest quality"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-large-v3.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3.bin", size_bytes = 3095033483, sha256 = "64d182b440b98d5203c4f9bd541544d84c605196c4f7b845dfa11fb23594d1e2" }
+
+[[model]]
+id = "large-v3-q5_0"
+direction = "stt"
+provider = "local"
+tier = "experimental"
+notes = "experimental — not recommended (degeneration risk; prefer large-v3-turbo)"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-large-v3-q5_0.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-q5_0.bin", size_bytes = 1081140203, sha256 = "d75795ecff3f83b5faa89d1900604ad8c780abd5739fae406de19f23ecd98ad1" }
+
+[[model]]
+id = "large-v3-ptpt-q5_0"
+direction = "stt"
+provider = "local"
+tier = "experimental"
+languages = ["pt-PT"]
+notes = "experimental — European Portuguese specialist; prepare locally"
+license = "Apache-2.0"
+origin = { kind = "prepared_local", filename = "ggml-large-v3-ptpt-q5_0.bin", size_bytes = 1081140203, sha256 = "92c6b30b24dc7b035505a1750bfd3dac51d0984ea7120bc518d3f5c3228030c7", source_url = "https://huggingface.co/inesc-id/WhisperLv3-FT/tree/77837e42b56d4be6ca15a66b5c41c9b8cf3e41b0", revision = "77837e42b56d4be6ca15a66b5c41c9b8cf3e41b0", preparation = "scripts/prepare_portuguese_models.sh" }
+
+[[model]]
+id = "large-v3-turbo"
+aliases = ["turbo"]
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "fast large"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-large-v3-turbo.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo.bin", size_bytes = 1624555275, sha256 = "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69" }
+
+[[model]]
+id = "large-v3-turbo-q5_0"
+aliases = ["turbo-q5_0"]
+direction = "stt"
+provider = "local"
+tier = "supported"
+notes = "quantized turbo"
+license = "MIT (whisper.cpp weights via OpenAI Whisper terms)"
+origin = { kind = "downloadable_local", filename = "ggml-large-v3-turbo-q5_0.bin", url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin", size_bytes = 574041195, sha256 = "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2" }
+
+# ---- Local TTS packs ----
+
+[[model]]
+id = "kitten-nano-int8"
+direction = "tts"
+provider = "local"
+tier = "supported"
+languages = ["en", "en-US"]
+notes = "KittenTTS nano int8 ~25MB — default English ONNX"
+license = "Apache-2.0"
+[model.origin]
+kind = "tts_pack"
+adapter = "kitten-onnx-v1"
+max_phoneme_tokens = 400
+sample_rate_hz = 24000
+shipped = true
+[[model.origin.files]]
+filename = "kitten_tts_nano_v0_8.onnx"
+url = "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/84781d74e29ee25217551556398b42f80593a813/kitten_tts_nano_v0_8.onnx?download=true"
+size_bytes = 24369971
+sha256 = "f7b0afcbee92870b32b8e0276d855b954dc25470c9f051b376ac7eee537c76fc"
+[[model.origin.files]]
+filename = "voices.npz"
+url = "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/84781d74e29ee25217551556398b42f80593a813/voices.npz?download=true"
+size_bytes = 3278902
+sha256 = "8aa7cee235abb0739cb51e6559685f65a4dacd95568833d05699b1633f519b3f"
+[[model.origin.files]]
+filename = "config.json"
+url = "https://huggingface.co/KittenML/kitten-tts-nano-0.8-int8/resolve/84781d74e29ee25217551556398b42f80593a813/config.json?download=true"
+size_bytes = 688
+sha256 = "b66006ccbeccd4de5fc3c9272059c47f5725df7215fd889785c03602652fab64"
+[[model.origin.voices]]
+id = "Bella"
+internal_key = "expr-voice-2-f"
+language = "en"
+notes = "female"
+[[model.origin.voices]]
+id = "Jasper"
+internal_key = "expr-voice-2-m"
+language = "en"
+notes = "male"
+[[model.origin.voices]]
+id = "Luna"
+internal_key = "expr-voice-3-f"
+language = "en"
+notes = "female — default"
+[[model.origin.voices]]
+id = "Bruno"
+internal_key = "expr-voice-3-m"
+language = "en"
+notes = "male"
+[[model.origin.voices]]
+id = "Rosie"
+internal_key = "expr-voice-4-f"
+language = "en"
+notes = "female"
+[[model.origin.voices]]
+id = "Hugo"
+internal_key = "expr-voice-4-m"
+language = "en"
+notes = "male"
+[[model.origin.voices]]
+id = "Kiki"
+internal_key = "expr-voice-5-f"
+language = "en"
+notes = "female"
+[[model.origin.voices]]
+id = "Leo"
+internal_key = "expr-voice-5-m"
+language = "en"
+notes = "male"
+
+[[model]]
+id = "kokoro-82m-int8"
+direction = "tts"
+provider = "local"
+tier = "supported"
+languages = ["en", "en-US", "en-GB"]
+notes = "Kokoro-82M int8 ~88MB ONNX — opt-in higher-quality English (not default)"
+license = "Apache-2.0"
+[model.origin]
+kind = "tts_pack"
+adapter = "kokoro-onnx-v0"
+max_phoneme_tokens = 509
+sample_rate_hz = 24000
+shipped = true
+[[model.origin.files]]
+filename = "kokoro-v1.0.int8.onnx"
+url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.int8.onnx"
+size_bytes = 92361271
+sha256 = "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb"
+[[model.origin.files]]
+filename = "voices-v1.0.bin"
+url = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin"
+size_bytes = 28214398
+sha256 = "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d"
+[[model.origin.files]]
+filename = "config.json"
+url = "https://huggingface.co/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/config.json?download=true"
+size_bytes = 2351
+sha256 = "5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f"
+[[model.origin.voices]]
+id = "Heart"
+internal_key = "af_heart"
+language = "en-US"
+notes = "female — Kokoro default"
+[[model.origin.voices]]
+id = "Alloy"
+internal_key = "af_alloy"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Aoede"
+internal_key = "af_aoede"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "KokoroBella"
+internal_key = "af_bella"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Jessica"
+internal_key = "af_jessica"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Kore"
+internal_key = "af_kore"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Nicole"
+internal_key = "af_nicole"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Nova"
+internal_key = "af_nova"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "River"
+internal_key = "af_river"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Sarah"
+internal_key = "af_sarah"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Sky"
+internal_key = "af_sky"
+language = "en-US"
+notes = "female"
+[[model.origin.voices]]
+id = "Adam"
+internal_key = "am_adam"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Echo"
+internal_key = "am_echo"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Eric"
+internal_key = "am_eric"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Fenrir"
+internal_key = "am_fenrir"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Liam"
+internal_key = "am_liam"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Michael"
+internal_key = "am_michael"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Onyx"
+internal_key = "am_onyx"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Puck"
+internal_key = "am_puck"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Santa"
+internal_key = "am_santa"
+language = "en-US"
+notes = "male"
+[[model.origin.voices]]
+id = "Alice"
+internal_key = "bf_alice"
+language = "en-GB"
+notes = "female — British"
+[[model.origin.voices]]
+id = "Emma"
+internal_key = "bf_emma"
+language = "en-GB"
+notes = "female — British"
+[[model.origin.voices]]
+id = "Isabella"
+internal_key = "bf_isabella"
+language = "en-GB"
+notes = "female — British"
+[[model.origin.voices]]
+id = "Lily"
+internal_key = "bf_lily"
+language = "en-GB"
+notes = "female — British"
+[[model.origin.voices]]
+id = "Daniel"
+internal_key = "bm_daniel"
+language = "en-GB"
+notes = "male — British"
+[[model.origin.voices]]
+id = "Fable"
+internal_key = "bm_fable"
+language = "en-GB"
+notes = "male — British"
+[[model.origin.voices]]
+id = "George"
+internal_key = "bm_george"
+language = "en-GB"
+notes = "male — British"
+[[model.origin.voices]]
+id = "Lewis"
+internal_key = "bm_lewis"
+language = "en-GB"
+notes = "male — British"

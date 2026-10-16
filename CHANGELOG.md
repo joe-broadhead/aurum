@@ -21,8 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   local playback). `--mic` RMS endpoint uses a longer hangover at the start of a
   turn (`--thinking-pause`, default 1.2s) so a ~1s mid-thought pause does not
   cut the user off.
+- **Dynamic local model catalogue:** versioned, integrity-pinned model records
+  and an explicit `[catalogue].path` that can disable built-in STT models and
+  set the default STT model. The default local model stays `base`;
+  language never selects a model. Experimental Portuguese specialists
+  (`medium-ptbr-q5_0`, `large-v3-ptpt-q5_0`) are reachable only via an explicit
+  `--model` / `[stt].model`. A disabled model is hidden from `aurum models`,
+  is never recommended or picked by `--profile` (the profile's first enabled
+  alternative is used instead), is rejected by `AurumEngine` preload, is marked
+  disabled by `aurum cache status|verify`, and is reported by `aurum doctor`.
+  `aurum models` names the effective default. `aurum-ffi` hosts are not bound
+  by `[catalogue].path` yet (#146).
 
 ### Fixed
+
+- **TTS pack integrity:** voice-pack downloads and cache checks now enforce
+  each file's exact pinned size as well as its SHA-256. Previously, only the
+  SHA-256 was checked. Built-in GitHub origins are limited to an explicit list
+  of reviewed releases.
 
 - **Build/lint compatibility with Rust 1.98:** replaced `slice::chunks_exact` with
   the const-generic `slice::as_chunks` in the PCM decode and NPY float paths,
@@ -30,10 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   job under stable `-D warnings`. Behavior is unchanged; MSRV remains 1.89.
 - **Security (RUSTSEC-2026-0258):** bumped `h2` to 0.4.16, clearing the
   unbounded empty-DATA-frame advisory inherited transitively via `hyper`.
-
 - **Batch source snapshot (JOE-2316):** batch materializes a process-owned copy
   of each source while hashing; decode loads the snapshot so concurrent
   mutation of the original path cannot change the bytes that are transcribed.
+- **STT-only catalogue:** builds without the optional TTS feature no longer
+  expose TTS-only built-in records or reference TTS provider registries.
 
 ## [0.0.23] - 2026-08-03
 

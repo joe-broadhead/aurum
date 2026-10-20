@@ -24,3 +24,6 @@ evals/reports/_local/
 # Operator-fetched production STT audio (licensed; not redistributed)
 evals/observatory/cache/
 __pycache__/
+
+# Local measurement record (host-specific). expected_s in test-segments.toml is the reviewed number.
+test-segments.lock.json

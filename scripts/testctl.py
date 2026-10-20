@@ -119,17 +119,22 @@ def toolchain_present(name: str) -> bool:
 
 
 def json_budget(chosen: list[dict], args) -> tuple[list[dict], list[dict], bool]:
-    """Drop the most expensive optional segments until the sum fits."""
+    """Drop the most expensive optional segments until the sum fits.
+
+    Segments named with --segment and segments marked default = true are never
+    dropped: the budget may shorten the run, not remove the point of it.
+    """
     if not args.budget:
         return chosen, [], True
     explicit = set(args.segment or [])
+    protected = explicit | {s["id"] for s in chosen if s.get("default")}
     total = sum(s["expected_s"] for s in chosen)
     dropped: list[dict] = []
     keep = list(chosen)
     for seg in sorted(chosen, key=lambda s: s["expected_s"], reverse=True):
         if total <= args.budget:
             break
-        if seg["id"] in explicit:
+        if seg["id"] in protected:
             continue
         keep.remove(seg)
         dropped.append(seg)

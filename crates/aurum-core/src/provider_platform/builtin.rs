@@ -92,6 +92,12 @@ impl TranscriptionProviderFactory for LocalSttFactory {
         }
         .with_progress(ctx.show_progress())
         .with_local_only(ctx.local_only());
+        // A deployment catalogue's disabled models stay unusable even when a
+        // host resolves the provider directly instead of transcribing.
+        let provider = match ctx.model_policy() {
+            Some(policy) => provider.with_model_policy(Arc::clone(policy)),
+            None => provider,
+        };
         Ok(Arc::new(provider))
     }
 }

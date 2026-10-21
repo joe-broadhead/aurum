@@ -22,6 +22,12 @@ pub enum BackendKind {
 #[derive(Debug, Clone)]
 pub struct TranscriptionOptions {
     /// Model name (local ggml name or remote model id).
+    ///
+    /// [`Default`] fills this with the built-in `base` weights, which is **not**
+    /// catalogue-aware. A host that holds a [`crate::Config`] should pass
+    /// `config.default_local_stt_model()` instead, so a deployment's
+    /// `[defaults.stt].global` applies; otherwise a deployment that disables
+    /// `base` rejects the request rather than silently choosing another model.
     pub model: String,
     /// BCP-47 / ISO language code, or `"auto"`.
     pub language: String,
@@ -36,6 +42,13 @@ pub struct TranscriptionOptions {
     pub op: Option<crate::runtime::OpContext>,
 }
 
+/// [`Default`] for [`TranscriptionOptions`]: the built-in `base` weights.
+///
+/// This is a compile-time default for hosts that do not hold a [`crate::Config`]
+/// and is **not** catalogue-aware. A host with a config should pass
+/// `config.default_local_stt_model()` (or set [`TranscriptionOptions::model`]),
+/// so a deployment `[defaults.stt].global` applies; otherwise a deployment that
+/// disables `base` rejects the request rather than silently choosing another model.
 impl Default for TranscriptionOptions {
     fn default() -> Self {
         Self {

@@ -121,6 +121,14 @@ pub enum UserError {
     #[error("unknown local model: {model}\n  Hint: available models: {available}")]
     InvalidModel { model: String, available: String },
 
+    /// The model is in the reviewed catalogue but the deployment catalogue
+    /// removed it, so retrying or looking it up again cannot help.
+    #[error(
+        "model '{model}' is disabled by the deployment catalogue ([catalogue].path)\n  \
+         Hint: remove the disable entry, or choose an enabled model (`aurum models` lists them)."
+    )]
+    ModelDisabled { model: String },
+
     #[error(
         "model '{model}' is not cached and downloads are disabled (local_only).\n  \
          Hint: download it once while online, or pass local_only=false."
@@ -262,9 +270,9 @@ impl AurumError {
         match self {
             Self::User(u) => match u {
                 UserError::UnsupportedCapability { .. } => ErrorCategory::UnsupportedCapability,
-                UserError::ModelNotCached { .. } | UserError::InvalidModel { .. } => {
-                    ErrorCategory::ModelUnavailable
-                }
+                UserError::ModelNotCached { .. }
+                | UserError::InvalidModel { .. }
+                | UserError::ModelDisabled { .. } => ErrorCategory::ModelUnavailable,
                 UserError::MissingApiKey | UserError::MissingProviderCredential { .. } => {
                     ErrorCategory::Auth
                 }

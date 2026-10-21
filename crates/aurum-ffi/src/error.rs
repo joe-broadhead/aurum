@@ -93,6 +93,7 @@ impl From<TranscriptionError> for FfiError {
                 | UserError::AudioTooLarge { .. }
                 | UserError::InvalidAudio { .. } => FfiStatus::Audio,
                 UserError::InvalidModel { .. }
+                | UserError::ModelDisabled { .. }
                 | UserError::InvalidConfig { .. }
                 | UserError::FileNotFound { .. }
                 | UserError::InvalidOutputFormat { .. }
@@ -131,5 +132,23 @@ impl From<TranscriptionError> for FfiError {
             TranscriptionError::Internal(_) => FfiStatus::Internal,
         };
         Self { status, message }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_policy_disabled_model_is_an_invalid_argument() {
+        // Retrying or downloading cannot fix a model the deployment catalogue
+        // disabled, so the status stays InvalidArg (no new ABI status code).
+        let err: TranscriptionError = UserError::ModelDisabled {
+            model: "tiny".into(),
+        }
+        .into();
+        let ffi = FfiError::from(err);
+        assert_eq!(ffi.status, FfiStatus::InvalidArg);
+        assert!(ffi.message.contains("[catalogue].path"), "{}", ffi.message);
     }
 }

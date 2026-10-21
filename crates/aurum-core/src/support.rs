@@ -76,6 +76,9 @@ pub fn build_support_bundle(cfg: &Config, user_notes: Option<String>) -> Support
     if let Some(p) = diag.tts_pack_dir.as_mut() {
         *p = redact_path_str(p);
     }
+    if let Some(p) = diag.catalogue_path.as_mut() {
+        *p = redact_path_str(p);
+    }
     // Never emit raw key material (Config already maps to "***" or None).
     if diag.openrouter_api_key.is_some() {
         diag.openrouter_api_key = Some("***".into());
@@ -245,5 +248,29 @@ mod tests {
         let loaded: SupportBundle =
             serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
         assert_eq!(loaded.schema_version, SUPPORT_BUNDLE_VERSION);
+    }
+
+    /// Bundles written before the catalogue diagnostic landed still carry
+    /// `schema_version = 1` and omit these keys, so decoding must not require them.
+    #[test]
+    fn pre_catalogue_bundle_still_decodes() {
+        let cfg = Config::load().unwrap();
+        let mut json = serde_json::to_value(build_support_bundle(&cfg, None)).unwrap();
+        let config = json
+            .get_mut("config")
+            .and_then(serde_json::Value::as_object_mut)
+            .expect("bundle carries the effective config diagnostic");
+        for key in ["catalogue_path", "catalogue_digest", "catalogue_records"] {
+            assert!(
+                config.remove(key).is_some(),
+                "{key} must be present before removal"
+            );
+        }
+        let loaded: SupportBundle = serde_json::from_value(json).unwrap();
+        assert_eq!(loaded.schema_version, SUPPORT_BUNDLE_VERSION);
+        assert!(loaded.config.catalogue_path.is_none());
+        assert!(loaded.config.catalogue_digest.is_empty());
+        assert!(loaded.config.catalogue_records.is_empty());
+        assert!(loaded.config.catalogue_disabled.is_empty());
     }
 }

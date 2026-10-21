@@ -63,6 +63,9 @@ pub struct AurumEngine {
     #[cfg(feature = "tts")]
     tts_pool: Arc<TtsSessionPool>,
     registry: Arc<ProviderRegistry>,
+    /// Effective deployment policy, shared by every local provider this engine
+    /// builds (only set when `[catalogue].path` is configured).
+    model_policy: Option<Arc<crate::catalogue::EffectiveCatalogue>>,
     closed: AtomicBool,
 }
 
@@ -103,6 +106,13 @@ impl AurumEngine {
         registry: ProviderRegistry,
     ) -> Result<Self> {
         let governor = Arc::new(ResourceGovernor::try_new(gov)?);
+        // Snapshot the policy once: providers hold it so a disabled model is
+        // refused before any download, even through the raw accessors below.
+        let model_policy = config
+            .as_config()
+            .catalogue_path
+            .is_some()
+            .then(|| Arc::new(config.as_config().catalogue.clone()));
         Ok(Self {
             config,
             governor,
@@ -111,6 +121,7 @@ impl AurumEngine {
             #[cfg(feature = "tts")]
             tts_pool: Arc::new(TtsSessionPool::new()),
             registry: Arc::new(registry),
+            model_policy,
             closed: AtomicBool::new(false),
         })
     }
@@ -204,6 +215,9 @@ impl AurumEngine {
             .with_stt_pool(Arc::clone(&self.stt_pool))
             .with_governor(Arc::clone(&self.governor))
             .with_metrics(Arc::clone(&self.metrics));
+        if let Some(policy) = &self.model_policy {
+            ctx = ctx.with_model_policy(Arc::clone(policy));
+        }
 
         #[cfg(feature = "tts")]
         {
@@ -290,12 +304,18 @@ impl AurumEngine {
     /// local-only convenience defaults.
     pub fn local_whisper(&self) -> Result<LocalWhisperProvider> {
         self.ensure_open()?;
-        Ok(LocalWhisperProvider::with_runtime(
+        let mut provider = LocalWhisperProvider::with_runtime(
             self.cache_dir().to_path_buf(),
             Arc::clone(&self.stt_pool),
             Arc::clone(&self.governor),
         )
-        .with_progress(false))
+        .with_progress(false);
+        // This accessor hands out a provider rather than running a request, so
+        // the policy travels with it (preload/transcribe then fail closed).
+        if let Some(policy) = &self.model_policy {
+            provider = provider.with_model_policy(Arc::clone(policy));
+        }
+        Ok(provider)
     }
 
     /// Local TTS provider bound to this engine's pool and governor (JOE-1784).
@@ -372,6 +392,14 @@ impl AurumEngine {
             .with_decoded_bytes(decoded_bytes),
         );
 
+        // A deployment catalogue's disabled models stay unusable for library
+        // hosts too, not only for CLI paths that call `resolve_model`.
+        if id == ProviderId::local() {
+            if let Err(e) = self.config().check_local_model_allowed(&options.model) {
+                self.finish_guard(&mut guard, &e);
+                return Err(e);
+            }
+        }
         let provider = match self.stt_provider(&id) {
             Ok(p) => p,
             Err(e) => {
@@ -425,6 +453,9 @@ impl AurumEngine {
     /// Preload a local STT model into **this** engine's pool.
     pub async fn preload_stt(&self, model: &str) -> Result<std::path::PathBuf> {
         self.ensure_open()?;
+        // Preload downloads weights, so it honours a deployment catalogue's
+        // disabled models exactly like `run_stt`.
+        self.config().check_local_model_allowed(model)?;
         self.local_whisper()?.preload(model).await
     }
 
@@ -636,6 +667,109 @@ mod tests {
             "expected Terminal event"
         );
         assert!(snap.decoded_bytes_total > 0);
+    }
+
+    #[tokio::test]
+    async fn transcribe_request_rejects_a_deployment_disabled_model() {
+        use crate::audio::AudioInput;
+        use crate::sdk::TranscriptionRequest;
+
+        let dir = tempfile::tempdir().unwrap();
+        let catalogue = dir.path().join("catalogue.toml");
+        std::fs::write(
+            &catalogue,
+            r#"schema_version = 1
+[[model]]
+id = "tiny-q5_1"
+direction = "stt"
+provider = "local"
+enabled = false
+tier = "supported"
+"#,
+        )
+        .unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, format!("[catalogue]\npath = {:?}\n", catalogue)).unwrap();
+        let mut cfg = Config::load_from_required(&config).unwrap();
+        cfg.cache_dir = dir.path().join("cache");
+        let e = AurumEngine::from_config(cfg).unwrap();
+
+        // A library host bypasses `resolve_model`; the engine must still refuse
+        // the disabled model before the local provider can download it.
+        let audio =
+            AudioInput::from_pcm(vec![0.0f32; 1600], crate::audio::WHISPER_SAMPLE_RATE).unwrap();
+        let err = e
+            .transcribe_request(&audio, TranscriptionRequest::new("tiny-q5_1"))
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tiny-q5_1"), "{err}");
+        assert!(!crate::model::models_dir(&dir.path().join("cache")).exists());
+        assert!(e.metrics_snapshot().ops_failed >= 1);
+    }
+
+    /// Build an engine whose deployment catalogue disables `tiny-q5_1`.
+    fn engine_with_tiny_disabled() -> (tempfile::TempDir, AurumEngine) {
+        let dir = tempfile::tempdir().unwrap();
+        let catalogue = dir.path().join("catalogue.toml");
+        std::fs::write(
+            &catalogue,
+            r#"schema_version = 1
+[[model]]
+id = "tiny-q5_1"
+direction = "stt"
+provider = "local"
+enabled = false
+tier = "supported"
+"#,
+        )
+        .unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, format!("[catalogue]\npath = {:?}\n", catalogue)).unwrap();
+        let mut cfg = Config::load_from_required(&config).unwrap();
+        cfg.cache_dir = dir.path().join("cache");
+        let engine = AurumEngine::from_config(cfg).unwrap();
+        (dir, engine)
+    }
+
+    #[tokio::test]
+    async fn raw_local_accessors_reject_a_deployment_disabled_model() {
+        use crate::provider_platform::ProviderId;
+
+        let (dir, engine) = engine_with_tiny_disabled();
+
+        // `local_whisper()` hands out a provider, so the policy must travel with
+        // it: preload would otherwise download a disabled model.
+        let err = engine
+            .local_whisper()
+            .unwrap()
+            .preload("tiny-q5_1")
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tiny-q5_1"), "{err}");
+
+        // Same for a provider resolved straight from the registry.
+        let provider = engine.stt_provider(&ProviderId::local()).unwrap();
+        let audio = crate::audio::AudioInput::from_pcm(
+            vec![0.0f32; 1600],
+            crate::audio::WHISPER_SAMPLE_RATE,
+        )
+        .unwrap();
+        let options = crate::providers::TranscriptionOptions {
+            model: "tiny-q5_1".to_string(),
+            ..Default::default()
+        };
+        let err = provider
+            .transcribe(&audio, &options)
+            .await
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("tiny-q5_1"), "{err}");
+
+        assert!(!crate::model::models_dir(&dir.path().join("cache")).exists());
+        // An allowed model still passes the policy check.
+        assert!(engine.config().check_local_model_allowed("base").is_ok());
     }
 
     #[test]

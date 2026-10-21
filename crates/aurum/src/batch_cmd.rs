@@ -14,7 +14,7 @@ use aurum_core::cleanup::{
 use aurum_core::config::Config;
 use aurum_core::error::{Result, UserError};
 use aurum_core::output::{self, CommitMode, OutputFormat};
-use aurum_core::profile::{resolve_profile, QualityProfile, PROFILE_EVIDENCE_VERSION};
+use aurum_core::profile::{resolve_profile_with, QualityProfile, PROFILE_EVIDENCE_VERSION};
 use aurum_core::providers::{OpenRouterSttMode, TranscriptionOptions};
 use aurum_core::remote::RemotePolicy;
 use clap::Parser;
@@ -132,7 +132,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
         m.clone()
     } else if let Some(ref p) = cli.profile {
         let profile = QualityProfile::parse(p)?;
-        let res = resolve_profile(profile, &cfg.language)?;
+        let res = resolve_profile_with(profile, &cfg.language, |m| cfg.local_model_allowed(m))?;
         profile_evidence = Some(res.evidence_version.clone());
         if cli.verbose || atty_stderr() {
             eprintln!(
@@ -144,6 +144,7 @@ pub async fn run_batch(cli: BatchCli) -> Result<()> {
     } else {
         cfg.resolve_model(false)?
     };
+    cfg.check_local_stt_model_allowed(&model)?;
     cfg.model = Some(model.clone());
 
     let format = OutputFormat::parse(&cfg.output)?;

@@ -331,7 +331,7 @@ mod tests {
 
     fn voice_archive(name: &str) -> Vec<u8> {
         let mut header = "{'descr': '<f4', 'fortran_order': False, 'shape': (1, 2), }".to_string();
-        while (10 + header.len() + 1) % 16 != 0 {
+        while !(10 + header.len() + 1).is_multiple_of(16) {
             header.push(' ');
         }
         header.push('\n');

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run declared test segments. See SPEC.md.
+"""Run declared test segments. Contract: GitHub issue #157.
 
 No third-party imports. Python 3.11+ (tomllib).
 """
@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -17,7 +18,7 @@ from pathlib import Path
 
 EXIT_OK, EXIT_FAIL, EXIT_USAGE, EXIT_BUDGET, EXIT_SKIP, EXIT_TIMEOUT = 0, 1, 2, 3, 4, 5
 _os_name = {"darwin": "macos", "linux": "linux"}.get(sys.platform, sys.platform)
-HOST = f"{_os_name}-{os.uname().machine} {os.cpu_count()}c"
+HOST = f"{_os_name}-{platform.machine()} {os.cpu_count()}c"
 
 
 def die(msg: str, code: int = EXIT_USAGE) -> "NoReturn":
@@ -215,23 +216,37 @@ def cmd_run(manifest: dict, args, root: Path, mode: str) -> int:
         rc, seconds, note = run_segment(seg, root, timeout)
         print(f"--- {seg['id']}: exit={rc} {seconds:.1f}s {note}", flush=True)
         results[seg["id"]] = {"duration_s": round(seconds, 1), "exit": rc}
+        if mode == "measure" and seg["kind"] == "test":
+            try:
+                listed = list_segment(seg, root)
+                results[seg["id"]]["test_count"] = sum(
+                    claims(seg, ignored) for ignored in listed.values()
+                )
+            except RuntimeError as exc:
+                results[seg["id"]]["discovery_error"] = str(exc)
+                failed.append((seg["id"], EXIT_FAIL))
         if remaining is not None:
             remaining -= seconds
         if rc != 0:
             failed.append((seg["id"], rc))
     if mode == "measure":
         lock = root / "test-segments.lock.json"
-        payload = {"host": HOST, "measured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "segments": results}
+        payload = {
+            "host": HOST,
+            "measured_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "segments": results,
+            "skipped": [{"id": sid, "reason": reason} for sid, reason in skipped],
+        }
         lock.write_text(json.dumps(payload, indent=2) + "\n")
         print(f"wrote {lock}")
-        return EXIT_OK
     for sid, rc in failed:
         print(f"FAIL {sid} (exit {rc})", file=sys.stderr)
     for sid, reason in skipped:
         print(f"SKIP {sid}: {reason}", file=sys.stderr)
     if failed:
         return EXIT_FAIL
-    if skipped and len(skipped) == len(keep):
+    if skipped:
+        print(f"PARTIAL: {len(skipped)} selected segment(s) did not run", file=sys.stderr)
         return EXIT_SKIP
     return EXIT_OK
 
@@ -278,10 +293,13 @@ def parse_tests(payload: str) -> dict[str, bool | None]:
 def list_segment(seg: dict, root: Path, timeout: float = 300) -> dict[str, bool | None]:
     try:
         proc = subprocess.run(seg["list"], cwd=str(root), capture_output=True, text=True, timeout=timeout)
-    except (subprocess.TimeoutExpired, FileNotFoundError):
-        return {}
+    except (subprocess.TimeoutExpired, OSError) as exc:
+        raise RuntimeError(f"{seg['id']}: test discovery failed: {exc}") from exc
     if proc.returncode != 0:
-        return {}
+        detail = proc.stderr.strip()[-2000:]
+        raise RuntimeError(
+            f"{seg['id']}: test discovery exited {proc.returncode}: {detail}"
+        )
     return parse_tests(proc.stdout)
 
 
@@ -296,9 +314,13 @@ def claims(seg: dict, ignored: bool | None) -> bool:
 
 
 def cmd_verify(manifest: dict, args, root: Path) -> int:
-    universe = parse_tests(
-        subprocess.run(manifest["meta"]["universe"], cwd=str(root), capture_output=True, text=True).stdout
-    )
+    try:
+        universe = list_segment(
+            {"id": "universe", "list": manifest["meta"]["universe"]}, root
+        )
+    except RuntimeError as exc:
+        print(f"verify: FAIL ({exc})", file=sys.stderr)
+        return EXIT_FAIL
     if not universe:
         print("verify: the universe command returned no tests", file=sys.stderr)
         return EXIT_USAGE
@@ -311,7 +333,11 @@ def cmd_verify(manifest: dict, args, root: Path) -> int:
         if seg["kind"] != "test":
             continue
         mode = seg.get("ignored", "exclude")
-        listed = list_segment(seg, root)
+        try:
+            listed = list_segment(seg, root)
+        except RuntimeError as exc:
+            print(f"verify: FAIL ({exc})", file=sys.stderr)
+            return EXIT_FAIL
         claimed = 0
         for test, flag in listed.items():
             if not claims(seg, flag):

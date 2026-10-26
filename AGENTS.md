@@ -121,10 +121,13 @@ scripts/test.sh --segment test-core # exactly one segment
 scripts/test.sh --verify            # every test in exactly one segment
 ```
 
-`--verify` proves 604 tests: 600 ordinary tests across `test-core`, `test-cli`,
-`test-ffi`, and `test-doc`, plus the four `#[ignore]` tests in `test-ignored`
+`--verify` counts the current tests across `test-core`, `test-cli`,
+`test-ffi`, `test-doc`, and `test-runner`, plus the `#[ignore]` tests in `test-ignored`
 (which skip unless `AURUM_INTEGRATION` and `AURUM_TTS_INTEGRATION` are set). A
 new test is not verified until it appears in one of those segments.
+Failed discovery stops verification. A run that skips any selected segment
+returns exit code 4 (`PARTIAL`); failed segments return exit code 1, including
+when `--measure` writes timing evidence.
 
 ## Tests that need special infrastructure (skip in default Cloud VMs)
 

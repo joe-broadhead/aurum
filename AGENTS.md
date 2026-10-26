@@ -109,6 +109,26 @@ cargo run -p aurum-stt -- man | head
 
 `make fmt`, `make lint`, `make test`, `make build`, `make ci` (fmt + lint + test + version-check).
 
+### Tests by segment
+
+The suite is declared in `test-segments.toml`; do not invent a test command.
+
+```bash
+scripts/test.sh --list              # every segment, with cost and requirements
+scripts/test.sh                     # the default set (fast, offline)
+scripts/test.sh --full              # every non-nightly segment except graphical
+scripts/test.sh --segment test-core # exactly one segment
+scripts/test.sh --verify            # every test in exactly one segment
+```
+
+`--verify` counts the current tests across `test-core`, `test-cli`,
+`test-ffi`, `test-doc`, and `test-runner`, plus the `#[ignore]` tests in `test-ignored`
+(which skip unless `AURUM_INTEGRATION` and `AURUM_TTS_INTEGRATION` are set). A
+new test is not verified until it appears in one of those segments.
+Failed discovery stops verification. A run that skips any selected segment
+returns exit code 4 (`PARTIAL`); failed segments return exit code 1, including
+when `--measure` writes timing evidence.
+
 ## Tests that need special infrastructure (skip in default Cloud VMs)
 
 | Suite | Why it cannot run here by default | How to skip / gate |

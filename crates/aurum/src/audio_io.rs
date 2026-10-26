@@ -5,7 +5,7 @@
 
 use aurum_core::error::{Result, UserError};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{SampleFormat, StreamConfig};
+use cpal::{SampleFormat, StreamConfig, SupportedStreamConfig, SupportedStreamConfigRange};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -29,7 +29,15 @@ impl MicCapture {
             .map_err(|e| UserError::Other {
                 message: format!("microphone config: {e}"),
             })?;
-        let sample_rate = supported.sample_rate().0;
+        let supported = select_supported_config(supported, || {
+            device.supported_input_configs().map_err(|e| {
+                UserError::Other {
+                    message: format!("microphone supported configs: {e}"),
+                }
+                .into()
+            })
+        })?;
+        let sample_rate = supported.sample_rate();
         let channels = supported.channels();
         let format = supported.sample_format();
         let config: StreamConfig = supported.into();
@@ -79,7 +87,7 @@ where
     let ch = channels.max(1) as usize;
     let stream = device
         .build_input_stream(
-            config,
+            *config,
             move |data: &[T], _| {
                 let n = data.len() / ch;
                 if n == 0 {
@@ -120,7 +128,15 @@ pub fn play_i16_mono(pcm: &[i16], sample_rate_hz: u32) -> Result<()> {
         .map_err(|e| UserError::Other {
             message: format!("speaker config: {e}"),
         })?;
-    let out_rate = supported.sample_rate().0;
+    let supported = select_supported_config(supported, || {
+        device.supported_output_configs().map_err(|e| {
+            UserError::Other {
+                message: format!("speaker supported configs: {e}"),
+            }
+            .into()
+        })
+    })?;
+    let out_rate = supported.sample_rate();
     let channels = supported.channels();
     let format = supported.sample_format();
     let config: StreamConfig = supported.into();
@@ -179,7 +195,7 @@ where
 {
     let stream = device
         .build_output_stream(
-            config,
+            *config,
             move |data: &mut [T], _| {
                 let mut g = buf.lock().unwrap_or_else(|e| e.into_inner());
                 if g.done {
@@ -215,6 +231,41 @@ where
             message: format!("speaker stream: {e}"),
         })?;
     Ok(stream)
+}
+
+/// CPAL 0.18 can prefer I32/I24 over I16. Keep a supported default unchanged;
+/// otherwise select a device-advertised format our callbacks can convert.
+fn select_supported_config<I>(
+    preferred: SupportedStreamConfig,
+    alternatives: impl FnOnce() -> Result<I>,
+) -> Result<SupportedStreamConfig>
+where
+    I: Iterator<Item = SupportedStreamConfigRange>,
+{
+    let supported = |format| {
+        matches!(
+            format,
+            SampleFormat::F32 | SampleFormat::I16 | SampleFormat::U16
+        )
+    };
+    if supported(preferred.sample_format()) {
+        return Ok(preferred);
+    }
+    let range = alternatives()?
+        .filter(|config| supported(config.sample_format()))
+        .max_by(SupportedStreamConfigRange::cmp_default_heuristics)
+        .ok_or_else(|| UserError::Other {
+            message: format!(
+                "device default sample format {} is unsupported and no f32, i16, or u16 configuration is available",
+                preferred.sample_format()
+            ),
+        })?;
+    // Preserve the preferred rate when supported; never request an unadvertised
+    // rate. The existing resampler handles a different capture/playback rate.
+    let rate = preferred
+        .sample_rate()
+        .clamp(range.min_sample_rate(), range.max_sample_rate());
+    Ok(range.with_sample_rate(rate))
 }
 
 /// Linear resample, mono.
@@ -281,6 +332,78 @@ impl FromF32 for u16 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn config_range(
+        format: SampleFormat,
+        min_rate: u32,
+        max_rate: u32,
+    ) -> SupportedStreamConfigRange {
+        SupportedStreamConfigRange::new(
+            2,
+            min_rate,
+            max_rate,
+            cpal::SupportedBufferSize::Unknown,
+            format,
+        )
+    }
+
+    #[test]
+    fn supported_device_default_does_not_enumerate_alternatives() {
+        let preferred = config_range(SampleFormat::F32, 48_000, 48_000).with_sample_rate(48_000);
+        let selected = select_supported_config(
+            preferred,
+            || -> Result<std::iter::Empty<SupportedStreamConfigRange>> {
+                panic!("a supported default must not require enumeration")
+            },
+        )
+        .unwrap();
+        assert_eq!(selected.sample_format(), SampleFormat::F32);
+        assert_eq!(selected.sample_rate(), 48_000);
+        assert_eq!(selected.channels(), 2);
+    }
+
+    #[test]
+    fn high_precision_device_defaults_fall_back_to_supported_pcm() {
+        for format in [SampleFormat::I32, SampleFormat::I24, SampleFormat::F64] {
+            let preferred = config_range(format, 48_000, 48_000).with_sample_rate(48_000);
+            let selected = select_supported_config(preferred, || {
+                Ok([
+                    config_range(format, 44_100, 96_000),
+                    config_range(SampleFormat::I16, 44_100, 96_000),
+                ]
+                .into_iter())
+            })
+            .unwrap();
+            assert_eq!(selected.sample_format(), SampleFormat::I16);
+            assert_eq!(selected.sample_rate(), 48_000);
+            assert_eq!(selected.channels(), 2);
+        }
+    }
+
+    #[test]
+    fn fallback_rate_stays_inside_the_selected_device_range() {
+        for preferred_rate in [8_000, 96_000] {
+            let preferred = config_range(SampleFormat::I32, preferred_rate, preferred_rate)
+                .with_sample_rate(preferred_rate);
+            let selected = select_supported_config(preferred, || {
+                Ok([config_range(SampleFormat::I16, 44_100, 48_000)].into_iter())
+            })
+            .unwrap();
+            assert_eq!(selected.sample_rate(), preferred_rate.clamp(44_100, 48_000));
+        }
+    }
+
+    #[test]
+    fn device_without_a_supported_sample_format_returns_an_error() {
+        let preferred = config_range(SampleFormat::I24, 48_000, 48_000).with_sample_rate(48_000);
+        let err = select_supported_config(preferred, || {
+            Ok([config_range(SampleFormat::I24, 48_000, 48_000)].into_iter())
+        })
+        .unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("no f32, i16, or u16 configuration"));
+    }
 
     #[test]
     fn resample_identity() {

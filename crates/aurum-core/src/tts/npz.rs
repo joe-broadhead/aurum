@@ -72,7 +72,13 @@ pub fn load_voices_npz(path: &Path) -> Result<HashMap<String, VoiceMatrix>> {
             model: path.display().to_string(),
             reason: format!("zip entry: {e}"),
         })?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|e| ProviderError::ModelLoad {
+                model: path.display().to_string(),
+                reason: format!("invalid npz entry filename: {e}"),
+            })?
+            .into_owned();
         if name.len() > MAX_NPZ_FILENAME_LEN {
             return Err(ProviderError::ModelLoad {
                 model: path.display().to_string(),
@@ -315,4 +321,63 @@ fn parse_shape(s: &str) -> Result<Vec<usize>> {
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+    use zip::write::SimpleFileOptions;
+
+    fn voice_archive(name: &str) -> Vec<u8> {
+        let mut header = "{'descr': '<f4', 'fortran_order': False, 'shape': (1, 2), }".to_string();
+        while !(10 + header.len() + 1).is_multiple_of(16) {
+            header.push(' ');
+        }
+        header.push('\n');
+        let mut npy = b"\x93NUMPY\x01\x00".to_vec();
+        npy.extend_from_slice(&(header.len() as u16).to_le_bytes());
+        npy.extend_from_slice(header.as_bytes());
+        npy.extend_from_slice(&1.25f32.to_le_bytes());
+        npy.extend_from_slice(&(-2.5f32).to_le_bytes());
+
+        let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let options =
+            SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+        zip.start_file(name, options).unwrap();
+        zip.write_all(&npy).unwrap();
+        zip.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn loads_ascii_and_unicode_voice_filenames() {
+        for (filename, key) in [
+            ("expr-voice-3-f.npy", "expr-voice-3-f"),
+            ("voices/voix-\u{e9}.npy", "voix-\u{e9}"),
+        ] {
+            let file = tempfile::NamedTempFile::new().unwrap();
+            std::fs::write(file.path(), voice_archive(filename)).unwrap();
+            let voices = load_voices_npz(file.path()).unwrap();
+            assert_eq!(voices.len(), 1);
+            let matrix = voices.get(key).expect("decoded voice filename");
+            assert_eq!((matrix.nrows, matrix.ncols), (1, 2));
+            assert_eq!(matrix.data, vec![1.25, -2.5]);
+        }
+    }
+
+    #[test]
+    fn rejects_overlong_voice_filename_as_model_load_error() {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let filename = format!("{}.npy", "v".repeat(MAX_NPZ_FILENAME_LEN));
+        std::fs::write(file.path(), voice_archive(&filename)).unwrap();
+        let err = load_voices_npz(file.path()).unwrap_err();
+        assert!(
+            matches!(
+                &err,
+                crate::error::AurumError::Provider(ProviderError::ModelLoad { reason, .. })
+                    if reason == "npz entry filename too long"
+            ),
+            "{err}"
+        );
+    }
 }

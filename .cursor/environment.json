@@ -1,0 +1,9 @@
+{
+  "name": "aurum",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "user": "ubuntu",
+  "install": "bash .cursor/install.sh"
+}

@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Microphone/playback compatibility with CPAL 0.18:** updated stream creation
   for the new API and select a supported PCM configuration when a device's
   default uses a higher-precision sample format than Aurum's callbacks accept.
+- **Dependency security:** upgraded ZIP parsing to version 9 and reject invalid
+  NPZ entry names as model-load errors. Refreshed vulnerable QUIC/TLS, root
+  certificate, and Tokio dependencies and replaced a yanked ChaCha20 release.
 - **Build/lint compatibility with Rust 1.98:** replaced `slice::chunks_exact` with
   the const-generic `slice::as_chunks` in the PCM decode and NPY float paths,
   fixing the new `clippy::chunks_exact_to_as_chunks` errors that broke the Lint

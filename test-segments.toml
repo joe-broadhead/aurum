@@ -1,0 +1,135 @@
+[meta]
+reference_host = "macos-arm64 15c/48g"
+universe = ["scripts/list-universe.sh"]
+notes = "Live provider catalogue probes stay outside this manifest: they require provider credentials and a live endpoint."
+
+[[segment]]
+id = "test-runner"
+ci = []
+title = "Test selection and outcome reporting"
+kind = "test"
+run = ["python3", "scripts/test_testctl.py"]
+list = ["python3", "scripts/test_testctl.py", "--list"]
+expected_s = 3
+default = true
+notes = "Offline regression tests for partial runs, measurement failures, discovery errors, and budget protection. Measured at 2.4s on macos-arm64 10c; no existing CI job runs this segment."
+
+[[segment]]
+id = "fmt"
+ci = ["ci.yml:lint"]
+title = "Formatting"
+kind = "static"
+run = ["cargo", "fmt", "--all", "--check"]
+expected_s = 1
+default = true
+notes = "Cheap enough to run on every change."
+
+[[segment]]
+id = "lint"
+ci = ["ci.yml:lint"]
+title = "Clippy, all targets"
+kind = "static"
+run = ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--", "-D", "warnings"]
+expected_s = 40
+default = true
+notes = "Warm build. A cold build is several minutes."
+
+[[segment]]
+id = "test-core"
+ci = ["ci.yml:test"]
+title = "aurum-core unit and integration tests"
+kind = "test"
+run = ["cargo", "nextest", "run", "-p", "aurum-core", "--locked", "--no-fail-fast"]
+list = ["cargo", "nextest", "list", "-p", "aurum-core", "--locked", "--message-format", "json"]
+expected_s = 18
+default = true
+notes = "The largest crate: parsers, fault injection, cancellation, mutation semantics."
+
+[[segment]]
+id = "test-cli"
+ci = ["ci.yml:test"]
+title = "aurum CLI tests"
+kind = "test"
+run = ["cargo", "nextest", "run", "-p", "aurum-stt", "--locked", "--no-fail-fast"]
+list = ["cargo", "nextest", "list", "-p", "aurum-stt", "--locked", "--message-format", "json"]
+expected_s = 6
+default = true
+notes = "Output and config integration tests."
+
+[[segment]]
+id = "test-ffi"
+ci = ["ci.yml:test"]
+title = "C ABI and sidecar tests"
+kind = "test"
+run = ["cargo", "nextest", "run", "-p", "aurum-ffi", "--locked", "--no-fail-fast"]
+list = ["cargo", "nextest", "list", "-p", "aurum-ffi", "--locked", "--message-format", "json"]
+expected_s = 5
+default = true
+notes = "abi_layout, c_api_smoke, stdio_sidecar."
+
+[[segment]]
+id = "test-doc"
+ci = ["ci.yml:test"]
+title = "Doctests"
+kind = "test"
+run = ["cargo", "test", "--workspace", "--doc", "--locked"]
+list = ["scripts/list-doctests.sh"]
+expected_s = 6
+default = true
+notes = "nextest does not run doctests; the universe script unions them in."
+
+[[segment]]
+id = "test-ignored"
+ci = ["ci.yml:integration-local (local_integration only)"]
+title = "Ignored real-model and synthesis tests"
+kind = "test"
+run = ["cargo", "nextest", "run", "-p", "aurum-core", "--locked", "--run-ignored", "ignored-only"]
+list = ["cargo", "nextest", "list", "-p", "aurum-core", "--locked", "--message-format", "json"]
+expected_s = 120
+ignored = "only"
+nightly = true
+requires = ["artifacts:AURUM_INTEGRATION", "artifacts:AURUM_TTS_INTEGRATION"]
+notes = "The four #[ignore] tests: real TTS synthesis and the local tiny-model speech test. They need provisioned model files, so they skip unless the artifact variable is set."
+
+[[segment]]
+id = "bench-smoke"
+ci = []
+title = "Micro-benchmark smoke"
+kind = "static"
+run = ["scripts/bench_smoke.sh"]
+expected_s = 60
+requires = ["binary:cmake"]
+notes = "Re-runs a subset of aurum-core unit tests for timing. Static on purpose: it must not appear twice in the verified universe."
+
+[[segment]]
+id = "coverage"
+ci = ["ci.yml:coverage-trust"]
+title = "Trust-boundary coverage"
+kind = "static"
+run = ["scripts/coverage_trust.sh"]
+expected_s = 300
+requires = ["network", "binary:cargo-llvm-cov"]
+nightly = true
+notes = "Installs cargo-llvm-cov when missing; produces per-module reports."
+
+[[segment]]
+id = "clean-install"
+ci = ["ci.yml:clean-install"]
+title = "Clean-install smoke"
+kind = "static"
+run = ["scripts/clean_install_smoke.sh", "--from-source"]
+expected_s = 300
+requires = ["network"]
+nightly = true
+notes = "Installs into a temporary directory and runs the offline doctor."
+
+[[segment]]
+id = "release-gate"
+ci = []
+title = "Release gate"
+kind = "static"
+run = ["make", "release-gate"]
+expected_s = 600
+requires = ["network"]
+nightly = true
+notes = "Packaging and release checks. Packaging steps need crates.io."

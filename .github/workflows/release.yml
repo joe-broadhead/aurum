@@ -76,7 +76,7 @@ jobs:
           ./scripts/version_check.sh
           grep -qE "^## \\[${RELEASE_VERSION}\\]" CHANGELOG.md
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
       - name: Install build deps
@@ -101,7 +101,7 @@ jobs:
           chmod +x scripts/generate_sbom.sh
           ./scripts/generate_sbom.sh dist/sbom
       - name: Upload SBOM artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           # Not named aurum-* so binary download pattern stays binary-only.
           name: sbom-inventory
@@ -140,7 +140,7 @@ jobs:
           ref: ${{ needs.validate.outputs.release_tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
           targets: ${{ matrix.target }}
@@ -159,7 +159,7 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install cmake -y --no-progress
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           prefix-key: v2-aurum-release
           key: ${{ matrix.target }}
@@ -180,7 +180,7 @@ jobs:
           ls -la dist
 
       - name: Upload artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: aurum-${{ matrix.asset }}
           path: dist/*
@@ -209,7 +209,7 @@ jobs:
           ref: ${{ needs.validate.outputs.release_tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
 
@@ -227,7 +227,7 @@ jobs:
         if: runner.os == 'Windows'
         run: choco install cmake -y --no-progress
 
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6  # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
         with:
           prefix-key: v2-aurum-release-sdk
           key: ${{ matrix.asset }}
@@ -248,7 +248,7 @@ jobs:
           ls -la dist/sdk-upload
 
       - name: Upload SDK artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: aurum-sdk-${{ matrix.asset }}
           path: dist/sdk-upload/*
@@ -279,14 +279,14 @@ jobs:
           cosign-release: v2.4.3
 
       - name: Download binary artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           path: artifacts
           pattern: aurum-*
           merge-multiple: true
 
       - name: Download SBOM artifact
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: sbom-inventory
           path: sbom
@@ -434,7 +434,7 @@ jobs:
           ref: ${{ needs.validate.outputs.release_tag }}
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de  # master; pin SHA (JOE-1634)
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # master; pin SHA (JOE-1634)
         with:
           toolchain: stable
           targets: x86_64-unknown-linux-gnu
@@ -445,7 +445,7 @@ jobs:
           sudo apt-get install -y build-essential cmake pkg-config libasound2-dev
 
       - name: Download primary linux binary (builder A)
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333  # v8.0.2
         with:
           name: aurum-linux-x86_64
           path: primary
@@ -462,7 +462,7 @@ jobs:
             --out dist/repro
 
       - name: Upload variance report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
         with:
           name: repro-variance-linux-x86_64
           path: dist/repro/VARIANCE_REPORT.md

@@ -237,8 +237,12 @@ jobs:
           cargo install cargo-deny --locked --version 0.19.0 --force
       - name: Assert security tool install is fail-closed
         run: ./scripts/check_security_tool_pins.sh
+      - name: Validate isolated fuzz lockfile
+        run: cargo metadata --manifest-path fuzz/Cargo.toml --locked --format-version 1 > /dev/null
       - name: cargo audit
         run: cargo audit
+      - name: cargo audit (isolated fuzz workspace)
+        run: cargo audit --file fuzz/Cargo.lock
       - name: cargo deny
         run: cargo deny check
 

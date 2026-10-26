@@ -24,6 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Fuzz dependency security:** patched vulnerable dependencies in the isolated
+  fuzz lockfile and added CI checks for its synchronization and security audit.
 - **Dependency security:** upgraded ZIP parsing to version 9 and reject invalid
   NPZ entry names as model-load errors. Refreshed vulnerable QUIC/TLS, root
   certificate, and Tokio dependencies and replaced a yanked ChaCha20 release.

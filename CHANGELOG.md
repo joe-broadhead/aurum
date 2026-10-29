@@ -24,6 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Provider credential guidance (#167):** missing OpenAI, ElevenLabs and xAI
+  keys now name the selected provider and its environment variable/config section
+  instead of suggesting an OpenRouter key, including in `converse --stdio`.
 - **Fuzz dependency security:** patched vulnerable dependencies in the isolated
   fuzz lockfile and added CI checks for its synchronization and security audit.
 - **Dependency security:** upgraded ZIP parsing to version 9 and reject invalid

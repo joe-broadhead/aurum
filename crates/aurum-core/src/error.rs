@@ -136,8 +136,9 @@ pub enum UserError {
     /// Provider-scoped missing credential (preferred over OpenRouter-only wording).
     #[error(
         "API key is missing for provider '{provider}'.\n  \
-         Set the matching environment variable or config section for that provider, then retry.\n  \
-         Hint: never paste secrets into support tickets."
+         {hint}\n  \
+         Hint: never paste secrets into support tickets.",
+        hint = missing_provider_credential_hint(.provider)
     )]
     MissingProviderCredential { provider: String },
 
@@ -162,6 +163,16 @@ pub enum UserError {
 
     #[error("{message}")]
     Other { message: String },
+}
+
+fn missing_provider_credential_hint(provider: &str) -> &'static str {
+    match provider {
+        "openrouter" => "Set OPENROUTER_API_KEY in your environment, or add api_key under [providers.openrouter] in the config file.",
+        "openai" => "Set OPENAI_API_KEY in your environment, or add api_key under [providers.openai] in the config file.",
+        "elevenlabs" => "Set ELEVENLABS_API_KEY in your environment, or add api_key under [providers.elevenlabs] in the config file.",
+        "xai" => "Set XAI_API_KEY in your environment, or add api_key under [providers.xai] in the config file.",
+        _ => "Set the matching environment variable or config section for that provider, then retry.",
+    }
 }
 
 #[derive(Debug, Error)]

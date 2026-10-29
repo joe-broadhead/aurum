@@ -32,6 +32,22 @@ pub struct CacheEntry {
     pub expected_sha256: Option<String>,
     pub state: VerifyState,
     pub last_error: Option<String>,
+    /// `false` when a deployment catalogue disables this model. Its file is
+    /// still inventoried and verified (integrity does not depend on policy),
+    /// but no selection path will load or re-download it.
+    #[serde(skip_serializing_if = "is_true")]
+    pub enabled: bool,
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+/// Flag entries whose model `allowed` rejects (see [`CacheEntry::enabled`]).
+pub fn mark_disabled(entries: &mut [CacheEntry], allowed: impl Fn(&str) -> bool) {
+    for entry in entries.iter_mut().filter(|e| e.kind == "stt") {
+        entry.enabled = allowed(&entry.id);
+    }
 }
 
 /// Cheap status (existence + size) without full hashing.
@@ -72,6 +88,7 @@ pub fn status_stt(cache_dir: &Path) -> Vec<CacheEntry> {
                 expected_sha256: pin.map(|s| s.to_string()),
                 state,
                 last_error: None,
+                enabled: true,
             }
         })
         .collect()
@@ -100,6 +117,7 @@ fn verify_one_stt(cache_dir: &Path, info: &ModelInfo, path: &Path) -> CacheEntry
             expected_sha256: None,
             state: VerifyState::Quarantined,
             last_error: Some("artifact is in quarantine".into()),
+            enabled: true,
         };
     }
 
@@ -113,6 +131,7 @@ fn verify_one_stt(cache_dir: &Path, info: &ModelInfo, path: &Path) -> CacheEntry
         expected_sha256: None,
         state: VerifyState::Missing,
         last_error: None,
+        enabled: true,
     };
 
     entry.expected_sha256 = model::pinned_sha256(info.filename).map(|s| s.to_string());
@@ -194,7 +213,11 @@ pub fn format_status(entries: &[CacheEntry]) -> String {
             "{:<8} {:<22} {:<12} {:>12}  {}\n",
             e.kind,
             e.id,
-            format!("{:?}", e.state).to_ascii_lowercase(),
+            if e.enabled {
+                format!("{:?}", e.state).to_ascii_lowercase()
+            } else {
+                format!("{:?}*", e.state).to_ascii_lowercase()
+            },
             e.actual_bytes
                 .map(|b| b.to_string())
                 .unwrap_or_else(|| "—".into()),
@@ -204,6 +227,9 @@ pub fn format_status(entries: &[CacheEntry]) -> String {
     out.push_str(
         "\nNote: `status` is cheap (size/existence). Use `aurum cache verify` for full digests.\n",
     );
+    if entries.iter().any(|e| !e.enabled) {
+        out.push_str("* disabled by the deployment catalogue ([catalogue].path); never loaded or re-downloaded.\n");
+    }
     out
 }
 

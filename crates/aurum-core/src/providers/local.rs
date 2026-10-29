@@ -211,6 +211,10 @@ pub struct LocalWhisperProvider {
     pool: Arc<SttContextPool>,
     /// Admission governor for load/STT permits.
     governor: Arc<ResourceGovernor>,
+    /// Deployment model policy. When set, a model the effective catalogue
+    /// disables is rejected here, before any download or load, so hosts that
+    /// build this provider directly are covered too.
+    model_policy: Option<Arc<crate::catalogue::EffectiveCatalogue>>,
 }
 
 impl LocalWhisperProvider {
@@ -235,6 +239,25 @@ impl LocalWhisperProvider {
             on_download_progress: None,
             pool,
             governor,
+            model_policy: None,
+        }
+    }
+
+    /// Enforce a deployment catalogue's model policy here, so `preload` and
+    /// `transcribe` refuse a disabled model before downloading it.
+    pub fn with_model_policy(
+        mut self,
+        catalogue: Arc<crate::catalogue::EffectiveCatalogue>,
+    ) -> Self {
+        self.model_policy = Some(catalogue);
+        self
+    }
+
+    /// Reject a model the deployment catalogue disables (no-op without one).
+    fn check_model_allowed(&self, model: &str) -> Result<()> {
+        match &self.model_policy {
+            Some(catalogue) => catalogue.check_stt_model_allowed(model),
+            None => Ok(()),
         }
     }
 
@@ -297,6 +320,7 @@ impl LocalWhisperProvider {
 
     /// Download (unless `local_only`) and load the model into this provider's pool.
     pub async fn preload(&self, model: &str) -> Result<PathBuf> {
+        self.check_model_allowed(model)?;
         let path =
             model::ensure_model_with_options(&self.cache_dir, model, self.ensure_opts()).await?;
         let model_name = model.to_string();
@@ -361,6 +385,7 @@ impl TranscriptionProvider for LocalWhisperProvider {
         op.emit("stt", "ensure_model");
 
         let model_name = options.model.clone();
+        self.check_model_allowed(&model_name)?;
         let language = options.language.clone();
         let timestamps = options.timestamps;
         let cancel = op.cancel.clone();

@@ -1,0 +1,17 @@
+# Inputs for the hash-locked conversion environment used by
+# scripts/prepare_portuguese_models.sh. Regenerate the lock with:
+#
+#   uv pip compile scripts/requirements/portuguese-prep.in \
+#     --universal --python-version 3.11 --generate-hashes \
+#     --extra-index-url https://download.pytorch.org/whl/cpu \
+#     --index-strategy unsafe-best-match --emit-index-url \
+#     -o scripts/requirements/portuguese-prep.txt
+#
+# CPU-only torch builds (+cpu) only exist for Linux x86_64 and Windows; other
+# platforms use the plain release, which is already CPU-only there.
+torch==2.2.2+cpu ; (sys_platform == "linux" and platform_machine == "x86_64") or sys_platform == "win32"
+torch==2.2.2 ; sys_platform == "darwin" or (sys_platform == "linux" and platform_machine == "aarch64")
+huggingface-hub==0.28.1
+numpy==1.26.4
+safetensors==0.4.3
+transformers==4.48.2

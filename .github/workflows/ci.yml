@@ -543,6 +543,8 @@ jobs:
           ./scripts/eval/prepare_stt_observatory_corpus.sh --recipe-check
           ./scripts/eval/prepare_stt_observatory_corpus.sh \
             --dry-run-production --cache-dir "$RUNNER_TEMP/aurum-obs-cache"
+      - name: Portuguese eval helper unit tests
+        run: python3 -m unittest discover -s scripts/eval/tests -p 'test_*.py' -v
 
   # Pure-Rust Miri suite (JOE-1889) — curated filters only; see qe-depth.md.
   miri:

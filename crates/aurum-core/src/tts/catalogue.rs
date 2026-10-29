@@ -23,9 +23,12 @@ const HF_BASE: &str = "https://huggingface.co";
 pub struct PackFile {
     pub filename: &'static str,
     pub sha256: &'static str,
-    pub approx_bytes: u64,
+    /// Exact reviewed size in bytes. Downloads and cache verification enforce
+    /// it alongside the SHA-256 pin, so a replaced release asset (GitHub tags
+    /// are mutable) or a truncated file fails closed.
+    pub size_bytes: u64,
     /// Absolute download URL. When `None`, resolved via Hugging Face
-    /// `{HF_BASE}/{hf_repo}/resolve/main/{filename}`.
+    /// `{HF_BASE}/{hf_repo}/resolve/{hf_revision}/{filename}`.
     pub url: Option<&'static str>,
 }
 
@@ -36,6 +39,8 @@ pub struct TtsModelInfo {
     pub notes: &'static str,
     /// HuggingFace repo id, e.g. `KittenML/kitten-tts-nano-0.8-int8`.
     pub hf_repo: &'static str,
+    /// Immutable Hugging Face commit used for `hf_repo` downloads (never `main`).
+    pub hf_revision: &'static str,
     pub onnx: PackFile,
     pub voices: PackFile,
     pub config: PackFile,
@@ -74,22 +79,23 @@ pub const MODELS: &[TtsModelInfo] = &[
         id: DEFAULT_TTS_MODEL,
         notes: "KittenTTS nano int8 ~25MB — default English ONNX",
         hf_repo: "KittenML/kitten-tts-nano-0.8-int8",
+        hf_revision: "84781d74e29ee25217551556398b42f80593a813",
         onnx: PackFile {
             filename: "kitten_tts_nano_v0_8.onnx",
             sha256: "f7b0afcbee92870b32b8e0276d855b954dc25470c9f051b376ac7eee537c76fc",
-            approx_bytes: 24_369_971,
+            size_bytes: 24_369_971,
             url: None,
         },
         voices: PackFile {
             filename: "voices.npz",
             sha256: "8aa7cee235abb0739cb51e6559685f65a4dacd95568833d05699b1633f519b3f",
-            approx_bytes: 3_278_902,
+            size_bytes: 3_278_902,
             url: None,
         },
         config: PackFile {
             filename: "config.json",
             sha256: "b66006ccbeccd4de5fc3c9272059c47f5725df7215fd889785c03602652fab64",
-            approx_bytes: 688,
+            size_bytes: 688,
             url: None,
         },
         sample_rate_hz: 24_000,
@@ -106,10 +112,11 @@ pub const MODELS: &[TtsModelInfo] = &[
         id: KOKORO_TTS_MODEL,
         notes: "Kokoro-82M int8 ~88MB ONNX — opt-in higher-quality English (not default)",
         hf_repo: "hexgrad/Kokoro-82M",
+        hf_revision: "f3ff3571791e39611d31c381e3a41a3af07b4987",
         onnx: PackFile {
             filename: "kokoro-v1.0.int8.onnx",
             sha256: "6e742170d309016e5891a994e1ce1559c702a2ccd0075e67ef7157974f6406cb",
-            approx_bytes: 92_361_271,
+            size_bytes: 92_361_271,
             url: Some(concat!(
                 "https://github.com/thewh1teagle/kokoro-onnx/releases/download/",
                 "model-files-v1.0/kokoro-v1.0.int8.onnx"
@@ -118,7 +125,7 @@ pub const MODELS: &[TtsModelInfo] = &[
         voices: PackFile {
             filename: "voices-v1.0.bin",
             sha256: "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
-            approx_bytes: 28_214_398,
+            size_bytes: 28_214_398,
             url: Some(concat!(
                 "https://github.com/thewh1teagle/kokoro-onnx/releases/download/",
                 "model-files-v1.0/voices-v1.0.bin"
@@ -127,9 +134,9 @@ pub const MODELS: &[TtsModelInfo] = &[
         config: PackFile {
             filename: "config.json",
             sha256: "5abb01e2403b072bf03d04fde160443e209d7a0dad49a423be15196b9b43c17f",
-            approx_bytes: 2_351,
+            size_bytes: 2_351,
             url: Some(
-                "https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/config.json?download=true",
+                "https://huggingface.co/hexgrad/Kokoro-82M/resolve/f3ff3571791e39611d31c381e3a41a3af07b4987/config.json?download=true",
             ),
         },
         sample_rate_hz: 24_000,
@@ -146,22 +153,23 @@ pub const MODELS: &[TtsModelInfo] = &[
         id: PLACEHOLDER_ADAPTER_MODEL,
         notes: "Catalogue placeholder for multi-adapter prep (not downloadable)",
         hf_repo: "aurum/not-shipped",
+        hf_revision: "0000000000000000000000000000000000000000",
         onnx: PackFile {
             filename: "not-shipped.onnx",
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
-            approx_bytes: 1,
+            size_bytes: 1,
             url: None,
         },
         voices: PackFile {
             filename: "not-shipped.npz",
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
-            approx_bytes: 1,
+            size_bytes: 1,
             url: None,
         },
         config: PackFile {
             filename: "not-shipped.json",
             sha256: "0000000000000000000000000000000000000000000000000000000000000000",
-            approx_bytes: 1,
+            size_bytes: 1,
             url: None,
         },
         sample_rate_hz: 24_000,
@@ -565,6 +573,17 @@ pub fn validate_speaking_rate(rate: f32) -> Result<f32> {
     Ok(rate)
 }
 
+/// Download URL for one pack file: its absolute URL, else the pinned HF revision.
+pub(crate) fn pack_file_url(info: &TtsModelInfo, file: &PackFile) -> String {
+    match file.url {
+        Some(absolute) => absolute.to_string(),
+        None => format!(
+            "{HF_BASE}/{}/resolve/{}/{}?download=true",
+            info.hf_repo, info.hf_revision, file.filename
+        ),
+    }
+}
+
 /// `<cache>/tts/`
 pub fn tts_cache_dir(cache_dir: &Path) -> PathBuf {
     cache_dir.join("tts")
@@ -611,25 +630,27 @@ pub fn is_pack_cached(cache_dir: &Path, model_name: &str) -> bool {
 }
 
 fn verify_pack(cache_dir: &Path, info: &TtsModelInfo) -> Result<()> {
-    verify_file(&onnx_path(cache_dir, info), info.onnx.sha256, info.id)?;
-    verify_file(&voices_path(cache_dir, info), info.voices.sha256, info.id)?;
-    verify_file(&config_path(cache_dir, info), info.config.sha256, info.id)?;
+    verify_file(&onnx_path(cache_dir, info), &info.onnx, info.id)?;
+    verify_file(&voices_path(cache_dir, info), &info.voices, info.id)?;
+    verify_file(&config_path(cache_dir, info), &info.config, info.id)?;
     Ok(())
 }
 
-fn verify_file(path: &Path, expected_sha: &str, model: &str) -> Result<()> {
+fn verify_file(path: &Path, pin: &PackFile, model: &str) -> Result<()> {
     if !path.exists() {
         return Err(UserError::ModelNotCached {
             model: model.to_string(),
         }
         .into());
     }
-    if !verify_against_expected(path, expected_sha) {
+    if !verify_against_expected(path, pin) {
         return Err(ProviderError::ModelDownload {
             model: model.to_string(),
             reason: format!(
-                "cached file {} failed pinned sha256 check ({expected_sha})",
-                path.display()
+                "cached file {} failed pinned size/sha256 check ({} bytes, {})",
+                path.display(),
+                pin.size_bytes,
+                pin.sha256
             ),
         }
         .into());
@@ -637,10 +658,14 @@ fn verify_file(path: &Path, expected_sha: &str, model: &str) -> Result<()> {
     Ok(())
 }
 
-fn verify_against_expected(path: &Path, expected: &str) -> bool {
+/// Exact size first (cheap, catches truncation), then the SHA-256 pin.
+fn verify_against_expected(path: &Path, pin: &PackFile) -> bool {
     let Ok(mut file) = File::open(path) else {
         return false;
     };
+    if file.metadata().map(|m| m.len()).ok() != Some(pin.size_bytes) {
+        return false;
+    }
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {
@@ -650,7 +675,7 @@ fn verify_against_expected(path: &Path, expected: &str) -> bool {
             Err(_) => return false,
         }
     }
-    hex::encode(hasher.finalize()) == expected
+    hex::encode(hasher.finalize()) == pin.sha256
 }
 
 pub fn list_models(cache_dir: &Path) -> Vec<ModelStatus> {
@@ -714,7 +739,7 @@ pub fn format_model_list(cache_dir: &Path) -> String {
         "----", "----", "------", "-------", "-----", "-----"
     ));
     for row in rows {
-        let size = format_bytes(row.info.onnx.approx_bytes + row.info.voices.approx_bytes);
+        let size = format_bytes(row.info.onnx.size_bytes + row.info.voices.size_bytes);
         let status = if row.cached { "cached" } else { "—" };
         out.push_str(&format!(
             "{:<22} {:>10}  {:<8}  {:<16}  {:<8}  {} [{}] provenance=builtin\n",
@@ -840,29 +865,23 @@ pub async fn ensure_voice_pack(
         eprintln!(
             "aurum: downloading TTS pack `{}` (~{}) — first run only …",
             info.id,
-            format_bytes(info.onnx.approx_bytes + info.voices.approx_bytes)
+            format_bytes(info.onnx.size_bytes + info.voices.size_bytes)
         );
     }
 
     let files = [info.config, info.onnx, info.voices];
     for file in files {
         let dest = pack_dir.join(file.filename);
-        if dest.exists() && verify_against_expected(&dest, file.sha256) {
+        if dest.exists() && verify_against_expected(&dest, &file) {
             continue;
         }
-        let url = match file.url {
-            Some(absolute) => absolute.to_string(),
-            None => format!(
-                "{HF_BASE}/{}/resolve/main/{}?download=true",
-                info.hf_repo, file.filename
-            ),
-        };
+        let url = pack_file_url(info, &file);
         if let Err(e) = download_pinned(
             info.id,
             &url,
             &dest,
             file.sha256,
-            file.approx_bytes,
+            file.size_bytes,
             show_progress,
         )
         .await
@@ -882,7 +901,7 @@ async fn download_pinned(
     url: &str,
     dest: &Path,
     expected_sha: &str,
-    approx_bytes: u64,
+    size_bytes: u64,
     show_progress: bool,
 ) -> Result<()> {
     tracing::info!(%url, path = %dest.display(), "downloading TTS asset");
@@ -891,8 +910,8 @@ async fn download_pinned(
         id: model,
         filename,
         sha256: expected_sha,
-        exact_bytes: None,
-        approx_bytes,
+        exact_bytes: Some(size_bytes),
+        approx_bytes: size_bytes,
         url,
     };
     let opts = DownloadOptions {
@@ -905,6 +924,25 @@ async fn download_pinned(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pack_file_verification_enforces_exact_size_before_hashing() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("asset.bin");
+        fs::write(&path, b"hello").unwrap();
+        // sha256("hello")
+        let sha = "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824";
+        let pin = |size_bytes| PackFile {
+            filename: "asset.bin",
+            sha256: sha,
+            size_bytes,
+            url: None,
+        };
+        assert!(verify_against_expected(&path, &pin(5)));
+        // Same digest pin, wrong size: a replaced or truncated asset fails.
+        assert!(!verify_against_expected(&path, &pin(4)));
+        assert!(verify_file(&path, &pin(6), "m").is_err());
+    }
 
     #[test]
     fn lookup_default_model() {

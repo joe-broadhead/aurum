@@ -61,6 +61,45 @@ report API can detect extreme n-gram loops as `degeneration_repetition`;
 ordinary CLI/JSON transcript output does not currently surface that event
 unless hosts consume `NormalizationReport` directly.
 
+### Portuguese specialists (experimental)
+
+Two experimental Q5 models are available for Portuguese. They are **never**
+selected automatically: `--language` is a decoding hint only, so
+`--language pt-BR` or `--language pt-PT` without `--model` still uses the
+default `base`. Opt in with an explicit `--model` (or `[stt].model`):
+
+```bash
+aurum input.wav --model medium-ptbr-q5_0 --language pt -o json
+aurum input.wav --model large-v3-ptpt-q5_0 --language pt -o json
+```
+
+`medium-ptbr-q5_0` downloads from an immutable, digest-pinned Hugging Face
+revision. `large-v3-ptpt-q5_0` is generated from the pinned INESC-ID
+`WhisperLv3-FT` checkpoint and therefore must be prepared locally:
+
+```bash
+scripts/prepare_portuguese_models.sh
+```
+
+The script installs a hash-locked Python environment
+(`scripts/requirements/portuguese-prep.txt`) and keeps its work directory under
+`${XDG_CACHE_HOME:-$HOME/.cache}/aurum/prepare-portuguese`. It refuses a work
+directory that is a symlink or that you do not own. It needs about 13 GiB of
+free space there. The finished artifact is staged into Aurum's model cache
+(see [Cache location](#cache-location); `~/Library/Caches/aurum/models/` on
+macOS). Pass `--models-dir` if your cache lives elsewhere. The script and its
+smoke-test fixture live in the source repository, so run it from an Aurum
+checkout.
+
+Both remain outside the speed/balance/quality profiles while dialect-specific
+quality, hallucination, and quantization evidence is reviewed.
+
+Recommended pairing: `medium-ptbr-q5_0` for Brazilian Portuguese audio and
+`large-v3-ptpt-q5_0` for European Portuguese audio. The Brazilian model
+downloads (~514 MB) on first explicit use. Selecting the European Portuguese
+model before running the command above fails with preparation guidance and
+never attempts a download.
+
 ## Catalogue (aliases)
 
 | Name | Approx size | Notes |
@@ -70,8 +109,10 @@ unless hosts consume `NormalizationReport` directly.
 | `base` | ~142 MB | Default full-precision |
 | `small` / `small.en` | ~444 MB | Higher accuracy |
 | `medium` / `medium.en` | ~1.4 GB | Large download |
+| `medium-ptbr-q5_0` | ~514 MB | **Experimental — Brazilian Portuguese specialist** |
 | `turbo` / `large-v3-turbo` | ~1.5 GB | Fast large |
 | `large-v3-q5_0` | ~1.0 GB | **Experimental — not recommended** |
+| `large-v3-ptpt-q5_0` | ~1.0 GB | **Experimental — European Portuguese specialist; prepared locally** |
 
 Aliases: `large` → `large-v3`, `turbo` → `large-v3-turbo`.
 
@@ -90,8 +131,14 @@ Aliases: `large` → `large-v3`, `turbo` → `large-v3-turbo`.
 | Linux | `~/.cache/aurum/models/` |
 | Windows | `%LOCALAPPDATA%\aurum\cache\models\` |
 
-First use downloads from Hugging Face (`ggerganov/whisper.cpp`). Cross-process
-locks prevent double downloads.
+Most models download from Hugging Face (`ggerganov/whisper.cpp`) at an
+immutable, reviewed revision (never a moving branch such as `main`); reviewed
+specialists use their own immutable source revision. Every artifact is also
+pinned by exact size and SHA-256. Prepared-local models never fabricate a
+download URL. Cross-process locks prevent double downloads.
+
+The built-in catalogue (ids, aliases, tiers, licenses, URLs and pins) is
+reviewed as one file, `crates/aurum-core/src/catalogue/model-catalogue.v1.toml`.
 
 ## Offline / Local Only
 

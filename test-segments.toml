@@ -15,6 +15,17 @@ default = true
 notes = "Offline regression tests for partial runs, measurement failures, discovery errors, and budget protection. Measured at 2.4s on macos-arm64 10c; no existing CI job runs this segment."
 
 [[segment]]
+id = "test-eval-helpers"
+ci = ["ci.yml:observatory recipe check"]
+title = "Portuguese eval helper unit tests"
+kind = "test"
+run = ["python3", "-m", "unittest", "discover", "-s", "scripts/eval/tests", "-p", "test_*.py"]
+list = ["python3", "scripts/eval/tests/list_tests.py"]
+expected_s = 2
+default = true
+notes = "Offline regressions for the dev-only Portuguese corpus and quantization helpers."
+
+[[segment]]
 id = "fmt"
 ci = ["ci.yml:lint"]
 title = "Formatting"

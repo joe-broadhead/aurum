@@ -188,11 +188,12 @@ impl ModelPackManifest {
     }
 }
 
+/// Whether `id` names a registered adapter.
+///
+/// The id set is the catalogue's `TTS_ADAPTER_IDS`, so a pack the registry
+/// accepts is never rejected by the catalogue (or the reverse).
 pub fn known_adapter_id(id: &str) -> bool {
-    matches!(
-        id,
-        ADAPTER_KITTEN_ONNX_V1 | ADAPTER_FAKE_SINE_V1 | ADAPTER_KOKORO_ONNX_V0
-    )
+    crate::catalogue::TTS_ADAPTER_IDS.contains(&id)
 }
 
 /// Static metadata for a registered adapter.
@@ -364,5 +365,26 @@ mod tests {
         m.adapter_version = 0;
         m.model_id = "kokoro-82m-int8".into();
         preflight_manifest(&m).unwrap();
+    }
+
+    /// The catalogue validates adapter ids too, so the registry and the
+    /// catalogue must name exactly the same set. A new adapter (or a stale
+    /// placeholder id) fails here rather than at catalogue load.
+    #[test]
+    fn catalogue_adapter_ids_match_the_registry() {
+        let registered: Vec<&str> = list_adapters().iter().map(|a| a.id).collect();
+        let mut sorted = registered.clone();
+        sorted.sort_unstable();
+        let mut expected = crate::catalogue::TTS_ADAPTER_IDS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(sorted, expected);
+        for id in [
+            ADAPTER_KITTEN_ONNX_V1,
+            ADAPTER_FAKE_SINE_V1,
+            ADAPTER_KOKORO_ONNX_V0,
+        ] {
+            assert!(known_adapter_id(id), "{id}");
+        }
+        assert!(!known_adapter_id("placeholder-v0"));
     }
 }

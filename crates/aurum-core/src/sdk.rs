@@ -332,10 +332,7 @@ impl AurumConfig {
             },
             stt: SttConfig {
                 provider: c.provider.clone(),
-                model: c
-                    .model
-                    .clone()
-                    .unwrap_or_else(|| c.resolve_model_or_default()),
+                model: c.model.clone().unwrap_or_else(|| c.default_stt_model()),
                 language: c.language.clone(),
                 timestamps: c.timestamps,
             },
@@ -392,22 +389,34 @@ impl AurumConfig {
     }
 }
 
-// Helper on Config for model default without falling through CLI.
-trait ResolveModelOrDefault {
-    fn resolve_model_or_default(&self) -> String;
-}
-
-impl ResolveModelOrDefault for Config {
-    fn resolve_model_or_default(&self) -> String {
-        self.model
-            .clone()
-            .unwrap_or_else(|| crate::config::DEFAULT_LOCAL_MODEL.into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `Config::load` already fills `model` from the deployment default; this
+    /// covers a host that projects a `Config` it built itself (`model: None`),
+    /// which must not fall back to a `base` the deployment disabled.
+    #[test]
+    fn projected_config_uses_the_deployment_stt_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let catalogue = dir.path().join("catalogue.toml");
+        std::fs::write(
+            &catalogue,
+            "schema_version = 1\n[defaults.stt]\nglobal = \"tiny-q5_1\"\n",
+        )
+        .unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, format!("[catalogue]\npath = {:?}\n", catalogue)).unwrap();
+        let mut cfg = Config::load_from_required(&config).unwrap();
+        cfg.cache_dir = dir.path().join("cache");
+        // Loaded configs already carry the catalogue default.
+        assert_eq!(cfg.model.as_deref(), Some("tiny-q5_1"));
+        // A host-built projection may leave it unset.
+        cfg.model = None;
+        assert_eq!(cfg.default_stt_model(), "tiny-q5_1");
+        let projected = AurumConfig::try_from_config(cfg).unwrap();
+        assert_eq!(projected.stt.model, "tiny-q5_1");
+    }
 
     #[test]
     fn transcription_request_validation() {
@@ -460,6 +469,7 @@ mod tests {
         let cfg = Config {
             provider: "local".into(),
             model: Some("base".into()),
+            configured_stt_model: None,
             language: "en".into(),
             output: "txt".into(),
             output_file: None,
@@ -485,6 +495,8 @@ mod tests {
             tts_pack_dir: None,
             tts_allow_unverified: false,
             tts_custom_models: vec![],
+            catalogue: crate::catalogue::EffectiveCatalogue::builtin().unwrap(),
+            catalogue_path: None,
             local_only: false,
             config_path: None,
             cache_dir: std::env::temp_dir().join("aurum-sdk-test-cache"),

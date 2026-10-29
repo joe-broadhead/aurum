@@ -36,6 +36,10 @@ pub struct ProviderBuildContext {
     tts_max_chars: Option<usize>,
     stt_pool: Option<Arc<SttContextPool>>,
     governor: Option<Arc<ResourceGovernor>>,
+    /// Deployment model policy, when the caller loaded a config file. Local
+    /// providers honour it so a disabled model stays unusable even when a host
+    /// builds the provider directly instead of going through `resolve_model`.
+    model_policy: Option<Arc<crate::catalogue::EffectiveCatalogue>>,
     metrics: Option<Arc<Metrics>>,
     #[cfg(feature = "tts")]
     tts_pool: Option<Arc<TtsSessionPool>>,
@@ -56,6 +60,7 @@ impl ProviderBuildContext {
             tts_max_chars: None,
             stt_pool: None,
             governor: None,
+            model_policy: None,
             metrics: None,
             #[cfg(feature = "tts")]
             tts_pool: None,
@@ -113,6 +118,15 @@ impl ProviderBuildContext {
         self
     }
 
+    /// Attach the effective deployment model policy.
+    pub fn with_model_policy(
+        mut self,
+        catalogue: Arc<crate::catalogue::EffectiveCatalogue>,
+    ) -> Self {
+        self.model_policy = Some(catalogue);
+        self
+    }
+
     pub fn with_metrics(mut self, metrics: Arc<Metrics>) -> Self {
         self.metrics = Some(metrics);
         self
@@ -162,6 +176,11 @@ impl ProviderBuildContext {
 
     pub fn governor(&self) -> Option<&Arc<ResourceGovernor>> {
         self.governor.as_ref()
+    }
+
+    /// The deployment model policy, when one was loaded.
+    pub fn model_policy(&self) -> Option<&Arc<crate::catalogue::EffectiveCatalogue>> {
+        self.model_policy.as_ref()
     }
 
     pub fn metrics(&self) -> Option<&Arc<Metrics>> {

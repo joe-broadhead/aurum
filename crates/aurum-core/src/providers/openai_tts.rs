@@ -103,7 +103,9 @@ impl OpenAiTtsProvider {
     ) -> Result<Self> {
         let api_key = api_key
             .filter(|s| !s.expose().trim().is_empty())
-            .ok_or(UserError::MissingApiKey)?;
+            .ok_or_else(|| UserError::MissingProviderCredential {
+                provider: PROVIDER_NAME.into(),
+            })?;
 
         if base_url
             .as_deref()

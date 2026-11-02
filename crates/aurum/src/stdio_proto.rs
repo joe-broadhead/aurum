@@ -14,6 +14,9 @@ pub const MAX_LINE_BYTES: usize = 256 * 1024;
 
 /// Capability advertised in `ready.caps` when `synthesize` honours `speaking_rate`.
 pub const CAP_SYNTHESIZE_SPEAKING_RATE: &str = "synthesize_speaking_rate";
+/// Capability advertised in `ready.caps` when `abort` cancels a `synthesize`
+/// sent before it (running or queued). Older sidecars ignore `abort` there.
+pub const CAP_SYNTHESIZE_ABORT: &str = "synthesize_abort";
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum InCmd {
@@ -129,7 +132,13 @@ pub fn event_json(ev: &OutEvent) -> Value {
             "type": "ready",
             "stt_provider": stt_provider,
             "tts_provider": tts_provider,
-            "caps": ["transcribe", "synthesize", "speak", CAP_SYNTHESIZE_SPEAKING_RATE],
+            "caps": [
+                "transcribe",
+                "synthesize",
+                "speak",
+                CAP_SYNTHESIZE_SPEAKING_RATE,
+                CAP_SYNTHESIZE_ABORT,
+            ],
         }),
         OutEvent::UserFinal {
             text,

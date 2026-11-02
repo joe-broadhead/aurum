@@ -59,6 +59,12 @@ pub struct ConverseCli {
     #[arg(long, value_name = "NAME")]
     pub voice: Option<String>,
 
+    /// TTS speaking-rate multiplier (0.5..=2.0; default `[tts].speaking_rate`).
+    /// Providers may narrow the range. `--stdio` `synthesize` may override it
+    /// per request with `speaking_rate`.
+    #[arg(long = "speaking-rate", value_name = "RATE")]
+    pub speaking_rate: Option<f32>,
+
     /// Agent reply text (mutually exclusive with `--reply-file` and `--llm-provider`).
     #[arg(long = "reply-text", value_name = "TEXT")]
     pub reply_text: Option<String>,
@@ -197,6 +203,9 @@ pub async fn run_converse(cli: ConverseCli) -> Result<()> {
         resolve_converse_tts_model(tts_id.as_str(), cli.tts_model.as_deref(), &cfg.tts_model)?;
     if let Some(v) = cli.voice.as_deref() {
         cfg.tts_voice = v.to_string();
+    }
+    if let Some(rate) = cli.speaking_rate {
+        cfg.tts_speaking_rate = validate_cli_speaking_rate(rate)?;
     }
 
     let engine = aurum_core::AurumEngine::from_config(cfg)?;
@@ -546,8 +555,13 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                         emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                     }
                 }
-                Ok(InCmd::Synthesize { text, path }) => {
-                    if let Err(e) = sidecar_synthesize(&mut live, &text, &path).await {
+                Ok(InCmd::Synthesize {
+                    text,
+                    path,
+                    speaking_rate,
+                }) => {
+                    if let Err(e) = sidecar_synthesize(&mut live, &text, &path, speaking_rate).await
+                    {
                         emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                     }
                 }
@@ -702,14 +716,24 @@ async fn sidecar_transcribe_inner(live: &mut LiveSession, path: &str) -> Result<
     Ok(())
 }
 
-async fn sidecar_synthesize(live: &mut LiveSession, text: &str, path: &str) -> Result<()> {
+async fn sidecar_synthesize(
+    live: &mut LiveSession,
+    text: &str,
+    path: &str,
+    speaking_rate: Option<f32>,
+) -> Result<()> {
     live.begin_sidecar_op()?;
-    let result = sidecar_synthesize_inner(live, text, path).await;
+    let result = sidecar_synthesize_inner(live, text, path, speaking_rate).await;
     live.end_sidecar_op();
     result
 }
 
-async fn sidecar_synthesize_inner(live: &mut LiveSession, text: &str, path: &str) -> Result<()> {
+async fn sidecar_synthesize_inner(
+    live: &mut LiveSession,
+    text: &str,
+    path: &str,
+    speaking_rate: Option<f32>,
+) -> Result<()> {
     let path = require_absolute_path(path)?;
     aurum_core::tts::validate::validate_output_path(path)?;
     aurum_core::tts::validate::validate_text(text)?;
@@ -727,7 +751,9 @@ async fn sidecar_synthesize_inner(live: &mut LiveSession, text: &str, path: &str
         model,
         voice,
         language: cfg.tts_language.clone(),
-        speaking_rate: cfg.tts_speaking_rate,
+        // Per-request `speaking_rate` (validated by the protocol parser) wins over the
+        // session default.
+        speaking_rate: speaking_rate.unwrap_or(cfg.tts_speaking_rate),
         timeout_ms: cfg.tts_timeout_ms,
         local_only: cfg.local_only,
         ..Default::default()
@@ -993,6 +1019,20 @@ fn read_reply(text: Option<&str>, file: Option<&std::path::Path>) -> Result<Stri
     }
 }
 
+/// `--speaking-rate`: fail closed outside the engine range (no silent clamp).
+fn validate_cli_speaking_rate(rate: f32) -> Result<f32> {
+    use aurum_core::tts::validate::{SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
+    if !rate.is_finite() || !(SPEAKING_RATE_MIN..=SPEAKING_RATE_MAX).contains(&rate) {
+        return Err(UserError::Other {
+            message: format!(
+                "--speaking-rate must be in {SPEAKING_RATE_MIN}..={SPEAKING_RATE_MAX} (got {rate})"
+            ),
+        }
+        .into());
+    }
+    Ok(rate)
+}
+
 /// Live-only: when ElevenLabs is selected and config still has a local model id,
 /// prefer flash over the catalogue default (`eleven_multilingual_v2`).
 fn resolve_converse_tts_model(
@@ -1158,6 +1198,27 @@ mod tests {
             let arg = format!("--max-utterance-secs={bad}");
             let err = parse(&[arg.as_str()]).unwrap_err();
             assert!(err.to_string().contains("--max-utterance-secs"), "{err}");
+        }
+    }
+
+    #[test]
+    fn speaking_rate_flag_parses_and_validates() {
+        let cli = crate::cli::Cli::try_parse_from([
+            "aurum",
+            "converse",
+            "--stdio",
+            "--speaking-rate",
+            "1.25",
+        ])
+        .unwrap();
+        let Some(crate::cli::Commands::Converse(c)) = cli.command else {
+            panic!("expected Converse");
+        };
+        assert_eq!(c.speaking_rate, Some(1.25));
+        assert_eq!(validate_cli_speaking_rate(1.25).unwrap(), 1.25);
+        for bad in [0.0, 0.49, 2.01, f32::NAN, f32::INFINITY] {
+            let err = validate_cli_speaking_rate(bad).unwrap_err();
+            assert!(err.to_string().contains("--speaking-rate"), "{err}");
         }
     }
 

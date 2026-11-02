@@ -186,6 +186,7 @@ Options:
       --tts-provider <PROVIDER>    TTS provider (registry id; default `local`)
       --tts-model <NAME>           TTS model id
       --voice <NAME>               TTS voice id (required for ElevenLabs; never remapped from Luna)
+      --speaking-rate <RATE>       TTS speaking-rate multiplier (0.5..=2.0; default `[tts].speaking_rate`). Providers may narrow the range. `--stdio` `synthesize` may override it per request with `speaking_rate`
       --reply-text <TEXT>          Agent reply text (mutually exclusive with `--reply-file` and `--llm-provider`)
       --reply-file <PATH>          Read agent reply UTF-8 from this file
       --llm-provider <PROVIDER>    Chat backend for the agent turn: `openai` | `openrouter` | `xai`. Never selected just because a key is set

@@ -4,6 +4,7 @@
 //! Framing matches Pi RPC: one JSON object per LF line, optional trailing CR.
 //! Human logs and tracing stay on **stderr**. PCM and secrets never appear.
 
+use aurum_core::tts::validate::{SPEAKING_RATE_MAX, SPEAKING_RATE_MIN};
 use serde_json::{json, Value};
 use std::io::{self, Write};
 
@@ -11,7 +12,10 @@ pub const PROTO_V: u32 = 1;
 /// Fail closed on a single stdin line larger than this (bytes).
 pub const MAX_LINE_BYTES: usize = 256 * 1024;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Capability advertised in `ready.caps` when `synthesize` honours `speaking_rate`.
+pub const CAP_SYNTHESIZE_SPEAKING_RATE: &str = "synthesize_speaking_rate";
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum InCmd {
     /// Host-owned recording (absolute path). Aurum does not capture.
     Transcribe {
@@ -21,6 +25,10 @@ pub enum InCmd {
     Synthesize {
         text: String,
         path: String,
+        /// Optional speaking-rate multiplier for this request only
+        /// (`SPEAKING_RATE_MIN..=SPEAKING_RATE_MAX`). `None` keeps the
+        /// session default (`--speaking-rate` / `[tts].speaking_rate`).
+        speaking_rate: Option<f32>,
     },
     /// Play TTS on the default speaker (optional; path-based hosts prefer synthesize).
     Speak {
@@ -93,7 +101,12 @@ pub fn parse_line(line: &str) -> Result<InCmd, String> {
         "synthesize" => {
             let text = required_text(&v, "text")?;
             let path = required_path(&v, "path")?;
-            Ok(InCmd::Synthesize { text, path })
+            let speaking_rate = optional_rate(&v, "speaking_rate")?;
+            Ok(InCmd::Synthesize {
+                text,
+                path,
+                speaking_rate,
+            })
         }
         "speak" => {
             let text = required_text(&v, "text")?;
@@ -116,7 +129,7 @@ pub fn event_json(ev: &OutEvent) -> Value {
             "type": "ready",
             "stt_provider": stt_provider,
             "tts_provider": tts_provider,
-            "caps": ["transcribe", "synthesize", "speak"],
+            "caps": ["transcribe", "synthesize", "speak", CAP_SYNTHESIZE_SPEAKING_RATE],
         }),
         OutEvent::UserFinal {
             text,
@@ -168,6 +181,22 @@ fn required_text(v: &Value, key: &str) -> Result<String, String> {
         return Err(format!("{key} is empty"));
     }
     Ok(text)
+}
+
+/// Absent or `null` → `None`. Otherwise a number in the supported range.
+fn optional_rate(v: &Value, key: &str) -> Result<Option<f32>, String> {
+    let Some(raw) = v.get(key).filter(|x| !x.is_null()) else {
+        return Ok(None);
+    };
+    let rate = raw
+        .as_f64()
+        .ok_or_else(|| format!("{key} must be a number"))? as f32;
+    if !rate.is_finite() || !(SPEAKING_RATE_MIN..=SPEAKING_RATE_MAX).contains(&rate) {
+        return Err(format!(
+            "{key} must be in {SPEAKING_RATE_MIN}..={SPEAKING_RATE_MAX} (got {raw})"
+        ));
+    }
+    Ok(Some(rate))
 }
 
 fn required_path(v: &Value, key: &str) -> Result<String, String> {
@@ -250,6 +279,7 @@ mod tests {
         })
         .to_string();
         assert!(ready.contains("transcribe") && ready.contains("synthesize"));
+        assert!(ready.contains(CAP_SYNTHESIZE_SPEAKING_RATE));
     }
 
     #[test]
@@ -267,12 +297,47 @@ mod tests {
             s,
             InCmd::Synthesize {
                 text: "Hi.".into(),
-                path: "/tmp/out.wav".into()
+                path: "/tmp/out.wav".into(),
+                speaking_rate: None,
             }
         );
         assert!(parse_line("{\"type\":\"transcribe\",\"path\":\"\"}").is_err());
         assert!(
             parse_line("{\"type\":\"synthesize\",\"text\":\"Hi.\",\"path\":\"x\\ny\"}").is_err()
         );
+    }
+
+    #[test]
+    fn parse_synthesize_speaking_rate() {
+        let s = parse_line(
+            "{\"type\":\"synthesize\",\"text\":\"Hi.\",\"path\":\"/tmp/o.wav\",\"speaking_rate\":1.25}",
+        )
+        .unwrap();
+        assert_eq!(
+            s,
+            InCmd::Synthesize {
+                text: "Hi.".into(),
+                path: "/tmp/o.wav".into(),
+                speaking_rate: Some(1.25),
+            }
+        );
+        let null = parse_line(
+            "{\"type\":\"synthesize\",\"text\":\"Hi.\",\"path\":\"/tmp/o.wav\",\"speaking_rate\":null}",
+        )
+        .unwrap();
+        assert!(matches!(
+            null,
+            InCmd::Synthesize {
+                speaking_rate: None,
+                ..
+            }
+        ));
+        for bad in ["0.1", "2.5", "0", "-1", "\"fast\"", "true"] {
+            let line = format!(
+                "{{\"type\":\"synthesize\",\"text\":\"Hi.\",\"path\":\"/tmp/o.wav\",\"speaking_rate\":{bad}}}"
+            );
+            let err = parse_line(&line).unwrap_err();
+            assert!(err.contains("speaking_rate"), "{bad}: {err}");
+        }
     }
 }

@@ -336,3 +336,113 @@ async fn stdio_transcribe_accepts_audio_longer_than_live_buffer() {
     );
     assert!(events.iter().any(|e| e["type"] == "shutdown"), "{events:?}");
 }
+
+// `--speaking-rate` sets the session default; `synthesize.speaking_rate` overrides it per
+// request. ElevenLabs is mocked so the applied rate is visible on the wire.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stdio_synthesize_rate_overrides_session_speaking_rate() {
+    use wiremock::matchers::{body_partial_json, method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let pcm: Vec<u8> = (0..2_400i16)
+        .flat_map(|i| ((i % 30) * 15).to_le_bytes())
+        .collect();
+    let server = MockServer::start().await;
+    for speed in [1.1, 0.9] {
+        Mock::given(method("POST"))
+            .and(path_regex(r"^/v1/text-to-speech/[^/]+$"))
+            .and(body_partial_json(
+                serde_json::json!({ "voice_settings": { "speed": speed } }),
+            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "audio/pcm")
+                    .set_body_bytes(pcm.clone()),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let home = tempdir().unwrap();
+    let config = format!(
+        "[tts]\nprovider = \"elevenlabs\"\nmodel = \"eleven_flash_v2_5\"\n\
+         voice = \"21m00Tcm4TlvDq8ikWAM\"\n\n[providers.elevenlabs]\nbase_url = \"{}\"\n",
+        server.uri()
+    );
+    // directories::ProjectDirs: macOS uses ~/Library/Application Support,
+    // other Unix uses $XDG_CONFIG_HOME.
+    for dir in [
+        home.path().join("Library/Application Support/aurum"),
+        home.path().join("config/aurum"),
+    ] {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), &config).unwrap();
+    }
+    let fast = home.path().join("fast.wav");
+    let default_rate = home.path().join("default.wav");
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_aurum"));
+    command
+        .args(["converse", "--stdio", "--speaking-rate", "0.9"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("XDG_CACHE_HOME", home.path().join("cache"))
+        .env("ELEVENLABS_API_KEY", "el-test");
+    for key in ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"] {
+        command.env_remove(key);
+    }
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("AURUM_") {
+            command.env_remove(key);
+        }
+    }
+    let requests = [
+        serde_json::json!({ "v": 1, "type": "synthesize", "text": "Fast.", "path": fast, "speaking_rate": 1.1 }),
+        serde_json::json!({ "v": 1, "type": "synthesize", "text": "Default.", "path": default_rate }),
+    ];
+    // One request at a time; keep stdin open until each result arrives
+    // (EOF and `shutdown` cancel in-flight work by design).
+    let (status, events) = tokio::task::spawn_blocking(move || {
+        use std::io::{BufRead, BufReader};
+        let mut child = command.spawn().expect("spawn aurum converse --stdio");
+        let mut stdin = child.stdin.take().expect("stdin");
+        let mut lines = BufReader::new(child.stdout.take().expect("stdout")).lines();
+        let mut next = || -> Value {
+            let line = lines.next().expect("stdout closed").expect("read stdout");
+            serde_json::from_str(&line).unwrap_or_else(|e| panic!("json {e}: {line}"))
+        };
+        let mut events = vec![next()];
+        for req in requests {
+            writeln!(stdin, "{req}").unwrap();
+            stdin.flush().unwrap();
+            events.push(next());
+        }
+        writeln!(stdin, r#"{{"v":1,"type":"shutdown"}}"#).unwrap();
+        stdin.flush().unwrap();
+        events.push(next());
+        drop(stdin);
+        (child.wait().expect("wait"), events)
+    })
+    .await
+    .unwrap();
+
+    assert!(status.success(), "exit {status}\nevents: {events:?}");
+    assert_eq!(events[0]["type"], "ready", "{events:?}");
+    let caps = events[0]["caps"].as_array().expect("caps");
+    assert!(
+        caps.iter().any(|c| c == "synthesize_speaking_rate"),
+        "{caps:?}"
+    );
+    for ev in &events[1..3] {
+        assert_eq!(ev["type"], "synthesized", "{events:?}");
+        assert_eq!(ev["provider"], "elevenlabs", "{events:?}");
+    }
+    assert_eq!(events[3]["type"], "shutdown", "{events:?}");
+    assert!(fast.is_file() && default_rate.is_file());
+    // MockServer verifies each `.expect(1)` on drop.
+}

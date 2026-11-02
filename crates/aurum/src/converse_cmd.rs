@@ -111,20 +111,43 @@ pub struct ConverseCli {
     #[arg(long = "thinking-pause", value_name = "SECS")]
     pub thinking_pause: Option<f64>,
 
+    /// Longest `--mic` utterance before the turn is rejected (seconds, default 30,
+    /// max 600). Files and `--stdio` `transcribe` paths are not bound by this.
+    #[arg(long = "max-utterance-secs", value_name = "SECS")]
+    pub max_utterance_secs: Option<f64>,
+
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
     pub verbose: bool,
 }
 
-fn mic_live_config(cli: &ConverseCli, max_utterance_secs: f64) -> LiveSessionConfig {
-    LiveSessionConfig {
+/// Default `--mic` utterance cap (seconds).
+const DEFAULT_MAX_UTTERANCE_SECS: f64 = 30.0;
+/// Upper bound for `--max-utterance-secs`. The live buffer is preallocated, so
+/// keep it to minutes (600 s is ~38 MB of f32 PCM).
+const MAX_UTTERANCE_SECS_LIMIT: f64 = 600.0;
+
+fn mic_live_config(cli: &ConverseCli) -> Result<LiveSessionConfig> {
+    let max_utterance_secs = cli.max_utterance_secs.unwrap_or(DEFAULT_MAX_UTTERANCE_SECS);
+    if !max_utterance_secs.is_finite()
+        || max_utterance_secs <= 0.0
+        || max_utterance_secs > MAX_UTTERANCE_SECS_LIMIT
+    {
+        return Err(UserError::Other {
+            message: format!(
+                "--max-utterance-secs must be in (0, {MAX_UTTERANCE_SECS_LIMIT}] (got {max_utterance_secs})"
+            ),
+        }
+        .into());
+    }
+    Ok(LiveSessionConfig {
         max_utterance_secs,
         min_speech_secs: 0.30,
         trailing_silence_secs: cli.endpoint_silence.unwrap_or(0.70),
         thinking_pause_secs: cli.thinking_pause.unwrap_or(1.20),
         min_rms: 0.02,
         max_speak_ahead: 8,
-    }
+    })
 }
 
 pub async fn run_converse(cli: ConverseCli) -> Result<()> {
@@ -321,7 +344,7 @@ async fn run_mic_loop(
     eprintln!("aurum converse --mic: headphones recommended (half-duplex, no echo cancel)");
     eprintln!("Finish a thought, then pause (~1s). Mid-sentence pauses should not cut you off.");
     let mic = MicCapture::start()?;
-    let live_cfg = mic_live_config(&cli, 30.0);
+    let live_cfg = mic_live_config(&cli)?;
     let mut live = LiveSession::new(engine, live_cfg)?;
     let stop = Arc::new(AtomicBool::new(false));
     {
@@ -403,7 +426,9 @@ async fn run_mic_loop(
 async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Result<()> {
     let stt_p = engine.stt_provider_id()?.as_str().to_string();
     let tts_p = engine.tts_provider_id()?.as_str().to_string();
-    let live_cfg = mic_live_config(&cli, 30.0);
+    // `transcribe` paths bypass this buffer (`load_user_audio`); it only
+    // bounds `--mic` capture.
+    let live_cfg = mic_live_config(&cli)?;
     let mut live = LiveSession::new(engine, live_cfg)?;
     stdio_proto::write_event(&OutEvent::Ready {
         stt_provider: stt_p,
@@ -421,8 +446,7 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
 
     if let Some(path) = cli.audio_file.as_ref() {
         let audio = aurum_core::load_audio(path).await?;
-        live.push_pcm(audio.samples().as_ref())?;
-        live.end_user_turn()?;
+        live.load_user_audio(audio.samples().as_ref())?;
         match live.commit_user_turn().await {
             Ok(stt) if !stt.text().trim().is_empty() => {
                 emit_stdio(&OutEvent::UserFinal {
@@ -659,8 +683,9 @@ async fn sidecar_transcribe_inner(live: &mut LiveSession, path: &str) -> Result<
     live.discard_turn();
     let path = require_absolute_path(path)?;
     let audio = aurum_core::load_audio(path).await?;
-    live.push_pcm(audio.samples().as_ref())?;
-    live.end_user_turn()?;
+    // Host-owned recording: length is bounded by `load_audio`, not by the
+    // `--mic` live buffer.
+    live.load_user_audio(audio.samples().as_ref())?;
     let stt = live.commit_user_turn().await?;
     if stt.text().trim().is_empty() {
         live.discard_turn();
@@ -1108,6 +1133,31 @@ mod tests {
                 assert_eq!(c.llm_provider.as_deref(), Some("openai"));
             }
             other => panic!("expected Converse, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn max_utterance_secs_defaults_and_bounds() {
+        let parse = |extra: &[&str]| {
+            let mut args = vec!["aurum", "converse", "--mic"];
+            args.extend_from_slice(extra);
+            let cli = crate::cli::Cli::try_parse_from(args).unwrap();
+            let Some(crate::cli::Commands::Converse(c)) = cli.command else {
+                panic!("expected Converse");
+            };
+            mic_live_config(&c)
+        };
+        assert_eq!(parse(&[]).unwrap().max_utterance_secs, 30.0);
+        assert_eq!(
+            parse(&["--max-utterance-secs", "120"])
+                .unwrap()
+                .max_utterance_secs,
+            120.0
+        );
+        for bad in ["0", "-1", "601", "NaN", "inf"] {
+            let arg = format!("--max-utterance-secs={bad}");
+            let err = parse(&[arg.as_str()]).unwrap_err();
+            assert!(err.to_string().contains("--max-utterance-secs"), "{err}");
         }
     }
 

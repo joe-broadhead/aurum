@@ -179,27 +179,28 @@ Arguments:
   [AUDIO_FILE]  Audio file for a single user turn (omit when using `--mic`)
 
 Options:
-      --mic                      Use the default microphone and speakers (half-duplex CLI loop)
-      --provider <PROVIDER>      STT provider (registry id; default `local`)
-      --model <NAME>             STT model id (local ggml name or reviewed remote id)
-      --language <CODE>          STT language (default from config / auto)
-      --tts-provider <PROVIDER>  TTS provider (registry id; default `local`)
-      --tts-model <NAME>         TTS model id
-      --voice <NAME>             TTS voice id (required for ElevenLabs; never remapped from Luna)
-      --reply-text <TEXT>        Agent reply text (mutually exclusive with `--reply-file` and `--llm-provider`)
-      --reply-file <PATH>        Read agent reply UTF-8 from this file
-      --llm-provider <PROVIDER>  Chat backend for the agent turn: `openai` | `openrouter` | `xai`. Never selected just because a key is set
-      --llm-model <NAME>         Chat model id (defaults: openai=`gpt-4o-mini`, openrouter=`google/gemini-2.5-flash-lite`; xAI requires this flag)
-      --llm-system <TEXT>        Optional system prompt override for `--llm-provider`
-  -O, --output-file <PATH>       Write agent WAV here (required for file mode; optional with `--mic`)
-      --force                    Overwrite an existing non-empty output file
-      --local-only               Reject remote STT/TTS before encode/upload
-      --emit-json                Honesty JSON on stdout (no PCM). Incompatible with `--stdio`
-      --stdio                    JSONL sidecar: host owns mic/brain (`transcribe`/`synthesize` paths). Does not require `--mic` or a file
-      --endpoint-silence <SECS>  Silence that ends a `--mic` turn after a full utterance (seconds, default 0.7)
-      --thinking-pause <SECS>    Extra `--mic` wait while the utterance is still short (seconds, default 1.2). Covers a ~1 s mid-thought pause. Still RMS energy, not a neural VAD
-  -v, --verbose                  Verbose diagnostics
-  -h, --help                     Print help
+      --mic                        Use the default microphone and speakers (half-duplex CLI loop)
+      --provider <PROVIDER>        STT provider (registry id; default `local`)
+      --model <NAME>               STT model id (local ggml name or reviewed remote id)
+      --language <CODE>            STT language (default from config / auto)
+      --tts-provider <PROVIDER>    TTS provider (registry id; default `local`)
+      --tts-model <NAME>           TTS model id
+      --voice <NAME>               TTS voice id (required for ElevenLabs; never remapped from Luna)
+      --reply-text <TEXT>          Agent reply text (mutually exclusive with `--reply-file` and `--llm-provider`)
+      --reply-file <PATH>          Read agent reply UTF-8 from this file
+      --llm-provider <PROVIDER>    Chat backend for the agent turn: `openai` | `openrouter` | `xai`. Never selected just because a key is set
+      --llm-model <NAME>           Chat model id (defaults: openai=`gpt-4o-mini`, openrouter=`google/gemini-2.5-flash-lite`; xAI requires this flag)
+      --llm-system <TEXT>          Optional system prompt override for `--llm-provider`
+  -O, --output-file <PATH>         Write agent WAV here (required for file mode; optional with `--mic`)
+      --force                      Overwrite an existing non-empty output file
+      --local-only                 Reject remote STT/TTS before encode/upload
+      --emit-json                  Honesty JSON on stdout (no PCM). Incompatible with `--stdio`
+      --stdio                      JSONL sidecar: host owns mic/brain (`transcribe`/`synthesize` paths). Does not require `--mic` or a file
+      --endpoint-silence <SECS>    Silence that ends a `--mic` turn after a full utterance (seconds, default 0.7)
+      --thinking-pause <SECS>      Extra `--mic` wait while the utterance is still short (seconds, default 1.2). Covers a ~1 s mid-thought pause. Still RMS energy, not a neural VAD
+      --max-utterance-secs <SECS>  Longest `--mic` utterance before the turn is rejected (seconds, default 30, max 600). Files and `--stdio` `transcribe` paths are not bound by this
+  -v, --verbose                    Verbose diagnostics
+  -h, --help                       Print help
 ```
 
 ## `aurum doctor`

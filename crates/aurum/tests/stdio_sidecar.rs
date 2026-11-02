@@ -203,3 +203,136 @@ fn stdio_missing_tts_credentials_names_selected_provider() {
         }
     }
 }
+
+/// Write a 16 kHz mono 16-bit PCM WAV of `secs` seconds (quiet tone).
+#[cfg(unix)]
+fn write_wav_16k(path: &std::path::Path, secs: u32) {
+    let rate: u32 = 16_000;
+    let n = rate * secs;
+    let data_len = n * 2;
+    let mut bytes = Vec::with_capacity(44 + data_len as usize);
+    bytes.extend_from_slice(b"RIFF");
+    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
+    bytes.extend_from_slice(b"WAVEfmt ");
+    bytes.extend_from_slice(&16u32.to_le_bytes());
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // PCM
+    bytes.extend_from_slice(&1u16.to_le_bytes()); // mono
+    bytes.extend_from_slice(&rate.to_le_bytes());
+    bytes.extend_from_slice(&(rate * 2).to_le_bytes());
+    bytes.extend_from_slice(&2u16.to_le_bytes());
+    bytes.extend_from_slice(&16u16.to_le_bytes());
+    bytes.extend_from_slice(b"data");
+    bytes.extend_from_slice(&data_len.to_le_bytes());
+    for i in 0..n {
+        let s = (((i % 40) as i16) - 20) * 100;
+        bytes.extend_from_slice(&s.to_le_bytes());
+    }
+    std::fs::write(path, bytes).unwrap();
+}
+
+// `transcribe` takes a host-owned recording; it must not be capped by the
+// 30 s `--mic` live buffer. Config is isolated through HOME/XDG (Unix only,
+// see above).
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stdio_transcribe_accepts_audio_longer_than_live_buffer() {
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let server = MockServer::start().await;
+    Mock::given(method("POST"))
+        .and(path("/audio/transcriptions"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_json(serde_json::json!({ "text": "forty seconds of speech" })),
+        )
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let home = tempdir().unwrap();
+    let config = format!(
+        "[stt]\nprovider = \"openai\"\nmodel = \"whisper-1\"\nlanguage = \"en\"\n\n\
+         [providers.openai]\nbase_url = \"{}\"\n",
+        server.uri()
+    );
+    // directories::ProjectDirs: macOS uses ~/Library/Application Support,
+    // other Unix uses $XDG_CONFIG_HOME.
+    for dir in [
+        home.path().join("Library/Application Support/aurum"),
+        home.path().join("config/aurum"),
+    ] {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), &config).unwrap();
+    }
+    let wav = home.path().join("long.wav");
+    write_wav_16k(&wav, 40);
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_aurum"));
+    command
+        .args(["converse", "--stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("XDG_CACHE_HOME", home.path().join("cache"))
+        .env("OPENAI_API_KEY", "sk-test");
+    for key in ["OPENROUTER_API_KEY", "ELEVENLABS_API_KEY", "XAI_API_KEY"] {
+        command.env_remove(key);
+    }
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("AURUM_") {
+            command.env_remove(key);
+        }
+    }
+    // Keep stdin open until the transcript arrives: EOF and `shutdown` cancel
+    // in-flight work by design.
+    let output = tokio::task::spawn_blocking(move || {
+        use std::io::{BufRead, BufReader};
+        let mut child = command.spawn().expect("spawn aurum converse --stdio");
+        let mut stdin = child.stdin.take().expect("stdin");
+        let mut lines = BufReader::new(child.stdout.take().expect("stdout")).lines();
+        let mut events: Vec<Value> = Vec::new();
+        writeln!(
+            stdin,
+            "{}",
+            serde_json::json!({ "v": 1, "type": "transcribe", "path": wav })
+        )
+        .unwrap();
+        stdin.flush().unwrap();
+        for line in lines.by_ref() {
+            let line = line.expect("read stdout");
+            let ev: Value =
+                serde_json::from_str(&line).unwrap_or_else(|e| panic!("json {e}: {line}"));
+            let done = ev["type"] == "user_final" || ev["type"] == "error";
+            events.push(ev);
+            if done {
+                break;
+            }
+        }
+        writeln!(stdin, r#"{{"v":1,"type":"shutdown"}}"#).unwrap();
+        stdin.flush().unwrap();
+        drop(stdin);
+        for line in lines {
+            let line = line.expect("read stdout");
+            events.push(serde_json::from_str(&line).unwrap_or_else(|e| panic!("json {e}: {line}")));
+        }
+        (child.wait().expect("wait"), events)
+    })
+    .await
+    .unwrap();
+    let (status, events) = output;
+    assert!(status.success(), "exit {status}\nevents: {events:?}");
+    let final_ev = events
+        .iter()
+        .find(|e| e["type"] == "user_final")
+        .unwrap_or_else(|| panic!("no user_final: {events:?}"));
+    assert_eq!(final_ev["text"], "forty seconds of speech");
+    assert_eq!(final_ev["provider"], "openai");
+    assert!(
+        !events.iter().any(|e| e["type"] == "error"),
+        "unexpected error: {events:?}"
+    );
+    assert!(events.iter().any(|e| e["type"] == "shutdown"), "{events:?}");
+}

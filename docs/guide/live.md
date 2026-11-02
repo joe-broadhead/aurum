@@ -29,13 +29,14 @@ permission on its own process, writes private WAVs, and calls `transcribe` /
 ### `ready`
 
 ```json
-{"v":1,"type":"ready","stt_provider":"local","tts_provider":"local","caps":["transcribe","synthesize","speak","synthesize_speaking_rate"]}
+{"v":1,"type":"ready","stt_provider":"local","tts_provider":"local","caps":["transcribe","synthesize","speak","synthesize_speaking_rate","synthesize_abort"]}
 ```
 
 `speak` is only honored when the process was started with `--mic` (local
 playback). Hosts that own speakers use `synthesize`. `synthesize_speaking_rate`
 means `synthesize` accepts the optional `speaking_rate` field; older sidecars
-ignore it.
+ignore it. `synthesize_abort` means `abort` cancels a `synthesize` sent before
+it (see below); older sidecars finish the synthesis first.
 
 ### Commands (stdin)
 

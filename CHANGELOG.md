@@ -89,6 +89,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deadline cannot affect later requests. `shutdown` and stdin EOF do not
   cancel `synthesize` (unchanged): a `synthesize` sent before them still writes
   its WAV. Previously the sidecar ignored the abort until synthesis finished.
+  `ready.caps` advertises `synthesize_abort` so hosts can detect this.
 - **Provider credential guidance (#167):** missing OpenAI, ElevenLabs and xAI
   keys now name the selected provider and its environment variable/config section
   instead of suggesting an OpenRouter key, including in `converse --stdio`.

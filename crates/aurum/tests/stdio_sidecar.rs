@@ -625,7 +625,10 @@ async fn stdio_abort_cancels_in_flight_synthesize() {
 
     let (status, events, abort_latency) = tokio::task::spawn_blocking(move || {
         let mut sidecar = Sidecar::spawn(command);
-        let mut events = vec![sidecar.next()]; // ready
+        let ready = sidecar.next();
+        let caps = ready["caps"].as_array().expect("caps");
+        assert!(caps.iter().any(|c| c == "synthesize_abort"), "{caps:?}");
+        let mut events = vec![ready];
         sidecar.send(&[slow_req]);
         slow_hit
             .recv_timeout(Duration::from_secs(15))

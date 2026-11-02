@@ -125,6 +125,17 @@ impl LiveSession {
         self.turn.end_user_turn()
     }
 
+    /// Replace the current user turn with a complete host-owned recording
+    /// (16 kHz mono f32) and end it, ready for [`Self::commit_user_turn`].
+    ///
+    /// Unlike [`Self::push_pcm`], this does not use the bounded live buffer, so
+    /// [`LiveSessionConfig::max_utterance_secs`] does not apply. The length is
+    /// capped at [`crate::audio::DEFAULT_MAX_DURATION_SECS`], the same limit as
+    /// [`crate::load_audio`]. Any partially buffered live audio is discarded.
+    pub fn load_user_audio(&mut self, samples: &[f32]) -> Result<()> {
+        self.turn.load_utterance(samples)
+    }
+
     /// Run engine STT on the frozen utterance and emit [`LiveEvent::UserFinal`].
     pub async fn commit_user_turn(&mut self) -> Result<TranscriptionResult> {
         if self.turn.phase() == LivePhase::UserSpeaking || self.turn.phase() == LivePhase::Listening
@@ -540,6 +551,64 @@ mod tests {
         assert_eq!(tts.backend_kind, BackendKind::Remote);
         assert_eq!(tts.pcm_i16_mono.len(), n);
         assert_eq!(tts.voice, EXAMPLE_ELEVENLABS_VOICE_ID);
+    }
+
+    #[tokio::test]
+    async fn load_user_audio_bypasses_live_buffer_cap() {
+        let stt_server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/audio/transcriptions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "text": "a long host recording"
+            })))
+            .mount(&stt_server)
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let mut cfg = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+        cfg.cache_dir = dir.path().join("cache");
+        cfg.provider = "openai".into();
+        cfg.model = Some("whisper-1".into());
+        cfg.language = "en".into();
+        cfg.providers.openai.api_key = Some(SecretString::new("sk-test"));
+        cfg.providers.openai.base_url = Some(stt_server.uri());
+        let engine = AurumEngine::from_config(cfg).unwrap();
+        let live_cfg = LiveSessionConfig {
+            max_utterance_secs: 30.0,
+            ..Default::default()
+        };
+        let mut live = LiveSession::new(engine, live_cfg).unwrap();
+
+        // 40 s overflows the bounded live buffer...
+        let long = vec![0.1f32; 40 * 16_000];
+        let err = live.push_pcm(&long).unwrap_err();
+        assert!(err.to_string().contains("too long"), "{err}");
+        live.discard_turn();
+
+        // ...but a complete host-owned recording is not bound by it.
+        live.load_user_audio(&long).unwrap();
+        assert_eq!(live.phase(), LivePhase::Ending);
+        let stt = live.commit_user_turn().await.unwrap();
+        assert_eq!(stt.text(), "a long host recording");
+        assert_eq!(live.phase(), LivePhase::Thinking);
+    }
+
+    #[test]
+    fn load_user_audio_rejects_empty_non_finite_and_wrong_phase() {
+        let (_dir, engine) = isolated_engine();
+        let mut live = LiveSession::new(engine, LiveSessionConfig::default()).unwrap();
+        assert!(live.load_user_audio(&[]).is_err());
+        assert!(live.load_user_audio(&[0.1, f32::NAN]).is_err());
+        assert_eq!(live.phase(), LivePhase::Listening);
+
+        live.load_user_audio(&[0.3; 800]).unwrap();
+        live.complete_user_turn(canned_stt("hi", 0.05)).unwrap();
+        assert_eq!(live.phase(), LivePhase::Thinking);
+        let err = live.load_user_audio(&[0.3; 800]).unwrap_err();
+        assert!(err.to_string().contains("Thinking"), "{err}");
+
+        live.shutdown();
+        assert!(live.load_user_audio(&[0.3; 800]).is_err());
     }
 
     #[tokio::test]

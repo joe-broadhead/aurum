@@ -141,6 +141,50 @@ impl LiveTurn {
         }
     }
 
+    /// Replace the current turn with a complete host-owned utterance and end it.
+    ///
+    /// Bypasses the bounded live buffer (`max_utterance_secs`): the caller
+    /// already decoded a whole recording and owns its length limit.
+    pub(crate) fn load_utterance(&mut self, samples: &[f32]) -> Result<()> {
+        self.ensure_not_closed()?;
+        match self.phase {
+            LivePhase::Listening | LivePhase::UserSpeaking | LivePhase::Ending => {}
+            other => {
+                return Err(UserError::Other {
+                    message: format!(
+                        "user audio is not valid in phase {other:?} (expected Listening, UserSpeaking, or Ending)"
+                    ),
+                }
+                .into());
+            }
+        }
+        if samples.is_empty() {
+            return Err(UserError::InvalidAudio {
+                reason: "user turn has no PCM (silence-only or empty input)".into(),
+            }
+            .into());
+        }
+        let max_samples = (crate::audio::DEFAULT_MAX_DURATION_SECS
+            * f64::from(crate::audio::WHISPER_SAMPLE_RATE)) as usize;
+        if samples.len() > max_samples {
+            return Err(UserError::AudioTooLong {
+                duration_secs: samples.len() as f64 / f64::from(crate::audio::WHISPER_SAMPLE_RATE),
+                max_secs: crate::audio::DEFAULT_MAX_DURATION_SECS,
+            }
+            .into());
+        }
+        if let Some(i) = samples.iter().position(|s| !s.is_finite()) {
+            return Err(UserError::InvalidAudio {
+                reason: format!("PCM contains non-finite sample at index {i}"),
+            }
+            .into());
+        }
+        self.reset_listen();
+        self.utterance = samples.to_vec();
+        self.phase = LivePhase::Ending;
+        Ok(())
+    }
+
     pub(crate) fn take_utterance(&mut self) -> Result<Vec<f32>> {
         self.ensure_not_closed()?;
         if self.phase != LivePhase::Ending {

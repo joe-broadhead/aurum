@@ -69,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`converse --stdio` long recordings:** `transcribe` (and the startup
+  `AUDIO_FILE`) no longer reject audio longer than 30 s. Host-owned recordings
+  bypass the `--mic` live buffer through the new
+  `LiveSession::load_user_audio` and are bounded by the file loader's limit
+  instead. New `converse --max-utterance-secs` (default 30, max 600) sets the
+  `--mic` utterance cap.
 - **Provider credential guidance (#167):** missing OpenAI, ElevenLabs and xAI
   keys now name the selected provider and its environment variable/config section
   instead of suggesting an OpenRouter key, including in `converse --stdio`.

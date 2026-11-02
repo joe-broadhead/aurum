@@ -39,7 +39,7 @@ playback). Hosts that own speakers use `synthesize`.
 
 | type | fields | effect |
 |------|--------|--------|
-| `transcribe` | `path` (absolute file) | STT; emits `user_final` |
+| `transcribe` | `path` (absolute file) | STT; emits `user_final`. Length is bounded by the file loader (same limit as `aurum <file>`), not by the `--mic` utterance cap |
 | `synthesize` | `text`, `path` (absolute WAV out) | TTS write; **does not play**; emits `synthesized` |
 | `speak` | `text` | Play on default speaker; **requires `--mic`** |
 | `end_turn` | | Drain playback if any; back to listening |
@@ -99,6 +99,8 @@ Constraints (supported, not “try at your own risk”):
 - RMS endpoint, not a neural VAD: ~1.2 s hangover at the start of a turn
   (thinking pause), easing to ~0.7 s after a couple of seconds of speech.
   Tune with `--thinking-pause` / `--endpoint-silence`.
+- A `--mic` utterance longer than 30 s is rejected and the turn is discarded.
+  Raise the cap with `--max-utterance-secs` (max 600).
 - Chat is non-session: no tools/MCPs; streaming sentences + TTS overlap
 - `converse --stdio` without `--mic` never opens an audio device
 

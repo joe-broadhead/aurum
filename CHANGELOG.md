@@ -80,11 +80,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `LiveSession::load_user_audio` and are bounded by the file loader's limit
   instead. New `converse --max-utterance-secs` (default 30, max 600) sets the
   `--mic` utterance cap.
-- **`converse --stdio` abort during `synthesize`:** `abort` now cancels an
-  in-flight `synthesize` (remote requests are interrupted; local synthesis stops
-  at the next chunk). The request ends with the same `error` event as a
-  cancelled `transcribe`, writes no WAV, and the next request is not affected.
-  Previously the sidecar ignored the abort until synthesis finished.
+- **`converse --stdio` abort during `synthesize`:** `abort` now cancels a
+  `synthesize` sent before it, running or still queued (remote requests are
+  interrupted; local synthesis stops at the next chunk). The request ends with
+  `error` (`category=provider`, `synthesis cancelled`) and writes no WAV.
+  Pipelined aborts cannot cancel each other out, and the next request is not
+  affected. Each `synthesize` uses its own cancel token, so a local TTS
+  deadline cannot affect later requests. `shutdown` and stdin EOF do not
+  cancel `synthesize` (unchanged): a `synthesize` sent before them still writes
+  its WAV. Previously the sidecar ignored the abort until synthesis finished.
 - **Provider credential guidance (#167):** missing OpenAI, ElevenLabs and xAI
   keys now name the selected provider and its environment variable/config section
   instead of suggesting an OpenRouter key, including in `converse --stdio`.

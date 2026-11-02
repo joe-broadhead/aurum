@@ -447,65 +447,80 @@ async fn stdio_synthesize_rate_overrides_session_speaking_rate() {
     // MockServer verifies each `.expect(1)` on drop.
 }
 
-// `abort` must cancel an in-flight `synthesize` (no WAV, no `synthesized`),
-// and must not poison the next request. ElevenLabs is mocked with a slow
-// response so the abort lands mid-request.
-#[cfg(unix)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn stdio_abort_cancels_in_flight_synthesize() {
-    use std::time::{Duration, Instant};
-    use wiremock::matchers::{body_partial_json, method, path_regex};
-    use wiremock::{Mock, MockServer, ResponseTemplate};
+// ---- `synthesize` cancellation (ElevenLabs mocked) ----
 
+/// Mock response that reports each request it receives, so a test can act
+/// while the request is in flight instead of guessing with a sleep.
+#[cfg(unix)]
+struct Signalling {
+    hit: std::sync::Mutex<std::sync::mpsc::Sender<()>>,
+    response: wiremock::ResponseTemplate,
+}
+
+#[cfg(unix)]
+impl wiremock::Respond for Signalling {
+    fn respond(&self, _: &wiremock::Request) -> wiremock::ResponseTemplate {
+        let _ = self.hit.lock().unwrap().send(());
+        self.response.clone()
+    }
+}
+
+/// Mount a PCM response for `text`, held for `delay`, expected `calls` times.
+/// Returns a receiver that gets one message per request received.
+#[cfg(unix)]
+async fn mount_tts(
+    server: &wiremock::MockServer,
+    text: &str,
+    delay: std::time::Duration,
+    calls: u64,
+) -> std::sync::mpsc::Receiver<()> {
+    use wiremock::matchers::{body_partial_json, method, path_regex};
+    use wiremock::{Mock, ResponseTemplate};
     let pcm: Vec<u8> = (0..2_400i16)
         .flat_map(|i| ((i % 30) * 15).to_le_bytes())
         .collect();
-    let server = MockServer::start().await;
-    for (text, delay) in [
-        ("Slow.", Duration::from_secs(30)),
-        ("Fast.", Duration::ZERO),
-    ] {
-        Mock::given(method("POST"))
-            .and(path_regex(r"^/v1/text-to-speech/[^/]+$"))
-            .and(body_partial_json(serde_json::json!({ "text": text })))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .insert_header("Content-Type", "audio/pcm")
-                    .set_body_bytes(pcm.clone())
-                    .set_delay(delay),
-            )
-            .expect(1)
-            .mount(&server)
-            .await;
-    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    Mock::given(method("POST"))
+        .and(path_regex(r"^/v1/text-to-speech/[^/]+$"))
+        .and(body_partial_json(serde_json::json!({ "text": text })))
+        .respond_with(Signalling {
+            hit: std::sync::Mutex::new(tx),
+            response: ResponseTemplate::new(200)
+                .insert_header("Content-Type", "audio/pcm")
+                .set_body_bytes(pcm)
+                .set_delay(delay),
+        })
+        .expect(calls)
+        .mount(server)
+        .await;
+    rx
+}
 
-    let home = tempdir().unwrap();
+/// `aurum converse --stdio` with ElevenLabs TTS pointed at `base_url`.
+#[cfg(unix)]
+fn elevenlabs_sidecar(home: &std::path::Path, base_url: &str) -> Command {
     let config = format!(
         "[tts]\nprovider = \"elevenlabs\"\nmodel = \"eleven_flash_v2_5\"\n\
-         voice = \"21m00Tcm4TlvDq8ikWAM\"\n\n[providers.elevenlabs]\nbase_url = \"{}\"\n",
-        server.uri()
+         voice = \"21m00Tcm4TlvDq8ikWAM\"\n\n[providers.elevenlabs]\nbase_url = \"{base_url}\"\n"
     );
     // directories::ProjectDirs: macOS uses ~/Library/Application Support,
     // other Unix uses $XDG_CONFIG_HOME.
     for dir in [
-        home.path().join("Library/Application Support/aurum"),
-        home.path().join("config/aurum"),
+        home.join("Library/Application Support/aurum"),
+        home.join("config/aurum"),
     ] {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("config.toml"), &config).unwrap();
     }
-    let slow = home.path().join("slow.wav");
-    let fast = home.path().join("fast.wav");
-
     let mut command = Command::new(env!("CARGO_BIN_EXE_aurum"));
     command
         .args(["converse", "--stdio"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
-        .env("HOME", home.path())
-        .env("XDG_CONFIG_HOME", home.path().join("config"))
-        .env("XDG_CACHE_HOME", home.path().join("cache"))
+        .env("HOME", home)
+        .env("XDG_CONFIG_HOME", home.join("config"))
+        .env("XDG_CACHE_HOME", home.join("cache"))
         .env("ELEVENLABS_API_KEY", "el-test");
     for key in ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"] {
         command.env_remove(key);
@@ -515,17 +530,25 @@ async fn stdio_abort_cancels_in_flight_synthesize() {
             command.env_remove(key);
         }
     }
-    let slow_req =
-        serde_json::json!({ "v": 1, "type": "synthesize", "text": "Slow.", "path": slow });
-    let fast_req =
-        serde_json::json!({ "v": 1, "type": "synthesize", "text": "Fast.", "path": fast });
-    let (status, events, abort_latency) = tokio::task::spawn_blocking(move || {
+    command
+}
+
+/// A running sidecar: write lines to `stdin`, read events with `next`.
+#[cfg(unix)]
+struct Sidecar {
+    child: std::process::Child,
+    stdin: Option<std::process::ChildStdin>,
+    events: std::sync::mpsc::Receiver<std::io::Result<String>>,
+}
+
+#[cfg(unix)]
+impl Sidecar {
+    fn spawn(mut command: Command) -> Self {
         use std::io::{BufRead, BufReader};
-        use std::sync::mpsc;
         let mut child = command.spawn().expect("spawn aurum converse --stdio");
-        let mut stdin = child.stdin.take().expect("stdin");
+        let stdin = child.stdin.take();
         let stdout = child.stdout.take().expect("stdout");
-        let (tx, rx) = mpsc::channel();
+        let (tx, events) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             for line in BufReader::new(stdout).lines() {
                 if tx.send(line).is_err() {
@@ -533,46 +556,97 @@ async fn stdio_abort_cancels_in_flight_synthesize() {
                 }
             }
         });
-        let next = || -> Value {
-            let line = rx
-                .recv_timeout(Duration::from_secs(15))
-                .expect("timed out waiting for a sidecar event")
-                .expect("read stdout");
-            serde_json::from_str(&line).unwrap_or_else(|e| panic!("json {e}: {line}"))
-        };
-        let mut events = vec![next()];
-        writeln!(stdin, "{slow_req}").unwrap();
+        Self {
+            child,
+            stdin,
+            events,
+        }
+    }
+
+    fn send(&mut self, lines: &[String]) {
+        let stdin = self.stdin.as_mut().expect("stdin open");
+        for line in lines {
+            writeln!(stdin, "{line}").unwrap();
+        }
         stdin.flush().unwrap();
-        std::thread::sleep(Duration::from_millis(500));
+    }
+
+    fn next(&self) -> Value {
+        let line = self
+            .events
+            .recv_timeout(std::time::Duration::from_secs(15))
+            .expect("timed out waiting for a sidecar event")
+            .expect("read stdout");
+        serde_json::from_str(&line).unwrap_or_else(|e| panic!("json {e}: {line}"))
+    }
+
+    fn close_stdin(&mut self) {
+        self.stdin = None;
+    }
+
+    fn wait(mut self) -> std::process::ExitStatus {
+        self.close_stdin();
+        self.child.wait().expect("wait")
+    }
+}
+
+#[cfg(unix)]
+fn synth_line(text: &str, path: &std::path::Path) -> String {
+    serde_json::json!({ "v": 1, "type": "synthesize", "text": text, "path": path }).to_string()
+}
+
+#[cfg(unix)]
+const ABORT: &str = r#"{"v":1,"type":"abort"}"#;
+#[cfg(unix)]
+const SHUTDOWN: &str = r#"{"v":1,"type":"shutdown"}"#;
+
+#[cfg(unix)]
+fn assert_synthesis_cancelled(event: &Value, events: &[Value]) {
+    assert_eq!(event["type"], "error", "{events:?}");
+    assert_eq!(event["category"], "provider", "{events:?}");
+    assert_eq!(event["message"], "synthesis cancelled", "{events:?}");
+}
+
+// `abort` must cancel an in-flight `synthesize` (no WAV, no `synthesized`),
+// and must not poison the next request. The `"Slow."` response is held for
+// 30 s; the abort is sent once the mock has received the request.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stdio_abort_cancels_in_flight_synthesize() {
+    use std::time::{Duration, Instant};
+    let server = wiremock::MockServer::start().await;
+    let slow_hit = mount_tts(&server, "Slow.", Duration::from_secs(30), 1).await;
+    let _fast_hit = mount_tts(&server, "Fast.", Duration::ZERO, 1).await;
+    let home = tempdir().unwrap();
+    let slow = home.path().join("slow.wav");
+    let fast = home.path().join("fast.wav");
+    let command = elevenlabs_sidecar(home.path(), &server.uri());
+    let (slow_req, fast_req) = (synth_line("Slow.", &slow), synth_line("Fast.", &fast));
+
+    let (status, events, abort_latency) = tokio::task::spawn_blocking(move || {
+        let mut sidecar = Sidecar::spawn(command);
+        let mut events = vec![sidecar.next()]; // ready
+        sidecar.send(&[slow_req]);
+        slow_hit
+            .recv_timeout(Duration::from_secs(15))
+            .expect("the slow synthesize never reached the mock");
         let aborted_at = Instant::now();
-        writeln!(stdin, r#"{{"v":1,"type":"abort"}}"#).unwrap();
-        stdin.flush().unwrap();
-        events.push(next()); // error (cancelled)
+        sidecar.send(&[ABORT.into()]);
+        events.push(sidecar.next()); // error (cancelled)
         let abort_latency = aborted_at.elapsed();
-        events.push(next()); // listening
-        writeln!(stdin, "{fast_req}").unwrap();
-        stdin.flush().unwrap();
-        events.push(next()); // synthesized
-        writeln!(stdin, r#"{{"v":1,"type":"shutdown"}}"#).unwrap();
-        stdin.flush().unwrap();
-        events.push(next());
-        drop(stdin);
-        (child.wait().expect("wait"), events, abort_latency)
+        events.push(sidecar.next()); // listening
+        sidecar.send(&[fast_req]);
+        events.push(sidecar.next()); // synthesized
+        sidecar.send(&[SHUTDOWN.into()]);
+        events.push(sidecar.next()); // shutdown
+        (sidecar.wait(), events, abort_latency)
     })
     .await
     .unwrap();
 
     assert!(status.success(), "exit {status}\nevents: {events:?}");
     assert_eq!(events[0]["type"], "ready", "{events:?}");
-    assert_eq!(events[1]["type"], "error", "{events:?}");
-    assert_eq!(events[1]["category"], "provider", "{events:?}");
-    assert!(
-        events[1]["message"]
-            .as_str()
-            .unwrap_or("")
-            .contains("cancelled"),
-        "{events:?}"
-    );
+    assert_synthesis_cancelled(&events[1], &events);
     assert!(
         abort_latency < Duration::from_secs(10),
         "abort took {abort_latency:?}; the 30 s request was not interrupted"
@@ -586,4 +660,86 @@ async fn stdio_abort_cancels_in_flight_synthesize() {
         slow.display()
     );
     assert!(fast.is_file());
+    // MockServer verifies each `.expect(n)` on drop.
+}
+
+// `abort`, `synthesize`, `abort` written in one go: the second abort must
+// cancel the queued synthesize (the first abort's handler must not clear it),
+// so the request never reaches the provider and writes no file.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stdio_pipelined_abort_cancels_queued_synthesize() {
+    use std::time::Duration;
+    let server = wiremock::MockServer::start().await;
+    let _piped_hit = mount_tts(&server, "Piped.", Duration::ZERO, 0).await;
+    let _fast_hit = mount_tts(&server, "Fast.", Duration::ZERO, 1).await;
+    let home = tempdir().unwrap();
+    let piped = home.path().join("piped.wav");
+    let fast = home.path().join("fast.wav");
+    let command = elevenlabs_sidecar(home.path(), &server.uri());
+    let (piped_req, fast_req) = (synth_line("Piped.", &piped), synth_line("Fast.", &fast));
+
+    let (status, events) = tokio::task::spawn_blocking(move || {
+        let mut sidecar = Sidecar::spawn(command);
+        let mut events = vec![sidecar.next()]; // ready
+        sidecar.send(&[ABORT.into(), piped_req, ABORT.into()]);
+        for _ in 0..3 {
+            events.push(sidecar.next()); // listening, error, listening
+        }
+        sidecar.send(&[fast_req, SHUTDOWN.into()]);
+        events.push(sidecar.next()); // synthesized
+        events.push(sidecar.next()); // shutdown
+        (sidecar.wait(), events)
+    })
+    .await
+    .unwrap();
+
+    assert!(status.success(), "exit {status}\nevents: {events:?}");
+    assert_eq!(events[0]["type"], "ready", "{events:?}");
+    assert_eq!(events[1]["type"], "listening", "{events:?}");
+    assert_synthesis_cancelled(&events[2], &events);
+    assert_eq!(events[3]["type"], "listening", "{events:?}");
+    assert_eq!(events[4]["type"], "synthesized", "{events:?}");
+    assert_eq!(events[5]["type"], "shutdown", "{events:?}");
+    assert!(
+        !piped.exists(),
+        "cancelled synthesize wrote {}",
+        piped.display()
+    );
+    assert!(fast.is_file());
+}
+
+// `shutdown` and stdin EOF do not cancel a running `synthesize`: a host that
+// pipes `synthesize` and then closes stdin still gets its WAV.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stdio_shutdown_and_eof_let_running_synthesize_finish() {
+    use std::time::Duration;
+    let server = wiremock::MockServer::start().await;
+    let hit = mount_tts(&server, "Last.", Duration::from_secs(1), 1).await;
+    let home = tempdir().unwrap();
+    let last = home.path().join("last.wav");
+    let command = elevenlabs_sidecar(home.path(), &server.uri());
+    let last_req = synth_line("Last.", &last);
+
+    let (status, events) = tokio::task::spawn_blocking(move || {
+        let mut sidecar = Sidecar::spawn(command);
+        let mut events = vec![sidecar.next()]; // ready
+        sidecar.send(&[last_req]);
+        hit.recv_timeout(Duration::from_secs(15))
+            .expect("the synthesize never reached the mock");
+        sidecar.send(&[SHUTDOWN.into()]);
+        sidecar.close_stdin();
+        events.push(sidecar.next()); // synthesized
+        events.push(sidecar.next()); // shutdown
+        (sidecar.wait(), events)
+    })
+    .await
+    .unwrap();
+
+    assert!(status.success(), "exit {status}\nevents: {events:?}");
+    assert_eq!(events[0]["type"], "ready", "{events:?}");
+    assert_eq!(events[1]["type"], "synthesized", "{events:?}");
+    assert_eq!(events[2]["type"], "shutdown", "{events:?}");
+    assert!(last.is_file());
 }

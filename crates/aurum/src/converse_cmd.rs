@@ -11,8 +11,9 @@ use crate::audio_io::{play_i16_mono, resample_mono, MicCapture};
 use crate::llm::{complete_chat, stream_chat, take_speakable, ChatRequest, LlmProvider};
 use crate::stdio_proto::{self, InCmd, OutEvent, MAX_LINE_BYTES};
 use aurum_core::audio::WHISPER_SAMPLE_RATE;
+use aurum_core::cancel::CancelFlag;
 use aurum_core::config::Config;
-use aurum_core::error::{ProviderError, Result, UserError};
+use aurum_core::error::{ErrorCategory, ProviderError, Result, UserError};
 use aurum_core::live::LiveEvent;
 use aurum_core::live::{LivePhase, LiveSession, LiveSessionConfig};
 use aurum_core::output::CommitMode;
@@ -20,8 +21,8 @@ use aurum_core::provider_platform::ProviderId;
 use clap::Parser;
 use std::io::{self, BufRead, IsTerminal, Write};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 /// `aurum converse` — one user turn from a file, or `--mic` for a live loop.
@@ -476,20 +477,31 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
     }
 
     let cancel = live.cancel_flag();
-    let (cmd_tx, cmd_rx) = std::sync::mpsc::sync_channel::<std::result::Result<InCmd, String>>(64);
+    let aborts = Arc::new(SynthAborts::default());
+    let reader_aborts = Arc::clone(&aborts);
+    // Each command carries the abort generation it was read under (see
+    // `SynthAborts`), so an `abort` read after a `synthesize` cancels it even
+    // when both are still queued.
+    let (cmd_tx, cmd_rx) =
+        std::sync::mpsc::sync_channel::<(u64, std::result::Result<InCmd, String>)>(64);
     std::thread::spawn(move || {
+        let aborts = reader_aborts;
         let mut stdin = io::stdin().lock();
         loop {
             let mut line = String::new();
             match stdin.read_line(&mut line) {
+                // EOF / `shutdown` cancel a running `transcribe` (session flag)
+                // but not `synthesize`: a host may pipe `synthesize` and close
+                // stdin, and still gets its WAV (see docs/guide/live.md).
                 Ok(0) => {
                     cancel.cancel();
-                    let _ = cmd_tx.send(Ok(InCmd::Shutdown));
+                    let _ = cmd_tx.send((aborts.generation(), Ok(InCmd::Shutdown)));
                     break;
                 }
                 Ok(_) => {
                     if line.len() > MAX_LINE_BYTES {
-                        let _ = cmd_tx.send(Err("stdin line too long".into()));
+                        let _ =
+                            cmd_tx.send((aborts.generation(), Err("stdin line too long".into())));
                         continue;
                     }
                     match stdio_proto::parse_line(&line) {
@@ -497,17 +509,20 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                             if matches!(c, InCmd::Abort | InCmd::Shutdown) {
                                 cancel.cancel();
                             }
-                            if cmd_tx.send(Ok(c)).is_err() {
+                            if matches!(c, InCmd::Abort) {
+                                aborts.abort();
+                            }
+                            if cmd_tx.send((aborts.generation(), Ok(c))).is_err() {
                                 break;
                             }
                         }
                         Err(e) => {
-                            let _ = cmd_tx.send(Err(e));
+                            let _ = cmd_tx.send((aborts.generation(), Err(e)));
                         }
                     }
                 }
                 Err(e) => {
-                    let _ = cmd_tx.send(Err(format!("stdin: {e}")));
+                    let _ = cmd_tx.send((aborts.generation(), Err(format!("stdin: {e}"))));
                     break;
                 }
             }
@@ -548,7 +563,7 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
 
     let mut shutting = false;
     while !stop.load(Ordering::SeqCst) && !shutting {
-        while let Ok(msg) = cmd_rx.try_recv() {
+        while let Ok((read_gen, msg)) = cmd_rx.try_recv() {
             match msg {
                 Ok(InCmd::Transcribe { path }) => {
                     if let Err(e) = sidecar_transcribe(&mut live, &path).await {
@@ -560,9 +575,18 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                     path,
                     speaking_rate,
                 }) => {
-                    if let Err(e) = sidecar_synthesize(&mut live, &text, &path, speaking_rate).await
+                    let request = aborts.begin(read_gen);
+                    if let Err(e) =
+                        sidecar_synthesize(&mut live, &request, &text, &path, speaking_rate).await
                     {
-                        emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
+                        // Same category as a cancelled `transcribe`; core's
+                        // `Cancelled` text says "transcription".
+                        let message = if e.error_category() == ErrorCategory::Cancelled {
+                            "synthesis cancelled".to_string()
+                        } else {
+                            e.to_string()
+                        };
+                        emit_stdio(&OutEvent::error(e.category(), message))?;
                     }
                 }
                 Ok(InCmd::Speak { text }) => {
@@ -606,10 +630,6 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                     if let Some(m) = mic.as_ref() {
                         m.drain();
                     }
-                    // Ops run one at a time on this loop, so anything the abort
-                    // targeted has already returned. Clear the flag so the next
-                    // `synthesize` (which does not reset it) is not cancelled.
-                    live.cancel_flag().reset();
                     emit_stdio(&OutEvent::Listening)?;
                 }
                 Ok(InCmd::Shutdown) => {
@@ -720,20 +740,104 @@ async fn sidecar_transcribe_inner(live: &mut LiveSession, path: &str) -> Result<
     Ok(())
 }
 
+/// Abort state for stdio `synthesize`, kept apart from the session cancel flag.
+///
+/// The stdin reader stamps every command with the generation it was read
+/// under and calls [`SynthAborts::abort`] for each `abort`. A `synthesize` is
+/// cancelled exactly when an `abort` was read after it, queued or running;
+/// handlers never clear anything, so pipelined aborts cannot undo each other.
+///
+/// Each `synthesize` gets its own fresh [`CancelFlag`]. Core shares the flag
+/// passed in `SynthesisOptions::cancel` with the op, and local TTS cancels the
+/// op on its soft deadline (`tts/local.rs`), so passing the session flag would
+/// fail every later `synthesize`.
+#[derive(Default)]
+struct SynthAborts {
+    generation: AtomicU64,
+    /// Token of the running `synthesize`, so `abort` interrupts it mid-request.
+    inflight: Mutex<Option<CancelFlag>>,
+}
+
+impl SynthAborts {
+    fn generation(&self) -> u64 {
+        self.generation.load(Ordering::SeqCst)
+    }
+
+    fn slot(&self) -> MutexGuard<'_, Option<CancelFlag>> {
+        self.inflight.lock().unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Reader thread, on `abort`. Bumps the generation before taking the slot
+    /// lock, so `begin`/`commit` (which check under the lock) always see it.
+    fn abort(&self) {
+        self.generation.fetch_add(1, Ordering::SeqCst);
+        if let Some(token) = self.slot().as_ref() {
+            token.cancel();
+        }
+    }
+
+    /// Fresh token for a `synthesize` read under generation `read_gen`. It is
+    /// already cancelled if an `abort` was read since.
+    fn begin(&self, read_gen: u64) -> SynthRequest<'_> {
+        let token = CancelFlag::new();
+        let mut slot = self.slot();
+        if self.generation() != read_gen {
+            token.cancel();
+        }
+        *slot = Some(token.clone());
+        SynthRequest {
+            aborts: self,
+            read_gen,
+            token,
+        }
+    }
+}
+
+struct SynthRequest<'a> {
+    aborts: &'a SynthAborts,
+    read_gen: u64,
+    token: CancelFlag,
+}
+
+impl SynthRequest<'_> {
+    fn token(&self) -> CancelFlag {
+        self.token.clone()
+    }
+
+    /// Run `commit` (write the WAV) unless an `abort` was read for this request.
+    /// Holds the slot lock, so the reader's `abort` lands before the check (and
+    /// nothing is written) or after the file is in place, never in between.
+    fn commit<T>(&self, commit: impl FnOnce() -> Result<T>) -> Result<T> {
+        let _slot = self.aborts.slot();
+        if self.aborts.generation() != self.read_gen {
+            return Err(ProviderError::Cancelled.into());
+        }
+        commit()
+    }
+}
+
+impl Drop for SynthRequest<'_> {
+    fn drop(&mut self) {
+        *self.aborts.slot() = None;
+    }
+}
+
 async fn sidecar_synthesize(
     live: &mut LiveSession,
+    request: &SynthRequest<'_>,
     text: &str,
     path: &str,
     speaking_rate: Option<f32>,
 ) -> Result<()> {
     live.begin_sidecar_op()?;
-    let result = sidecar_synthesize_inner(live, text, path, speaking_rate).await;
+    let result = sidecar_synthesize_inner(live, request, text, path, speaking_rate).await;
     live.end_sidecar_op();
     result
 }
 
 async fn sidecar_synthesize_inner(
     live: &mut LiveSession,
+    request: &SynthRequest<'_>,
     text: &str,
     path: &str,
     speaking_rate: Option<f32>,
@@ -751,10 +855,6 @@ async fn sidecar_synthesize_inner(
         (!voice_cfg.is_empty()).then_some(voice_cfg),
         &cfg.tts_voice,
     )?;
-    // The stdin reader sets this flag on `abort` / `shutdown` / EOF while the
-    // request runs. Not reset here: an `abort` queued behind this request must
-    // still cancel it (the `Abort` handler clears the flag afterwards).
-    let cancel = live.cancel_flag();
     let opts = aurum_core::SynthesisOptions {
         model,
         voice,
@@ -763,21 +863,21 @@ async fn sidecar_synthesize_inner(
         // session default.
         speaking_rate: speaking_rate.unwrap_or(cfg.tts_speaking_rate),
         timeout_ms: cfg.tts_timeout_ms,
-        cancel: Some(cancel.clone()),
+        // Per-request token, never the session flag (see `SynthAborts`).
+        cancel: Some(request.token()),
         local_only: cfg.local_only,
         ..Default::default()
     };
     let tts = engine.synthesize(text, &opts).await?;
-    // Aborted after the provider returned: do not write or report the clip.
-    if cancel.is_cancelled() {
-        return Err(ProviderError::Cancelled.into());
-    }
-    aurum_core::write_wav_i16_mono_transaction(
-        path,
-        &tts.pcm_i16_mono,
-        tts.sample_rate_hz,
-        CommitMode::Replace,
-    )?;
+    // An `abort` read after the provider returned: no WAV, no `synthesized`.
+    request.commit(|| {
+        aurum_core::write_wav_i16_mono_transaction(
+            path,
+            &tts.pcm_i16_mono,
+            tts.sample_rate_hz,
+            CommitMode::Replace,
+        )
+    })?;
     emit_stdio(&OutEvent::Synthesized {
         path: path.display().to_string(),
         duration_ms: tts.duration_ms,
@@ -1068,6 +1168,69 @@ fn resolve_converse_tts_model(
 mod tests {
     use super::*;
     use clap::Parser;
+
+    // Local TTS's soft deadline cancels the op token (`tts/local.rs`), and core
+    // shares `SynthesisOptions::cancel` with the op. The next `synthesize` must
+    // still run (PR #181 review blocker).
+    #[test]
+    fn synth_deadline_cancel_does_not_poison_next_synthesize() {
+        let aborts = SynthAborts::default();
+        let first = aborts.begin(aborts.generation());
+        let opts = aurum_core::SynthesisOptions {
+            cancel: Some(first.token()),
+            ..Default::default()
+        };
+        // What `engine.synthesize` builds, then what the soft deadline does.
+        let op = aurum_core::OpContext::from_optional_cancel(opts.cancel.clone());
+        op.cancel.cancel();
+        assert!(op.check().is_err());
+        drop(first);
+
+        let second = aborts.begin(aborts.generation());
+        let op = aurum_core::OpContext::from_optional_cancel(Some(second.token()));
+        assert!(
+            op.check().is_ok(),
+            "deadline cancel leaked into the next synthesize"
+        );
+        assert!(second.commit(|| Ok(())).is_ok());
+    }
+
+    // `abort`, `synthesize`, `abort` read before any is handled: the second
+    // abort must still cancel the synthesize, whatever the handler timing.
+    #[test]
+    fn pipelined_abort_after_synthesize_cancels_it() {
+        let aborts = SynthAborts::default();
+        aborts.abort(); // first abort
+        let synth_gen = aborts.generation(); // synthesize read here
+        aborts.abort(); // second abort, read before the synthesize starts
+        let request = aborts.begin(synth_gen);
+        assert!(request.token().is_cancelled());
+        assert!(request.commit(|| Ok(())).is_err());
+        drop(request);
+        // A synthesize read after both aborts is unaffected.
+        let next = aborts.begin(aborts.generation());
+        assert!(!next.token().is_cancelled());
+        assert!(next.commit(|| Ok(())).is_ok());
+    }
+
+    // An abort read while the request runs interrupts its token and blocks the
+    // WAV commit, even if the provider already returned.
+    #[test]
+    fn abort_during_synthesize_cancels_token_and_commit() {
+        let aborts = SynthAborts::default();
+        let request = aborts.begin(aborts.generation());
+        assert!(!request.token().is_cancelled());
+        aborts.abort();
+        assert!(request.token().is_cancelled());
+        let mut wrote = false;
+        assert!(request
+            .commit(|| {
+                wrote = true;
+                Ok(())
+            })
+            .is_err());
+        assert!(!wrote);
+    }
 
     #[test]
     fn reply_xor() {

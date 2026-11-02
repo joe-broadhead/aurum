@@ -62,9 +62,17 @@ Paths must be absolute (no NUL/newline). Relative paths → `error` `category=us
 
 Broken stdout (EPIPE) exits the sidecar with a non-zero status. Overlapping
 `transcribe`/`synthesize` while one is running returns `error` `category=provider`
-(`busy`). `abort` sets the session cancel flag immediately: an in-flight
-`transcribe` or `synthesize` ends with `error` (`category=provider`, message
-`… cancelled`) and writes no file, then `listening` follows.
+(`busy`). `abort` sets the session cancel flag immediately, so an in-flight
+`transcribe` ends with `error` (`category=provider`, `transcription cancelled`).
+`abort` also cancels every `synthesize` sent before it, running or still
+queued: the request ends with `error` (`category=provider`, `synthesis
+cancelled`) and writes no WAV. If the WAV was already written when the `abort`
+is read, the file stays and `synthesized` is sent. `listening` follows each
+`abort`.
+
+`shutdown` and stdin EOF cancel a running `transcribe`, but not `synthesize`.
+A `synthesize` sent before them finishes and writes its WAV before the
+sidecar exits.
 
 `--speaking-rate` (0.5–2.0) sets the session TTS rate for `synthesize`,
 `speak`, and the `--mic` / file modes. Default: `[tts].speaking_rate`.

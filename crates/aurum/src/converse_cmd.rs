@@ -12,7 +12,7 @@ use crate::llm::{complete_chat, stream_chat, take_speakable, ChatRequest, LlmPro
 use crate::stdio_proto::{self, InCmd, OutEvent, MAX_LINE_BYTES};
 use aurum_core::audio::WHISPER_SAMPLE_RATE;
 use aurum_core::config::Config;
-use aurum_core::error::{Result, UserError};
+use aurum_core::error::{ProviderError, Result, UserError};
 use aurum_core::live::LiveEvent;
 use aurum_core::live::{LivePhase, LiveSession, LiveSessionConfig};
 use aurum_core::output::CommitMode;
@@ -606,6 +606,10 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                     if let Some(m) = mic.as_ref() {
                         m.drain();
                     }
+                    // Ops run one at a time on this loop, so anything the abort
+                    // targeted has already returned. Clear the flag so the next
+                    // `synthesize` (which does not reset it) is not cancelled.
+                    live.cancel_flag().reset();
                     emit_stdio(&OutEvent::Listening)?;
                 }
                 Ok(InCmd::Shutdown) => {
@@ -747,6 +751,10 @@ async fn sidecar_synthesize_inner(
         (!voice_cfg.is_empty()).then_some(voice_cfg),
         &cfg.tts_voice,
     )?;
+    // The stdin reader sets this flag on `abort` / `shutdown` / EOF while the
+    // request runs. Not reset here: an `abort` queued behind this request must
+    // still cancel it (the `Abort` handler clears the flag afterwards).
+    let cancel = live.cancel_flag();
     let opts = aurum_core::SynthesisOptions {
         model,
         voice,
@@ -755,10 +763,15 @@ async fn sidecar_synthesize_inner(
         // session default.
         speaking_rate: speaking_rate.unwrap_or(cfg.tts_speaking_rate),
         timeout_ms: cfg.tts_timeout_ms,
+        cancel: Some(cancel.clone()),
         local_only: cfg.local_only,
         ..Default::default()
     };
     let tts = engine.synthesize(text, &opts).await?;
+    // Aborted after the provider returned: do not write or report the clip.
+    if cancel.is_cancelled() {
+        return Err(ProviderError::Cancelled.into());
+    }
     aurum_core::write_wav_i16_mono_transaction(
         path,
         &tts.pcm_i16_mono,

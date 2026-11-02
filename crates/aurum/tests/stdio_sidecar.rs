@@ -446,3 +446,144 @@ async fn stdio_synthesize_rate_overrides_session_speaking_rate() {
     assert!(fast.is_file() && default_rate.is_file());
     // MockServer verifies each `.expect(1)` on drop.
 }
+
+// `abort` must cancel an in-flight `synthesize` (no WAV, no `synthesized`),
+// and must not poison the next request. ElevenLabs is mocked with a slow
+// response so the abort lands mid-request.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn stdio_abort_cancels_in_flight_synthesize() {
+    use std::time::{Duration, Instant};
+    use wiremock::matchers::{body_partial_json, method, path_regex};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    let pcm: Vec<u8> = (0..2_400i16)
+        .flat_map(|i| ((i % 30) * 15).to_le_bytes())
+        .collect();
+    let server = MockServer::start().await;
+    for (text, delay) in [
+        ("Slow.", Duration::from_secs(30)),
+        ("Fast.", Duration::ZERO),
+    ] {
+        Mock::given(method("POST"))
+            .and(path_regex(r"^/v1/text-to-speech/[^/]+$"))
+            .and(body_partial_json(serde_json::json!({ "text": text })))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("Content-Type", "audio/pcm")
+                    .set_body_bytes(pcm.clone())
+                    .set_delay(delay),
+            )
+            .expect(1)
+            .mount(&server)
+            .await;
+    }
+
+    let home = tempdir().unwrap();
+    let config = format!(
+        "[tts]\nprovider = \"elevenlabs\"\nmodel = \"eleven_flash_v2_5\"\n\
+         voice = \"21m00Tcm4TlvDq8ikWAM\"\n\n[providers.elevenlabs]\nbase_url = \"{}\"\n",
+        server.uri()
+    );
+    // directories::ProjectDirs: macOS uses ~/Library/Application Support,
+    // other Unix uses $XDG_CONFIG_HOME.
+    for dir in [
+        home.path().join("Library/Application Support/aurum"),
+        home.path().join("config/aurum"),
+    ] {
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("config.toml"), &config).unwrap();
+    }
+    let slow = home.path().join("slow.wav");
+    let fast = home.path().join("fast.wav");
+
+    let mut command = Command::new(env!("CARGO_BIN_EXE_aurum"));
+    command
+        .args(["converse", "--stdio"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .env("HOME", home.path())
+        .env("XDG_CONFIG_HOME", home.path().join("config"))
+        .env("XDG_CACHE_HOME", home.path().join("cache"))
+        .env("ELEVENLABS_API_KEY", "el-test");
+    for key in ["OPENROUTER_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY"] {
+        command.env_remove(key);
+    }
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("AURUM_") {
+            command.env_remove(key);
+        }
+    }
+    let slow_req =
+        serde_json::json!({ "v": 1, "type": "synthesize", "text": "Slow.", "path": slow });
+    let fast_req =
+        serde_json::json!({ "v": 1, "type": "synthesize", "text": "Fast.", "path": fast });
+    let (status, events, abort_latency) = tokio::task::spawn_blocking(move || {
+        use std::io::{BufRead, BufReader};
+        use std::sync::mpsc;
+        let mut child = command.spawn().expect("spawn aurum converse --stdio");
+        let mut stdin = child.stdin.take().expect("stdin");
+        let stdout = child.stdout.take().expect("stdout");
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stdout).lines() {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+        let next = || -> Value {
+            let line = rx
+                .recv_timeout(Duration::from_secs(15))
+                .expect("timed out waiting for a sidecar event")
+                .expect("read stdout");
+            serde_json::from_str(&line).unwrap_or_else(|e| panic!("json {e}: {line}"))
+        };
+        let mut events = vec![next()];
+        writeln!(stdin, "{slow_req}").unwrap();
+        stdin.flush().unwrap();
+        std::thread::sleep(Duration::from_millis(500));
+        let aborted_at = Instant::now();
+        writeln!(stdin, r#"{{"v":1,"type":"abort"}}"#).unwrap();
+        stdin.flush().unwrap();
+        events.push(next()); // error (cancelled)
+        let abort_latency = aborted_at.elapsed();
+        events.push(next()); // listening
+        writeln!(stdin, "{fast_req}").unwrap();
+        stdin.flush().unwrap();
+        events.push(next()); // synthesized
+        writeln!(stdin, r#"{{"v":1,"type":"shutdown"}}"#).unwrap();
+        stdin.flush().unwrap();
+        events.push(next());
+        drop(stdin);
+        (child.wait().expect("wait"), events, abort_latency)
+    })
+    .await
+    .unwrap();
+
+    assert!(status.success(), "exit {status}\nevents: {events:?}");
+    assert_eq!(events[0]["type"], "ready", "{events:?}");
+    assert_eq!(events[1]["type"], "error", "{events:?}");
+    assert_eq!(events[1]["category"], "provider", "{events:?}");
+    assert!(
+        events[1]["message"]
+            .as_str()
+            .unwrap_or("")
+            .contains("cancelled"),
+        "{events:?}"
+    );
+    assert!(
+        abort_latency < Duration::from_secs(10),
+        "abort took {abort_latency:?}; the 30 s request was not interrupted"
+    );
+    assert_eq!(events[2]["type"], "listening", "{events:?}");
+    assert_eq!(events[3]["type"], "synthesized", "{events:?}");
+    assert_eq!(events[4]["type"], "shutdown", "{events:?}");
+    assert!(
+        !slow.exists(),
+        "aborted synthesize wrote {}",
+        slow.display()
+    );
+    assert!(fast.is_file());
+}

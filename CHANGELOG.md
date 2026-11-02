@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`converse` speaking rate:** `--speaking-rate` sets the session TTS rate
+  (0.5–2.0, default `[tts].speaking_rate`). The `--stdio` `synthesize` command
+  accepts an optional `speaking_rate` that overrides it for one request;
+  `ready.caps` advertises `synthesize_speaking_rate`. Protocol stays `v: 1`
+  (the field is optional).
 - **Live session (#140):** `aurum_core::live::LiveSession` — device-agnostic,
   half-duplex conversation loop on `AurumEngine`. Hosts push 16 kHz mono f32,
   commit a user turn, and enqueue agent PCM. Inbound audio is ignored while the

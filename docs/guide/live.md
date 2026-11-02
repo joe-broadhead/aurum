@@ -29,18 +29,20 @@ permission on its own process, writes private WAVs, and calls `transcribe` /
 ### `ready`
 
 ```json
-{"v":1,"type":"ready","stt_provider":"local","tts_provider":"local","caps":["transcribe","synthesize","speak"]}
+{"v":1,"type":"ready","stt_provider":"local","tts_provider":"local","caps":["transcribe","synthesize","speak","synthesize_speaking_rate"]}
 ```
 
 `speak` is only honored when the process was started with `--mic` (local
-playback). Hosts that own speakers use `synthesize`.
+playback). Hosts that own speakers use `synthesize`. `synthesize_speaking_rate`
+means `synthesize` accepts the optional `speaking_rate` field; older sidecars
+ignore it.
 
 ### Commands (stdin)
 
 | type | fields | effect |
 |------|--------|--------|
 | `transcribe` | `path` (absolute file) | STT; emits `user_final`. Length is bounded by the file loader (same limit as `aurum <file>`), not by the `--mic` utterance cap |
-| `synthesize` | `text`, `path` (absolute WAV out) | TTS write; **does not play**; emits `synthesized` |
+| `synthesize` | `text`, `path` (absolute WAV out), optional `speaking_rate` | TTS write; **does not play**; emits `synthesized`. `speaking_rate` (0.5–2.0) overrides `--speaking-rate` for this request; providers may narrow the range |
 | `speak` | `text` | Play on default speaker; **requires `--mic`** |
 | `end_turn` | | Drain playback if any; back to listening |
 | `abort` | | Cancel in-flight STT/TTS; reset turn |
@@ -61,6 +63,9 @@ Paths must be absolute (no NUL/newline). Relative paths → `error` `category=us
 Broken stdout (EPIPE) exits the sidecar with a non-zero status. Overlapping
 `transcribe`/`synthesize` while one is running returns `error` `category=provider`
 (`busy`). `abort` sets the session cancel flag immediately.
+
+`--speaking-rate` (0.5–2.0) sets the session TTS rate for `synthesize`,
+`speak`, and the `--mic` / file modes. Default: `[tts].speaking_rate`.
 
 `--stdio` is incompatible with `--llm-provider`, `--reply-text`, `--reply-file`,
 and `--emit-json`.

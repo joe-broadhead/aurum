@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Nothing yet.
 
-## [0.0.24] - Unreleased
+## [0.0.24] - 2026-11-07
 
 The host surface `opencode-voice` needs for its first release: a taggable
 sidecar with honest capabilities, device capture and playback, a cache the

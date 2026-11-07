@@ -3,9 +3,12 @@
 
 pub mod audio_io;
 pub mod batch_cmd;
+pub mod capabilities_cmd;
 pub mod cli;
 pub mod completions_cmd;
 pub mod converse_cmd;
+pub mod device_cmd;
 pub mod llm;
+pub mod models_cmd;
 pub mod stdio_proto;
 pub mod support_cmd;

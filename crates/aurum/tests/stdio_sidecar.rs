@@ -53,6 +53,12 @@ fn stdio_ready_rejects_relative_transcribe_then_shutdown() {
     let caps = events[0]["caps"].as_array().expect("caps");
     assert!(caps.iter().any(|c| c == "transcribe"));
     assert!(caps.iter().any(|c| c == "synthesize"));
+    // A6: hosts negotiate on these ids instead of probing invented names.
+    for cap in ["synthesize_speaking_rate", "synthesize_abort", "long_audio"] {
+        assert!(caps.iter().any(|c| c == cap), "ready.caps missing {cap}");
+    }
+    assert_eq!(events[0]["preloaded"], false);
+    assert!(events[0]["version"].is_string());
 
     let err = events
         .iter()

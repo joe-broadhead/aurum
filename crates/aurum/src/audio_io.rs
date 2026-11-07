@@ -17,13 +17,14 @@ pub struct MicCapture {
 }
 
 impl MicCapture {
+    /// Start capture on the system default input.
     pub fn start() -> Result<Self> {
-        let host = cpal::default_host();
-        let device = host
-            .default_input_device()
-            .ok_or_else(|| UserError::Other {
-                message: "no default microphone found".into(),
-            })?;
+        Self::start_with_device(None)
+    }
+
+    /// Start capture on `device_name` (case-insensitive substring) or the default.
+    pub fn start_with_device(device_name: Option<&str>) -> Result<Self> {
+        let device = select_input_device(device_name)?;
         let supported = device
             .default_input_config()
             .map_err(|e| UserError::Other {
@@ -64,6 +65,22 @@ impl MicCapture {
         })
     }
 
+    /// Input device name reported by the platform, if the device has one.
+    pub fn describe(device_name: Option<&str>) -> Result<String> {
+        let device = select_input_device(device_name)?;
+        Ok(device_display_name(&device))
+    }
+
+    /// Names of every available input device.
+    pub fn input_device_names() -> Vec<String> {
+        device_names(cpal::default_host().input_devices())
+    }
+
+    /// Names of every available output device.
+    pub fn output_device_names() -> Vec<String> {
+        device_names(cpal::default_host().output_devices())
+    }
+
     /// Blocking recv with timeout (None = timeout).
     pub fn recv_timeout(&self, timeout: Duration) -> Option<Vec<f32>> {
         self.rx.recv_timeout(timeout).ok()
@@ -71,6 +88,133 @@ impl MicCapture {
 
     pub fn drain(&self) {
         while self.rx.try_recv().is_ok() {}
+    }
+}
+
+fn device_names<I>(devices: std::result::Result<I, cpal::Error>) -> Vec<String>
+where
+    I: Iterator<Item = cpal::Device>,
+{
+    let Ok(devices) = devices else {
+        return Vec::new();
+    };
+    devices.map(|d| device_display_name(&d)).collect::<Vec<_>>()
+}
+
+/// cpal 0.18 reports a structured description instead of `Device::name()`.
+fn device_display_name(device: &cpal::Device) -> String {
+    device
+        .description()
+        .map(|d| d.name().to_string())
+        .unwrap_or_else(|_| "unknown device".to_string())
+}
+
+/// Probe the default input without opening a stream (doctor, sidecar `ready`).
+///
+/// A stream start can trigger the OS permission prompt; a config query cannot,
+/// so this is safe to run in a read-only diagnostic. A denied grant shows up
+/// here as "no device" or a config error, which the doctor reports as a warning
+/// with the System Settings next step.
+pub fn probe_microphone() -> aurum_core::doctor::MicrophoneSurface {
+    let devices = MicCapture::input_device_names();
+    match select_input_device(None) {
+        Ok(device) => match device.default_input_config() {
+            Ok(cfg) => aurum_core::doctor::MicrophoneSurface {
+                probed: true,
+                available: true,
+                name: Some(device_display_name(&device)),
+                devices,
+                reason: Some(format!(
+                    "{} Hz, {} channel(s), {}",
+                    cfg.sample_rate(),
+                    cfg.channels(),
+                    cfg.sample_format()
+                )),
+            },
+            Err(e) => aurum_core::doctor::MicrophoneSurface {
+                probed: true,
+                available: false,
+                name: Some(device_display_name(&device)),
+                devices,
+                reason: Some(format!(
+                    "device present but its default input config failed: {e}"
+                )),
+            },
+        },
+        Err(e) => aurum_core::doctor::MicrophoneSurface {
+            probed: true,
+            available: false,
+            name: None,
+            devices,
+            reason: Some(e.to_string()),
+        },
+    }
+}
+
+/// Resolve an input device: the first whose name contains `name`, else the default.
+///
+/// A name that matches nothing is an error rather than a silent fallback, so a
+/// host that asked for a specific microphone does not record from another one.
+pub fn select_input_device(name: Option<&str>) -> Result<cpal::Device> {
+    select_device(name, true)
+}
+
+/// Resolve an output device by name, or the default.
+pub fn select_output_device(name: Option<&str>) -> Result<cpal::Device> {
+    select_device(name, false)
+}
+
+fn select_device(name: Option<&str>, input: bool) -> Result<cpal::Device> {
+    let host = cpal::default_host();
+    match name.map(str::trim).filter(|n| !n.is_empty()) {
+        None => {
+            let found = if input {
+                host.default_input_device()
+            } else {
+                host.default_output_device()
+            };
+            found.ok_or_else(|| {
+                UserError::Other {
+                    message: if input {
+                        "no default microphone found".to_string()
+                    } else {
+                        "no default speaker found".to_string()
+                    },
+                }
+                .into()
+            })
+        }
+        Some(wanted) => {
+            let needle = wanted.to_ascii_lowercase();
+            let devices = if input {
+                host.input_devices()
+            } else {
+                host.output_devices()
+            }
+            .map_err(|e| UserError::Other {
+                message: format!("cannot enumerate audio devices: {e}"),
+            })?;
+            let mut available = Vec::new();
+            for device in devices {
+                let device_name = device_display_name(&device);
+                if device_name.to_ascii_lowercase().contains(&needle) {
+                    return Ok(device);
+                }
+                available.push(device_name);
+            }
+            Err(UserError::Other {
+                message: format!(
+                    "no {} device matches '{wanted}' (available: {})",
+                    if input { "input" } else { "output" },
+                    if available.is_empty() {
+                        "none".to_string()
+                    } else {
+                        available.join(", ")
+                    }
+                ),
+            }
+            .into())
+        }
     }
 }
 
@@ -114,15 +258,15 @@ where
 
 /// Play mono i16 PCM on the default output (blocking until done).
 pub fn play_i16_mono(pcm: &[i16], sample_rate_hz: u32) -> Result<()> {
+    play_i16_mono_on(pcm, sample_rate_hz, None)
+}
+
+/// Play mono i16 PCM on `device_name` (substring) or the default output.
+pub fn play_i16_mono_on(pcm: &[i16], sample_rate_hz: u32, device_name: Option<&str>) -> Result<()> {
     if pcm.is_empty() {
         return Ok(());
     }
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .ok_or_else(|| UserError::Other {
-            message: "no default speaker found".into(),
-        })?;
+    let device = select_output_device(device_name)?;
     let supported = device
         .default_output_config()
         .map_err(|e| UserError::Other {
@@ -171,7 +315,12 @@ pub fn play_i16_mono(pcm: &[i16], sample_rate_hz: u32) -> Result<()> {
         message: format!("speaker start: {e}"),
     })?;
     let _ = rx_done.recv_timeout(Duration::from_secs(120));
-    // Keep stream alive until recv returns.
+    // `done` fires when the last sample has been copied into a callback buffer,
+    // not when the device has played it. Dropping the stream immediately
+    // truncates the tail and shows up as a device underrun, so let the queued
+    // buffer drain first.
+    std::thread::sleep(Duration::from_millis(200));
+    // Keep stream alive until the drain completes.
     drop(stream);
     Ok(())
 }
@@ -224,7 +373,7 @@ where
                     let _ = done.send(());
                 }
             },
-            |e| eprintln!("aurum: speaker error: {e}"),
+            |e| tracing::debug!("speaker stream error: {e}"),
             None,
         )
         .map_err(|e| UserError::Other {

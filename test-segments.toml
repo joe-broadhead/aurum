@@ -15,6 +15,16 @@ default = true
 notes = "Offline regression tests for partial runs, measurement failures, discovery errors, and budget protection. Measured at 2.4s on macos-arm64 10c; no existing CI job runs this segment."
 
 [[segment]]
+id = "eval-dictation"
+ci = ["ci.yml:dictation-eval"]
+title = "Dictation corpus structure (#11)"
+kind = "static"
+run = ["python3", "scripts/run_dictation_eval.py", "--check"]
+expected_s = 2
+default = true
+notes = "Offline validation of evals/dictation: manifest, references, 1-20s durations, sha256 and licences. The WER run itself needs a model, so it is the ci.yml:dictation-eval job (make eval-dictation)."
+
+[[segment]]
 id = "test-eval-helpers"
 ci = ["ci.yml:observatory recipe check"]
 title = "Portuguese eval helper unit tests"

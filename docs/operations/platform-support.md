@@ -52,7 +52,7 @@ The script checks:
 |--------|---------|
 | `ubuntu-24.04` | linux-x86_64 |
 | `ubuntu-24.04-arm` | linux-arm64 |
-| `macos-14` | macos-arm64 |
+| `macos-15` | macos-arm64 |
 | `windows-latest` | windows-x86_64 |
 
 Failures are red CI and block release readiness ([release-gate.md](release-gate.md)).

@@ -118,7 +118,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             asset: macos-arm64
             bin: aurum
@@ -203,7 +203,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             asset: macos-arm64
           - os: ubuntu-24.04
             asset: linux-x86_64

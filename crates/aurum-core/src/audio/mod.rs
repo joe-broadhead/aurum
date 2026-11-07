@@ -194,6 +194,104 @@ pub fn ffmpeg_available() -> bool {
     which("ffmpeg").is_ok()
 }
 
+/// A PCM WAV decoded at its **native** sample rate, downmixed to mono.
+///
+/// Playback needs the file's own rate (resampling to 16 kHz first would throw
+/// away quality and then resample again in the device callback). This is a
+/// device-free, network-free reader: no ffmpeg, no conversion.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PcmWav {
+    pub samples: Vec<i16>,
+    pub sample_rate_hz: u32,
+    pub channels: u16,
+}
+
+impl PcmWav {
+    /// Duration in seconds.
+    pub fn duration_secs(&self) -> f64 {
+        if self.sample_rate_hz == 0 {
+            return 0.0;
+        }
+        self.samples.len() as f64 / f64::from(self.sample_rate_hz)
+    }
+}
+
+/// Read an integer or float PCM WAV at its native rate and downmix to mono i16.
+pub fn read_wav_native(path: &Path) -> Result<PcmWav> {
+    if !path.exists() {
+        return Err(UserError::FileNotFound {
+            path: path.display().to_string(),
+        }
+        .into());
+    }
+    let reader = hound::WavReader::open(path).map_err(|e| UserError::InvalidAudio {
+        reason: format!("{}: {e}", path.display()),
+    })?;
+    let spec = reader.spec();
+    if spec.channels == 0 || spec.sample_rate == 0 {
+        return Err(UserError::InvalidAudio {
+            reason: format!("{}: WAV header has no channels or rate", path.display()),
+        }
+        .into());
+    }
+    let channels = usize::from(spec.channels);
+
+    let interleaved: Vec<f32> = match spec.sample_format {
+        hound::SampleFormat::Int => {
+            // Hound scales by the declared bit depth so 24/32-bit files do not
+            // clip when narrowed to i16.
+            let scale = match spec.bits_per_sample {
+                8 => 128.0,
+                16 => 32_768.0,
+                24 => 8_388_608.0,
+                32 => 2_147_483_648.0,
+                other => {
+                    return Err(UserError::InvalidAudio {
+                        reason: format!("{}: unsupported WAV depth {other} bit", path.display()),
+                    }
+                    .into())
+                }
+            };
+            reader
+                .into_samples::<i32>()
+                .map(|s| {
+                    s.map(|v| v as f32 / scale)
+                        .map_err(|e| UserError::InvalidAudio {
+                            reason: format!("{}: {e}", path.display()),
+                        })
+                })
+                .collect::<std::result::Result<Vec<f32>, UserError>>()?
+        }
+        hound::SampleFormat::Float => reader
+            .into_samples::<f32>()
+            .map(|s| {
+                s.map_err(|e| UserError::InvalidAudio {
+                    reason: format!("{}: {e}", path.display()),
+                })
+            })
+            .collect::<std::result::Result<Vec<f32>, UserError>>()?,
+    };
+
+    let frames = interleaved.len() / channels;
+    let mut mono = Vec::with_capacity(frames);
+    for frame in 0..frames {
+        let mut acc = 0.0f32;
+        for c in 0..channels {
+            acc += interleaved[frame * channels + c];
+        }
+        mono.push(acc / channels as f32);
+    }
+    let samples = mono
+        .into_iter()
+        .map(|v| (v.clamp(-1.0, 1.0) * 32_768.0).clamp(-32_768.0, 32_767.0) as i16)
+        .collect();
+    Ok(PcmWav {
+        samples,
+        sample_rate_hz: spec.sample_rate,
+        channels: spec.channels,
+    })
+}
+
 /// Load an audio file, converting to 16 kHz mono f32 PCM as needed.
 pub async fn load_audio(path: &Path) -> Result<AudioInput> {
     load_audio_with_limits(path, DEFAULT_MAX_DURATION_SECS, DEFAULT_MAX_DECODED_BYTES).await
@@ -1255,5 +1353,37 @@ mod tests {
             err,
             crate::error::TranscriptionError::Provider(crate::error::ProviderError::Cancelled)
         ));
+    }
+
+    #[test]
+    fn native_wav_reader_keeps_the_file_rate_and_downmixes() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("stereo_44k.wav");
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44_100,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut w = hound::WavWriter::create(&path, spec).unwrap();
+        for i in 0..441 {
+            let v = ((i as f32 / 441.0) * 20_000.0) as i16;
+            w.write_sample(v).unwrap();
+            w.write_sample(v).unwrap();
+        }
+        w.finalize().unwrap();
+
+        let wav = read_wav_native(&path).unwrap();
+        assert_eq!(wav.sample_rate_hz, 44_100);
+        assert_eq!(wav.channels, 2);
+        assert_eq!(wav.samples.len(), 441);
+        assert!(wav.samples[100] > wav.samples[10]);
+        assert!((wav.duration_secs() - 441.0 / 44_100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn native_wav_reader_rejects_a_missing_file() {
+        let dir = tempdir().unwrap();
+        assert!(read_wav_native(&dir.path().join("nope.wav")).is_err());
     }
 }

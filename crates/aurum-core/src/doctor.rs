@@ -4,6 +4,7 @@
 
 use crate::config::Config;
 use crate::error::Result;
+use crate::surface::PlatformInfo;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -32,14 +33,153 @@ pub enum DoctorSeverity {
 }
 
 /// Full doctor report (redacted; safe to print).
+///
+/// `schema_version` stays **1**: the surface fields below are additive and
+/// default when absent, the same convention the capability schema uses. A
+/// consumer that only reads `checks` keeps working.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DoctorReport {
     pub schema_version: u32,
     pub aurum_version: String,
     pub target: String,
     pub features: Vec<String>,
+    /// Engine identity and sidecar protocol version (A7).
+    #[serde(default)]
+    pub engine: EngineSurface,
+    /// OS / arch / target, in one object a host can store.
+    #[serde(default)]
+    pub platform: PlatformInfo,
+    /// Effective model ids and whether their artifacts are present.
+    #[serde(default)]
+    pub models: ModelSurface,
+    /// Audio formats this build reads and writes.
+    #[serde(default)]
+    pub audio: AudioSurface,
+    /// Microphone state. Core cannot open a device, so the CLI fills this in.
+    #[serde(default)]
+    pub microphone: MicrophoneSurface,
     pub checks: Vec<DoctorCheck>,
     pub ok: bool,
+}
+
+/// Engine identity, so a host does not have to run `--version` and grep.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct EngineSurface {
+    pub name: String,
+    pub version: String,
+    pub core_version: String,
+    pub protocol_version: u32,
+}
+
+impl Default for EngineSurface {
+    fn default() -> Self {
+        Self {
+            name: "aurum".into(),
+            version: env!("CARGO_PKG_VERSION").into(),
+            core_version: env!("CARGO_PKG_VERSION").into(),
+            protocol_version: crate::surface::PROTOCOL_VERSION,
+        }
+    }
+}
+
+/// Effective models and cheap cache state (no hashing, no download).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelSurface {
+    pub stt: String,
+    pub stt_cached: bool,
+    pub tts: String,
+    pub tts_cached: bool,
+    pub cache_dir: String,
+}
+
+/// Formats the engine accepts and produces.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AudioSurface {
+    /// Sample rate every STT path resamples to.
+    pub stt_sample_rate_hz: u32,
+    /// Input containers the local decode path accepts (ffmpeg for non-WAV).
+    pub input_formats: Vec<String>,
+    /// Output containers.
+    pub output_formats: Vec<String>,
+    /// `record` writes this.
+    pub record_format: String,
+}
+
+impl Default for AudioSurface {
+    fn default() -> Self {
+        Self {
+            stt_sample_rate_hz: crate::audio::WHISPER_SAMPLE_RATE,
+            input_formats: ["wav", "mp3", "flac", "m4a", "ogg"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            output_formats: ["txt", "srt", "json", "wav"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            record_format: "wav (pcm_s16le, 16 kHz, mono)".into(),
+        }
+    }
+}
+
+/// Whether a capture device can be opened, and why not when it cannot.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MicrophoneSurface {
+    /// `None` means core did not probe (the CLI fills it in).
+    pub probed: bool,
+    pub available: bool,
+    pub name: Option<String>,
+    pub devices: Vec<String>,
+    pub reason: Option<String>,
+}
+
+impl DoctorReport {
+    /// Record the result of a real device probe (CLI only).
+    pub fn attach_microphone(&mut self, surface: MicrophoneSurface) {
+        let detail = surface.reason.clone();
+        self.microphone = surface;
+        let (ok, severity, summary, hint) = if self.microphone.available {
+            (
+                true,
+                DoctorSeverity::Info,
+                format!(
+                    "microphone available{}",
+                    self.microphone
+                        .name
+                        .as_deref()
+                        .map(|n| format!(": {n}"))
+                        .unwrap_or_default()
+                ),
+                None,
+            )
+        } else {
+            (
+                false,
+                DoctorSeverity::Warn,
+                "no microphone available".to_string(),
+                Some(
+                    "grant microphone access to the responsible process, then re-run doctor"
+                        .to_string(),
+                ),
+            )
+        };
+        self.checks.push(DoctorCheck {
+            id: "microphone".into(),
+            ok,
+            severity,
+            summary,
+            detail,
+            hint,
+        });
+        self.recompute_ok();
+    }
+
+    fn recompute_ok(&mut self) {
+        self.ok = self
+            .checks
+            .iter()
+            .all(|c| c.ok || matches!(c.severity, DoctorSeverity::Info | DoctorSeverity::Warn));
+    }
 }
 
 impl DoctorReport {
@@ -253,8 +393,48 @@ pub fn run_doctor(cfg: &Config) -> DoctorReport {
         aurum_version: env!("CARGO_PKG_VERSION").into(),
         target: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
         features,
+        engine: EngineSurface::default(),
+        platform: PlatformInfo::current(),
+        models: model_surface(cfg),
+        audio: AudioSurface::default(),
+        microphone: MicrophoneSurface::default(),
         checks,
         ok,
+    }
+}
+
+/// Effective model ids and whether their pinned artifacts are present.
+///
+/// Size-only checks: `doctor` must stay cheap and must never hash or download.
+fn model_surface(cfg: &Config) -> ModelSurface {
+    let stt = cfg
+        .model
+        .clone()
+        .unwrap_or_else(|| cfg.default_local_stt_model().to_string());
+    let stt_cached = crate::model::lookup_model(&stt)
+        .ok()
+        .map(|info| crate::model::is_model_cached(&cfg.cache_dir, info.name))
+        .unwrap_or(false);
+    #[cfg(feature = "tts")]
+    let tts_cached = crate::tts::catalogue::lookup_model(&cfg.tts_model)
+        .map(|info| {
+            [
+                crate::tts::catalogue::onnx_path(&cfg.cache_dir, info),
+                crate::tts::catalogue::voices_path(&cfg.cache_dir, info),
+                crate::tts::catalogue::config_path(&cfg.cache_dir, info),
+            ]
+            .iter()
+            .all(|p| p.exists())
+        })
+        .unwrap_or(false);
+    #[cfg(not(feature = "tts"))]
+    let tts_cached = false;
+    ModelSurface {
+        stt,
+        stt_cached,
+        tts: cfg.tts_model.clone(),
+        tts_cached,
+        cache_dir: cfg.cache_dir.display().to_string(),
     }
 }
 

@@ -118,7 +118,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             target: aarch64-apple-darwin
             asset: macos-arm64
             bin: aurum
@@ -129,6 +129,12 @@ jobs:
           - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             asset: linux-x86_64
+            bin: aurum
+          # Linux arm64 (JS §4.4 A8): engine mode on arm64 hosts. Built on a
+          # native arm runner because ONNX Runtime has no cross prebuilt.
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            asset: linux-arm64
             bin: aurum
           - os: windows-latest
             target: x86_64-pc-windows-msvc
@@ -197,7 +203,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             asset: macos-arm64
           - os: ubuntu-24.04
             asset: linux-x86_64
@@ -363,6 +369,7 @@ jobs:
           subject-path: |
             release-assets/aurum-macos-arm64
             release-assets/aurum-linux-x86_64
+            release-assets/aurum-linux-arm64
             release-assets/aurum-windows-x86_64.exe
             release-assets/aurum-sdk-*.tar.gz
 

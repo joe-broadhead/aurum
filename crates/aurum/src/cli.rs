@@ -54,7 +54,8 @@ fn wants_json_errors(cli: &Cli) -> bool {
         Some(Commands::Tts(tts)) => match &tts.command {
             Some(TtsCommands::Inspect { json, .. })
             | Some(TtsCommands::Verify { json, .. })
-            | Some(TtsCommands::Add { json, .. }) => *json,
+            | Some(TtsCommands::Add { json, .. })
+            | Some(TtsCommands::Models { json }) => *json,
             None => tts.synth.emit_json,
             _ => false,
         },
@@ -69,9 +70,16 @@ fn wants_json_errors(cli: &Cli) -> bool {
         Some(Commands::Cache(cache)) => cache.json,
         Some(Commands::Doctor(doc)) => doc.json,
         Some(Commands::SupportBundle(sb)) => sb.stdout,
-        Some(Commands::Models {
-            command: Some(ModelsCommands::Recommend { json, .. }),
-        }) => *json,
+        Some(Commands::Models { json, command }) => {
+            *json
+                || matches!(
+                    command,
+                    Some(ModelsCommands::Recommend { json: true, .. })
+                        | Some(ModelsCommands::Prepare { json: true, .. })
+                )
+        }
+        Some(Commands::Capabilities { .. }) => true,
+        Some(Commands::Record(_)) | Some(Commands::Play(_)) => false,
         _ => false,
     }
 }
@@ -108,14 +116,23 @@ pub struct Cli {
 
     #[command(flatten)]
     pub transcribe: TranscribeArgs,
+
+    /// Cache root for models and voice packs (default: the platform cache
+    /// directory). Sets `AURUM_CACHE` for this process, so every code path and
+    /// any child process use the same store.
+    #[arg(long = "cache-dir", global = true, value_name = "PATH")]
+    pub cache_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Subcommand)]
 #[allow(clippy::large_enum_variant)]
 pub enum Commands {
-    /// List local whisper models and cache status.
+    /// List local whisper models and cache status (or prepare one).
     #[command(visible_alias = "list-models")]
     Models {
+        /// Emit JSON (identity, licence, pins, cache state).
+        #[arg(long)]
+        json: bool,
         #[command(subcommand)]
         command: Option<ModelsCommands>,
     },
@@ -153,6 +170,19 @@ pub enum Commands {
 
     /// Print a man page to stdout (JOE-1720).
     Man,
+
+    /// Capture a WAV from the microphone (16 kHz mono PCM).
+    Record(crate::device_cmd::RecordCli),
+
+    /// Play a WAV on the default output (or a named one).
+    Play(crate::device_cmd::PlayCli),
+
+    /// Print what this build can do, as JSON for hosts.
+    Capabilities {
+        /// Emit JSON (the only format; kept explicit for hosts).
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 /// `aurum models` subcommands.
@@ -167,6 +197,18 @@ pub enum ModelsCommands {
         #[arg(long, value_name = "CODE")]
         language: Option<String>,
         /// Emit JSON.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Download (if needed), load and warm a local STT model.
+    ///
+    /// `ready` is only true after the compute path is warm, so the first real
+    /// transcription does not pay for graph/shader compilation.
+    Prepare {
+        /// Model name (default: the configured STT model).
+        #[arg(value_name = "MODEL")]
+        model: Option<String>,
+        /// Emit JSON with load and warm timings.
         #[arg(long)]
         json: bool,
     },
@@ -221,7 +263,12 @@ pub struct TtsCli {
 #[derive(Debug, Subcommand)]
 pub enum TtsCommands {
     /// List local TTS models and cache status.
-    Models,
+    Models {
+        /// Emit JSON (identity, licence, pins, cache state) without loading
+        /// the TTS runtime.
+        #[arg(long)]
+        json: bool,
+    },
     /// List local TTS voices and cache status.
     Voices,
     /// List supported TTS adapters (not bare ONNX loaders).
@@ -442,22 +489,22 @@ pub struct CleanupArgs {
 
 /// Entry point used by `main`.
 pub async fn run(cli: Cli) -> Result<()> {
+    // One cache root for the whole process and any child it spawns (A4).
+    // The flag wins over an inherited AURUM_CACHE so a host can be explicit.
+    if let Some(dir) = cli.cache_dir.as_ref() {
+        std::env::set_var(Config::CACHE_ENV, dir);
+    }
     if wants_json_errors(&cli) {
         set_json_errors(true);
     }
     match cli.command {
-        Some(Commands::Models { command: None }) => {
+        Some(Commands::Models {
+            json,
+            command: None,
+        }) => {
             init_tracing(false);
             let cfg = Config::load()?;
-            print!(
-                "{}",
-                model::format_model_list_with(
-                    &cfg.cache_dir,
-                    |m| cfg.local_model_allowed(m),
-                    cfg.default_local_stt_model(),
-                )
-            );
-            Ok(())
+            crate::models_cmd::emit_stt_models(&cfg, json)
         }
         Some(Commands::Models {
             command:
@@ -466,6 +513,7 @@ pub async fn run(cli: Cli) -> Result<()> {
                     language,
                     json,
                 }),
+            ..
         }) => {
             init_tracing(false);
             let cfg = Config::load()?;
@@ -484,6 +532,15 @@ pub async fn run(cli: Cli) -> Result<()> {
             }
             Ok(())
         }
+        Some(Commands::Models {
+            command: Some(ModelsCommands::Prepare { model, json }),
+            ..
+        }) => {
+            init_tracing(false);
+            let cfg = Config::load()?;
+            crate::models_cmd::prepare_model(&cfg, model.as_deref(), json).await?;
+            Ok(())
+        }
         Some(Commands::Transcribe(args)) => run_transcribe(args).await,
         Some(Commands::Cleanup(args)) => run_cleanup_cmd(args).await,
         Some(Commands::Tts(tts)) => run_tts_cli(tts).await,
@@ -496,6 +553,20 @@ pub async fn run(cli: Cli) -> Result<()> {
             .map_err(|m| UserError::Other { message: m }.into()),
         Some(Commands::Man) => {
             crate::completions_cmd::run_man().map_err(|m| UserError::Other { message: m }.into())
+        }
+        Some(Commands::Record(rec)) => crate::device_cmd::run_record(rec).await,
+        Some(Commands::Play(play)) => crate::device_cmd::run_play(play).await,
+        Some(Commands::Capabilities { json: _ }) => {
+            init_tracing(false);
+            let cfg = Config::load()?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&crate::capabilities_cmd::capabilities_json(&cfg))
+                    .map_err(|e| UserError::Other {
+                        message: format!("capabilities json: {e}"),
+                    })?
+            );
+            Ok(())
         }
         None => {
             if cli.transcribe.audio_file.is_none() {
@@ -523,9 +594,19 @@ pub async fn run(cli: Cli) -> Result<()> {
 
 async fn run_tts_cli(cli: TtsCli) -> Result<()> {
     match cli.command {
-        Some(TtsCommands::Models) => {
+        Some(TtsCommands::Models { json }) => {
             init_tracing(false);
             let cfg = Config::load()?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&crate::models_cmd::tts_models_json(&cfg))
+                        .map_err(|e| UserError::Other {
+                            message: format!("tts models json: {e}"),
+                        })?
+                );
+                return Ok(());
+            }
             print!("{}", aurum_core::format_tts_model_list(&cfg.cache_dir));
             if !cfg.tts_custom_models.is_empty() {
                 let entries: Vec<_> = cfg
@@ -1340,7 +1421,9 @@ fn run_doctor_cmd(cli: DoctorCli) -> Result<()> {
     init_tracing(false);
     // Prefer owned engine path (JOE-1782); residual process caches unchanged.
     let engine = aurum_core::AurumEngine::load()?;
-    let report = engine.doctor();
+    let mut report = engine.doctor();
+    // Core is device-agnostic; the CLI owns the one real device probe.
+    report.attach_microphone(crate::audio_io::probe_microphone());
     if cli.json {
         println!("{}", report.to_json_pretty()?);
     } else {

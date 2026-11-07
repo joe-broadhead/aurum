@@ -27,7 +27,7 @@ Usage: aurum [OPTIONS] [AUDIO_FILE]
        aurum <COMMAND>
 
 Commands:
-  models          List local whisper models and cache status [alias: list-models]
+  models          List local whisper models and cache status (or prepare one) [alias: list-models]
   transcribe      Transcribe an audio file (default when AUDIO_FILE is given positionally) [alias: t]
   cleanup         Clean existing text (stdin or file) without re-transcribing [alias: flow]
   tts             Synthesize speech from text (local ONNX TTS → mono WAV)
@@ -38,6 +38,9 @@ Commands:
   support-bundle  Privacy-safe support bundle for issue reports (JOE-1728)
   completions     Generate shell completions (bash/zsh/fish/powershell/elvish)
   man             Print a man page to stdout (JOE-1720)
+  record          Capture a WAV from the microphone (16 kHz mono PCM)
+  play            Play a WAV on the default output (or a named one)
+  capabilities    Print what this build can do, as JSON for hosts
   help            Print this message or the help of the given subcommand(s)
 
 Arguments:
@@ -89,6 +92,9 @@ Options:
   -v, --verbose
           Verbose diagnostics
 
+      --cache-dir <PATH>
+          Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+
   -h, --help
           Print help (see a summary with '-h')
 
@@ -99,16 +105,19 @@ Options:
 ## `aurum models`
 
 ```text
-List local whisper models and cache status
+List local whisper models and cache status (or prepare one)
 
-Usage: aurum models [COMMAND]
+Usage: aurum models [OPTIONS] [COMMAND]
 
 Commands:
   recommend  Explain an intent profile and the model it resolves to (JOE-1723)
+  prepare    Download (if needed), load and warm a local STT model
   help       Print this message or the help of the given subcommand(s)
 
 Options:
-  -h, --help  Print help
+      --json              Emit JSON (identity, licence, pins, cache state)
+      --cache-dir <PATH>  Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help              Print help
 ```
 
 ## `aurum batch`
@@ -164,6 +173,8 @@ Options:
           Emit final summary as JSON on stdout
   -v, --verbose
           
+      --cache-dir <PATH>
+          Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
   -h, --help
           Print help
 ```
@@ -176,30 +187,129 @@ One file-in / WAV-out conversation turn (no microphone). Boxed: Windows default 
 Usage: aurum converse [OPTIONS] [AUDIO_FILE]
 
 Arguments:
-  [AUDIO_FILE]  Audio file for a single user turn (omit when using `--mic`)
+  [AUDIO_FILE]
+          Audio file for a single user turn (omit when using `--mic`)
 
 Options:
-      --mic                      Use the default microphone and speakers (half-duplex CLI loop)
-      --provider <PROVIDER>      STT provider (registry id; default `local`)
-      --model <NAME>             STT model id (local ggml name or reviewed remote id)
-      --language <CODE>          STT language (default from config / auto)
-      --tts-provider <PROVIDER>  TTS provider (registry id; default `local`)
-      --tts-model <NAME>         TTS model id
-      --voice <NAME>             TTS voice id (required for ElevenLabs; never remapped from Luna)
-      --reply-text <TEXT>        Agent reply text (mutually exclusive with `--reply-file` and `--llm-provider`)
-      --reply-file <PATH>        Read agent reply UTF-8 from this file
-      --llm-provider <PROVIDER>  Chat backend for the agent turn: `openai` | `openrouter` | `xai`. Never selected just because a key is set
-      --llm-model <NAME>         Chat model id (defaults: openai=`gpt-4o-mini`, openrouter=`google/gemini-2.5-flash-lite`; xAI requires this flag)
-      --llm-system <TEXT>        Optional system prompt override for `--llm-provider`
-  -O, --output-file <PATH>       Write agent WAV here (required for file mode; optional with `--mic`)
-      --force                    Overwrite an existing non-empty output file
-      --local-only               Reject remote STT/TTS before encode/upload
-      --emit-json                Honesty JSON on stdout (no PCM). Incompatible with `--stdio`
-      --stdio                    JSONL sidecar: host owns mic/brain (`transcribe`/`synthesize` paths). Does not require `--mic` or a file
-      --endpoint-silence <SECS>  Silence that ends a `--mic` turn after a full utterance (seconds, default 0.7)
-      --thinking-pause <SECS>    Extra `--mic` wait while the utterance is still short (seconds, default 1.2). Covers a ~1 s mid-thought pause. Still RMS energy, not a neural VAD
-  -v, --verbose                  Verbose diagnostics
-  -h, --help                     Print help
+      --mic
+          Use the default microphone and speakers (half-duplex CLI loop)
+
+      --provider <PROVIDER>
+          STT provider (registry id; default `local`)
+
+      --model <NAME>
+          STT model id (local ggml name or reviewed remote id)
+
+      --language <CODE>
+          STT language (default from config / auto)
+
+      --tts-provider <PROVIDER>
+          TTS provider (registry id; default `local`)
+
+      --tts-model <NAME>
+          TTS model id
+
+      --voice <NAME>
+          TTS voice id (required for ElevenLabs; never remapped from Luna)
+
+      --reply-text <TEXT>
+          Agent reply text (mutually exclusive with `--reply-file` and `--llm-provider`)
+
+      --reply-file <PATH>
+          Read agent reply UTF-8 from this file
+
+      --llm-provider <PROVIDER>
+          Chat backend for the agent turn: `openai` | `openrouter` | `xai`. Never selected just because a key is set
+
+      --llm-model <NAME>
+          Chat model id (defaults: openai=`gpt-4o-mini`, openrouter=`google/gemini-2.5-flash-lite`; xAI requires this flag)
+
+      --llm-system <TEXT>
+          Optional system prompt override for `--llm-provider`
+
+  -O, --output-file <PATH>
+          Write agent WAV here (required for file mode; optional with `--mic`)
+
+      --force
+          Overwrite an existing non-empty output file
+
+      --local-only
+          Reject remote STT/TTS before encode/upload
+
+      --emit-json
+          Honesty JSON on stdout (no PCM). Incompatible with `--stdio`
+
+      --stdio
+          JSONL sidecar: host owns mic/brain (`transcribe`/`synthesize` paths). Does not require `--mic` or a file
+
+      --endpoint-silence <SECS>
+          Silence that ends a `--mic` turn after a full utterance (seconds, default 0.7)
+
+      --thinking-pause <SECS>
+          Extra `--mic` wait while the utterance is still short (seconds, default 1.2). Covers a ~1 s mid-thought pause. Still RMS energy, not a neural VAD
+
+      --preload
+          Warm the STT model before emitting `ready`.
+          
+          The first decode pays for graph/shader compilation (seconds on Metal). With `--preload`, `ready` means "the next transcription is warm", and a `warming` event is emitted first so the host can show progress.
+
+  -v, --verbose
+          Verbose diagnostics
+
+      --cache-dir <PATH>
+          Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+
+  -h, --help
+          Print help (see a summary with '-h')
+```
+
+## `aurum record`
+
+```text
+Capture a WAV from the microphone (16 kHz mono PCM)
+
+Usage: aurum record [OPTIONS] --output-file <PATH>
+
+Options:
+  -O, --output-file <PATH>  Write the recording here (16 kHz mono PCM WAV)
+      --device <NAME>       Input device: case-insensitive substring of its name. Default: system default
+      --seconds <SECS>      Stop after this many seconds (default: until Ctrl-C or SIGTERM)
+      --level-events        Emit JSONL input-level events on stdout (`{"type":"level",...}`, ~10/s)
+      --force               Overwrite an existing non-empty output file
+  -v, --verbose             Verbose diagnostics
+      --cache-dir <PATH>    Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help                Print help
+```
+
+## `aurum play`
+
+```text
+Play a WAV on the default output (or a named one)
+
+Usage: aurum play [OPTIONS] <WAV_FILE>
+
+Arguments:
+  <WAV_FILE>  WAV file to play (PCM, any rate; downmixed to mono)
+
+Options:
+      --rate <RATE>       Playback speed multiplier, 0.5..=2.0 (changes rate and pitch, like tape)
+      --device <NAME>     Output device: case-insensitive substring of its name. Default: system default
+  -v, --verbose           Verbose diagnostics
+      --cache-dir <PATH>  Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help              Print help
+```
+
+## `aurum capabilities`
+
+```text
+Print what this build can do, as JSON for hosts
+
+Usage: aurum capabilities [OPTIONS]
+
+Options:
+      --json              Emit JSON (the only format; kept explicit for hosts)
+      --cache-dir <PATH>  Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help              Print help
 ```
 
 ## `aurum doctor`
@@ -210,8 +320,9 @@ Read-only system, config, cache, and capability diagnostics (JOE-1628)
 Usage: aurum doctor [OPTIONS]
 
 Options:
-      --json  Emit JSON report
-  -h, --help  Print help
+      --json              Emit JSON report
+      --cache-dir <PATH>  Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help              Print help
 ```
 
 ## `aurum cache`
@@ -228,8 +339,9 @@ Commands:
   help    Print this message or the help of the given subcommand(s)
 
 Options:
-      --json  Emit JSON instead of a table
-  -h, --help  Print help
+      --json              Emit JSON instead of a table
+      --cache-dir <PATH>  Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help              Print help
 ```
 
 ## `aurum tts`
@@ -269,6 +381,7 @@ Options:
       --pack-dir <DIR>        Local model-pack directory (manifest + artifacts). Not a bare .onnx path
       --allow-unverified      Allow trust=local_unverified for `--pack-dir` (unsupported for production)
   -v, --verbose               Verbose diagnostics
+      --cache-dir <PATH>      Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
   -h, --help                  Print help
 ```
 
@@ -295,6 +408,8 @@ Options:
           
   -v, --verbose
           
+      --cache-dir <PATH>
+          Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
   -h, --help
           Print help
 ```
@@ -304,13 +419,14 @@ Options:
 ```text
 Generate shell completions (bash/zsh/fish/powershell/elvish)
 
-Usage: aurum completions <SHELL>
+Usage: aurum completions [OPTIONS] <SHELL>
 
 Arguments:
   <SHELL>  Shell: bash | zsh | fish | powershell | elvish
 
 Options:
-  -h, --help  Print help
+      --cache-dir <PATH>  Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help              Print help
 ```
 
 ## `aurum man`
@@ -318,10 +434,11 @@ Options:
 ```text
 Print a man page to stdout (JOE-1720)
 
-Usage: aurum man
+Usage: aurum man [OPTIONS]
 
 Options:
-  -h, --help  Print help
+      --cache-dir <PATH>  Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
+  -h, --help              Print help
 ```
 
 ## `aurum support-bundle`
@@ -335,6 +452,7 @@ Options:
   -O, --output-file <PATH>  Output path (default: aurum-support-<unix>.json in cwd)
       --notes <TEXT>        Optional untrusted notes (do not paste secrets, transcripts, or private paths). Notes are scrubbed for common token/path shapes but are not privacy-guaranteed
       --stdout              Print JSON to stdout instead of writing a file
+      --cache-dir <PATH>    Cache root for models and voice packs (default: the platform cache directory). Sets `AURUM_CACHE` for this process, so every code path and any child process use the same store
   -h, --help                Print help
 ```
 

@@ -40,7 +40,8 @@ Default install directory: `~/.local/bin` (`AURUM_INSTALL_DIR` to override).
 |-------|----------|
 | `aurum-macos-arm64` | Apple Silicon |
 | `aurum-macos-x86_64` | *(not shipped — build from source; see note)* |
-| `aurum-linux-x86_64` | Linux GNU |
+| `aurum-linux-x86_64` | Linux GNU (x86_64) |
+| `aurum-linux-arm64` | Linux GNU (arm64) |
 | `aurum-windows-x86_64.exe` | Windows |
 
 ## From crates.io

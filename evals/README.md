@@ -15,6 +15,7 @@ TTS objective checks). Performance budgets: `docs/operations/benchmarks.md` and
 | `observatory/corpus.production.manifest.json` | Production pack recipe (external licensed speech) |
 | `corpus.smoke.json` | Text-only smoke (PR unit tests) |
 | `corpus.public-v1.json` | Offline public matrix with synthetic multi-accent speech + silence/noise |
+| `dictation/corpus.v1.json` | Dictation-length pack (1-11 s, code terms, hesitations, noise) + WER gate (#11) |
 
 ```bash
 python3 scripts/generate_eval_audio.py

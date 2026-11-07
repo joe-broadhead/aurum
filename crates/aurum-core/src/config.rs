@@ -610,8 +610,30 @@ impl Config {
         ProjectDirs::from("", "", "aurum").map(|d| d.config_dir().join("config.toml"))
     }
 
+    /// Environment variable that overrides the cache root on every platform.
+    ///
+    /// `AURUM_CACHE` exists because the platform cache directory cannot be
+    /// relied on by a host that wants a store it owns: macOS ignores
+    /// `XDG_CACHE_HOME` and derives the location from `HOME`. Hosts (plugins,
+    /// sandboxes, CI) set this, or pass `--cache-dir`, instead of rewriting
+    /// `HOME` for the child process.
+    pub const CACHE_ENV: &'static str = "AURUM_CACHE";
+
     /// Resolve the platform-appropriate cache directory (models live under `models/`).
+    ///
+    /// Precedence: `AURUM_CACHE` (when non-empty), then the platform cache
+    /// directory, then `~/.cache/aurum`. A leading `~/` in `AURUM_CACHE` is
+    /// expanded so a shell string works without a subshell.
     pub fn default_cache_dir() -> Result<PathBuf> {
+        Self::cache_dir_with_env(std::env::var(Self::CACHE_ENV).ok().as_deref())
+    }
+
+    /// Pure precedence rule behind [`Self::default_cache_dir`], so it is testable
+    /// without mutating process-wide environment.
+    fn cache_dir_with_env(override_value: Option<&str>) -> Result<PathBuf> {
+        if let Some(raw) = override_value.map(str::trim).filter(|v| !v.is_empty()) {
+            return expand_home(raw);
+        }
         if let Some(dirs) = ProjectDirs::from("", "", "aurum") {
             return Ok(dirs.cache_dir().to_path_buf());
         }
@@ -1476,6 +1498,20 @@ fn dirs_home() -> Result<PathBuf> {
     .into())
 }
 
+/// Expand a leading `~` or `~/` in a user-supplied path.
+///
+/// Only the home prefix is expanded; `~user` is left untouched because it is
+/// ambiguous across platforms and hosts pass absolute paths anyway.
+fn expand_home(raw: &str) -> Result<PathBuf> {
+    if raw == "~" {
+        return dirs_home();
+    }
+    if let Some(rest) = raw.strip_prefix("~/").or_else(|| raw.strip_prefix("~\\")) {
+        return Ok(dirs_home()?.join(rest));
+    }
+    Ok(PathBuf::from(raw))
+}
+
 /// Write a starter config file if one does not already exist.
 pub fn write_example_config(path: &Path) -> Result<()> {
     if path.exists() {
@@ -1541,6 +1577,31 @@ mod tests {
 
     /// Serialize tests that mutate process environment (parallel cargo test).
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn cache_env_override_wins_and_expands_home() {
+        // Absolute path: used as given, whatever the platform default is.
+        assert_eq!(
+            Config::cache_dir_with_env(Some("/tmp/aurum-store")).unwrap(),
+            PathBuf::from("/tmp/aurum-store")
+        );
+        // Whitespace and empty values are "not set", never a directory named "".
+        let fallback = Config::cache_dir_with_env(None).unwrap();
+        assert!(!fallback.as_os_str().is_empty());
+        assert_eq!(Config::cache_dir_with_env(Some("   ")).unwrap(), fallback);
+        // `~/...` works without a shell.
+        if let Ok(home) = std::env::var("HOME") {
+            assert_eq!(
+                Config::cache_dir_with_env(Some("~/aurum-voice")).unwrap(),
+                PathBuf::from(home).join("aurum-voice")
+            );
+        }
+    }
+
+    #[test]
+    fn cache_env_name_is_public_and_documented() {
+        assert_eq!(Config::CACHE_ENV, "AURUM_CACHE");
+    }
 
     /// Isolate env mutations for secret-related tests.
     struct EnvGuard {

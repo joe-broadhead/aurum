@@ -72,7 +72,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-latest]
+        os: [ubuntu-24.04, macos-15, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -246,6 +246,48 @@ jobs:
       - name: cargo deny
         run: cargo deny check
 
+  dictation-eval:
+    name: Dictation WER gate (#11)
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      AURUM_EVAL_MODEL: tiny-q5_1
+    steps:
+      # Private cache for the model: never the runner's shared HOME cache. The `runner` context is not
+      # available in job-level env, so the path is set from RUNNER_TEMP in a step.
+      - name: Private model cache
+        run: echo "AURUM_CACHE=${RUNNER_TEMP}/aurum-dictation-cache" >> "$GITHUB_ENV"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8  # master; pin SHA (JOE-1634)
+        with:
+          toolchain: stable
+      - name: Install deps (macOS)
+        run: brew install cmake || true
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0  # v2.9.3
+        with:
+          prefix-key: v2-aurum
+      - name: Corpus structure (offline)
+        run: python3 scripts/run_dictation_eval.py --check
+      - name: Build CLI
+        run: cargo build -p aurum-stt --release --locked
+      - name: WER budget
+        run: |
+          # The first run downloads the pinned model into AURUM_CACHE.
+          python3 scripts/run_dictation_eval.py \
+            --aurum target/release/aurum \
+            --model "$AURUM_EVAL_MODEL" \
+            --out "evals/reports/_local/dictation-$AURUM_EVAL_MODEL.json"
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        with:
+          name: dictation-report
+          path: evals/reports/_local/dictation-*.json
+          if-no-files-found: warn
+          retention-days: 14
+
   docs:
     name: Docs
     runs-on: ubuntu-24.04
@@ -310,7 +352,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-latest]
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -732,7 +774,7 @@ jobs:
 
   integration-local:
     name: integration (local tiny-q5_1, macOS)
-    runs-on: macos-14
+    runs-on: macos-15
     needs: test
     timeout-minutes: 45
     steps:

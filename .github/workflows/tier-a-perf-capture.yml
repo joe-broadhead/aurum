@@ -47,7 +47,7 @@ jobs:
           - os: windows-latest
             profile_id: tier_a_windows_x86_64_msvc
             soft_fail: true
-          - os: macos-14
+          - os: macos-15
             profile_id: tier_a_macos_arm64_gha
             soft_fail: false
     steps:

@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: build install test lint fmt docs docs-serve clean ci release-dry-run version-check
+.PHONY: build install test lint fmt docs docs-serve clean ci release-dry-run version-check eval-dictation eval-dictation-check
 
 build:
 	cargo build -p aurum-stt --release --locked
@@ -17,6 +17,15 @@ lint:
 fmt:
 	cargo fmt --all -- --check
 
+# Offline corpus validation: manifest, references, durations, sha256, licences.
+eval-dictation-check:
+	python3 scripts/run_dictation_eval.py --check
+
+# Real WER gate. Needs a built binary and a cached model; honours AURUM_CACHE
+# and AURUM_EVAL_MODEL (default tiny-q5_1).
+eval-dictation: build
+	python3 scripts/run_dictation_eval.py --aurum target/release/aurum --model "$${AURUM_EVAL_MODEL:-tiny-q5_1}"
+
 docs:
 	python3 -m pip install -q -r docs/requirements.txt
 	mkdocs build --strict
@@ -32,7 +41,7 @@ clean:
 version-check:
 	@./scripts/version_check.sh
 
-ci: fmt lint test version-check
+ci: fmt lint test version-check eval-dictation-check
 	@echo "ci ok"
 
 release-dry-run: version-check build

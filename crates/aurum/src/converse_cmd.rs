@@ -111,6 +111,14 @@ pub struct ConverseCli {
     #[arg(long = "thinking-pause", value_name = "SECS")]
     pub thinking_pause: Option<f64>,
 
+    /// Warm the STT model before emitting `ready`.
+    ///
+    /// The first decode pays for graph/shader compilation (seconds on Metal).
+    /// With `--preload`, `ready` means "the next transcription is warm", and a
+    /// `warming` event is emitted first so the host can show progress.
+    #[arg(long)]
+    pub preload: bool,
+
     /// Verbose diagnostics.
     #[arg(short = 'v', long)]
     pub verbose: bool,
@@ -403,15 +411,50 @@ async fn run_mic_loop(
 async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Result<()> {
     let stt_p = engine.stt_provider_id()?.as_str().to_string();
     let tts_p = engine.tts_provider_id()?.as_str().to_string();
-    let live_cfg = mic_live_config(&cli, 30.0);
+    // Only the microphone path needs a per-turn cap. A host-owned file may be a
+    // 90-minute meeting, so the sidecar accepts up to the documented limit and
+    // still emits one `user_final`.
+    let max_utterance = if cli.mic {
+        30.0
+    } else {
+        aurum_core::SIDECAR_MAX_AUDIO_SECS
+    };
+    let live_cfg = mic_live_config(&cli, max_utterance);
     let mut live = LiveSession::new(engine, live_cfg)?;
-    stdio_proto::write_event(&OutEvent::Ready {
-        stt_provider: stt_p,
-        tts_provider: tts_p,
-    })
-    .map_err(|e| UserError::Other {
-        message: format!("stdio write: {e}"),
-    })?;
+
+    let model = live
+        .engine()
+        .config()
+        .model
+        .clone()
+        .unwrap_or_else(|| live.engine().config().default_local_stt_model().to_string());
+
+    let preloaded = if cli.preload {
+        emit_stdio(&OutEvent::Warming {
+            model: model.clone(),
+        })?;
+        match live.engine().warm_stt(&model).await {
+            Ok(report) => {
+                emit_stdio(&OutEvent::Preloaded {
+                    model: report.model.clone(),
+                    load_ms: report.load_ms,
+                    warm_ms: report.warm_ms,
+                    total_ms: report.total_ms,
+                })?;
+                true
+            }
+            // A preload that cannot run is a warning, not a dead sidecar: a
+            // remote provider or a missing model must still be usable.
+            Err(e) => {
+                emit_stdio(&OutEvent::error(e.category(), format!("preload: {e}")))?;
+                false
+            }
+        }
+    } else {
+        false
+    };
+
+    emit_ready(&stt_p, &tts_p, cli.mic, preloaded)?;
 
     let mic = if cli.mic {
         Some(MicCapture::start()?)
@@ -522,14 +565,22 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                         emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                     }
                 }
-                Ok(InCmd::Synthesize { text, path }) => {
-                    if let Err(e) = sidecar_synthesize(&mut live, &text, &path).await {
+                Ok(InCmd::Synthesize {
+                    text,
+                    path,
+                    speaking_rate,
+                }) => {
+                    if let Err(e) = sidecar_synthesize(&mut live, &text, &path, speaking_rate).await
+                    {
                         emit_stdio(&OutEvent::error(e.category(), e.to_string()))?;
                     }
                 }
-                Ok(InCmd::Speak { text }) => {
+                Ok(InCmd::Speak {
+                    text,
+                    speaking_rate,
+                }) => {
                     if let Some((play_tx, _)) = play.as_ref() {
-                        match live.speak_text(&text).await {
+                        match live.speak_text_with_rate(&text, speaking_rate).await {
                             Ok(tts) => {
                                 drain_live(&mut live);
                                 let _ = play_tx.send(PlayMsg::Clip(PlayClip {
@@ -546,6 +597,28 @@ async fn run_stdio_loop(cli: ConverseCli, engine: aurum_core::AurumEngine) -> Re
                             "user",
                             "speak requires --mic; path-based hosts must use synthesize",
                         ))?;
+                    }
+                }
+                Ok(InCmd::Preload) => {
+                    let model = live.engine().config().model.clone().unwrap_or_else(|| {
+                        live.engine().config().default_local_stt_model().to_string()
+                    });
+                    emit_stdio(&OutEvent::Warming {
+                        model: model.clone(),
+                    })?;
+                    match live.engine().warm_stt(&model).await {
+                        Ok(report) => {
+                            emit_stdio(&OutEvent::Preloaded {
+                                model: report.model.clone(),
+                                load_ms: report.load_ms,
+                                warm_ms: report.warm_ms,
+                                total_ms: report.total_ms,
+                            })?;
+                            emit_ready(&stt_p, &tts_p, cli.mic, true)?;
+                        }
+                        Err(e) => {
+                            emit_stdio(&OutEvent::error(e.category(), format!("preload: {e}")))?;
+                        }
                     }
                 }
                 Ok(InCmd::EndTurn) => {
@@ -637,6 +710,20 @@ fn emit_stdio(ev: &OutEvent) -> Result<()> {
     })
 }
 
+/// One `ready` shape everywhere, with the capability ids a host negotiates on.
+fn emit_ready(stt: &str, tts: &str, mic: bool, preloaded: bool) -> Result<()> {
+    emit_stdio(&OutEvent::Ready {
+        stt_provider: stt.to_string(),
+        tts_provider: tts.to_string(),
+        caps: aurum_core::sidecar_caps(mic)
+            .into_iter()
+            .map(str::to_string)
+            .collect(),
+        preloaded,
+        version: env!("CARGO_PKG_VERSION").to_string(),
+    })
+}
+
 fn require_absolute_path(path: &str) -> Result<&std::path::Path> {
     let p = std::path::Path::new(path);
     if !p.is_absolute() {
@@ -650,6 +737,7 @@ fn require_absolute_path(path: &str) -> Result<&std::path::Path> {
 
 async fn sidecar_transcribe(live: &mut LiveSession, path: &str) -> Result<()> {
     live.begin_sidecar_op()?;
+    live.reset_cancel();
     let result = sidecar_transcribe_inner(live, path).await;
     live.end_sidecar_op();
     result
@@ -677,14 +765,25 @@ async fn sidecar_transcribe_inner(live: &mut LiveSession, path: &str) -> Result<
     Ok(())
 }
 
-async fn sidecar_synthesize(live: &mut LiveSession, text: &str, path: &str) -> Result<()> {
+async fn sidecar_synthesize(
+    live: &mut LiveSession,
+    text: &str,
+    path: &str,
+    speaking_rate: Option<f32>,
+) -> Result<()> {
     live.begin_sidecar_op()?;
-    let result = sidecar_synthesize_inner(live, text, path).await;
+    live.reset_cancel();
+    let result = sidecar_synthesize_inner(live, text, path, speaking_rate).await;
     live.end_sidecar_op();
     result
 }
 
-async fn sidecar_synthesize_inner(live: &mut LiveSession, text: &str, path: &str) -> Result<()> {
+async fn sidecar_synthesize_inner(
+    live: &mut LiveSession,
+    text: &str,
+    path: &str,
+    speaking_rate: Option<f32>,
+) -> Result<()> {
     let path = require_absolute_path(path)?;
     aurum_core::tts::validate::validate_output_path(path)?;
     aurum_core::tts::validate::validate_text(text)?;
@@ -698,13 +797,16 @@ async fn sidecar_synthesize_inner(live: &mut LiveSession, text: &str, path: &str
         (!voice_cfg.is_empty()).then_some(voice_cfg),
         &cfg.tts_voice,
     )?;
+    let rate = speaking_rate.unwrap_or(cfg.tts_speaking_rate);
     let opts = aurum_core::SynthesisOptions {
         model,
         voice,
         language: cfg.tts_language.clone(),
-        speaking_rate: cfg.tts_speaking_rate,
+        speaking_rate: rate,
         timeout_ms: cfg.tts_timeout_ms,
         local_only: cfg.local_only,
+        // `abort` on the sidecar cancels this synthesis, not just the mic turn.
+        cancel: Some(live.cancel_flag()),
         ..Default::default()
     };
     let tts = engine.synthesize(text, &opts).await?;
@@ -721,6 +823,7 @@ async fn sidecar_synthesize_inner(live: &mut LiveSession, text: &str, path: &str
         model: tts.model,
         voice: tts.voice,
         sample_rate_hz: tts.sample_rate_hz,
+        speaking_rate: rate,
     })?;
     Ok(())
 }

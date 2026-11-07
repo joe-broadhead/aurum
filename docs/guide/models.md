@@ -2,10 +2,46 @@
 
 ```bash
 aurum models
+aurum models --json
 ```
 
 Lists the local whisper.cpp catalogue, cache status, and support tier. Every
 trusted entry has a reviewed SHA-256 pin and exact size (JOE-1645).
+
+`--json` adds the machine surface a host needs before it downloads anything:
+`id`, `aliases`, `tier`, `languages`, `licence`, `cached`, `bytes`, `sha256`,
+`url`, `revision`, `enabled` and per-file `path`. It reads the effective
+catalogue (including a deployment `[catalogue].path`), never the network, and
+`aurum tts models --json` reports the voice packs the same way **without
+loading the ONNX runtime**.
+
+## Cache location
+
+The cache root, in precedence order:
+
+1. `--cache-dir <PATH>` (global flag, any command)
+2. `AURUM_CACHE` environment variable (honoured on every platform, `~/` expanded)
+3. the platform cache directory (`~/Library/Caches/aurum` on macOS,
+   `$XDG_CACHE_HOME/aurum` or `~/.cache/aurum` elsewhere)
+
+```bash
+aurum --cache-dir /srv/voice/models models --json
+```
+
+A host that wants a store it owns should set `AURUM_CACHE` (often to a path
+under its own data directory) rather than rewriting `HOME` for the child.
+
+## Prepare before first use
+
+```bash
+aurum models prepare tiny-q5_1 --json
+```
+
+Downloads if needed, loads the weights **and** runs a half-second decode so the
+compute path is warm, then prints `load_ms` / `warm_ms` / `total_ms`. Without
+this, the first real transcription pays for graph and shader compilation
+(seconds on Metal). `aurum converse --stdio --preload` does the same work inside
+a sidecar before it emits `ready`.
 
 ## Recommended (v0.0.3)
 

@@ -118,7 +118,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "aurum-core"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "async-trait",
  "base64 0.23.1",
@@ -151,7 +151,7 @@ dependencies = [
 
 [[package]]
 name = "aurum-ffi"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "aurum-core",
  "once_cell",
@@ -161,13 +161,14 @@ dependencies = [
 
 [[package]]
 name = "aurum-stt"
-version = "0.0.23"
+version = "0.0.24"
 dependencies = [
  "aurum-core",
  "clap",
  "clap_complete",
  "clap_mangen",
  "cpal",
+ "hound",
  "reqwest",
  "serde_json",
  "tempfile",

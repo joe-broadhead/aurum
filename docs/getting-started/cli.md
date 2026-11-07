@@ -5,14 +5,19 @@ When this page and the binary disagree, trust `aurum --help` / the snapshot.
 
 ```text
 aurum <AUDIO_FILE> [OPTIONS]
-aurum models
+aurum models [--json]
 aurum models recommend --profile balance
+aurum models prepare [MODEL] [--json]
 aurum transcribe <AUDIO_FILE> [OPTIONS]
 aurum batch <INPUT> --output-dir <DIR> [OPTIONS]
 aurum cleanup [TEXT_FILE] [OPTIONS]     # alias: aurum flow
 aurum tts "Hello" --output-file out.wav
-aurum tts models | voices | adapters | inspect | verify | add
+aurum tts models [--json] | voices | adapters | inspect | verify | add
 aurum converse <AUDIO_FILE> --reply-text "Hello" -O out.wav
+aurum converse --stdio [--preload]
+aurum record -O clip.wav [--device NAME] [--seconds N] [--level-events]
+aurum play clip.wav [--rate 0.5..2.0] [--device NAME]
+aurum capabilities --json
 aurum doctor [--json]
 aurum cache status | verify | repair
 aurum support-bundle
@@ -21,6 +26,64 @@ aurum man
 aurum --help
 aurum --version
 ```
+
+Every command accepts the global `--cache-dir <PATH>` flag. It sets
+`AURUM_CACHE` for the process (and any child), so a host owns the model store
+instead of rewriting `HOME`:
+
+```bash
+aurum --cache-dir ~/.cache/voice/aurum models --json
+AURUM_CACHE=~/.cache/voice/aurum aurum models --json   # same store, no flag
+```
+
+## Machine-readable surface
+
+Hosts should read these instead of parsing prose. All are offline, static, and
+never load the TTS runtime:
+
+| Command | Contents |
+|---------|----------|
+| `aurum capabilities --json` | version, protocol, platform, commands, caps, sidecar contract, cache root, defaults |
+| `aurum models --json` | per-model id, licence, size, SHA-256, revision, cache state, enabled |
+| `aurum tts models --json` | TTS packs with licence, pins, cache state, adapter |
+| `aurum doctor --json` | versioned checks plus `engine`, `platform`, `models`, `audio`, `microphone` |
+
+`aurum capabilities --json` is the superset used by `opencode-voice`:
+
+```json
+{"schema_version":1,"protocol_version":1,
+ "platform":{"os":"macos","arch":"aarch64","target":"aarch64-macos"},
+ "cache_root":"/Users/me/.cache/voice/aurum",
+ "caps":{"stdio_sidecar":true,"long_audio":true,"max_audio_secs":7200,
+         "synthesize_speaking_rate":true,"synthesize_abort":true,
+         "record":true,"play":true,"cache_dir_flag":true,"cache_env":"AURUM_CACHE"},
+ "sidecar":{"protocol_version":1,"caps":["transcribe","synthesize",
+            "synthesize_speaking_rate","synthesize_abort","long_audio"]}}
+```
+
+## Device capture and playback
+
+`record` and `play` use Aurum's existing `cpal` stack, so a host does not need
+`ffmpeg`/avfoundation for capture or `afplay` for playback.
+
+```bash
+# Dictation clip: 16 kHz mono PCM WAV, stop after 5 s, JSONL levels on stdout
+aurum record -O ~/clip.wav --seconds 5 --level-events
+
+# Choose a device by substring; play at 1.25x
+aurum record -O ~/clip.wav --device "MacBook"
+aurum play ~/clip.wav --rate 1.25
+```
+
+`record` writes the same format the STT path and sidecar accept, so
+`aurum record … && aurum clip.wav` works with no conversion. Without
+`--seconds` it records until Ctrl-C (the WAV is still written).
+`--level-events` emits `{"type":"level","t_ms":…,"rms":…,"peak":…}` about ten
+times a second, then `{"type":"recorded",…}`; a host can drive a level meter
+without parsing audio.
+
+`play` accepts PCM WAV at any rate (downmixed to mono). `--rate` is a tape-speed
+multiplier: it changes duration and pitch together.
 
 ## Transcribe options
 

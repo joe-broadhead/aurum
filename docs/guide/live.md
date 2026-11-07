@@ -29,38 +29,102 @@ permission on its own process, writes private WAVs, and calls `transcribe` /
 ### `ready`
 
 ```json
-{"v":1,"type":"ready","stt_provider":"local","tts_provider":"local","caps":["transcribe","synthesize","speak"]}
+{"v":1,"type":"ready","stt_provider":"local","tts_provider":"local",
+ "caps":["transcribe","synthesize","synthesize_speaking_rate","synthesize_abort","long_audio"],
+ "preloaded":false,"version":"0.0.24"}
 ```
+
+`caps` is the negotiation surface; read it instead of probing for names:
+
+| cap | meaning |
+|-----|---------|
+| `transcribe` | `transcribe` accepts a host-owned absolute WAV path |
+| `synthesize` | `synthesize` writes a WAV to a host-owned path |
+| `speak` | only with `--mic`: play on the default speaker |
+| `synthesize_speaking_rate` | `speaking_rate` (0.5–2.0) is accepted |
+| `synthesize_abort` | `abort` cancels an in-flight `synthesize` |
+| `long_audio` | `transcribe` accepts up to 2 hours, not 30 s |
 
 `speak` is only honored when the process was started with `--mic` (local
 playback). Hosts that own speakers use `synthesize`.
+
+`aurum capabilities --json` publishes the same contract for a host that has not
+started a sidecar yet.
+
+### Warm start (`--preload`, `preload`)
+
+The first decode in a process pays for graph and shader compilation (seconds on
+Metal). Without help, that cost lands on the user's first utterance. Two ways to
+move it somewhere visible:
+
+```bash
+# ready only after the model is warm; emits `warming`, then `preloaded`, then `ready`
+aurum converse --stdio --preload --model tiny-q5_1
+```
+
+```json
+{"type":"warming","v":1,"model":"tiny-q5_1"}
+{"type":"preloaded","v":1,"model":"tiny-q5_1","load_ms":41,"warm_ms":920,"total_ms":961}
+{"type":"ready","v":1,"preloaded":true,...}
+```
+
+A host that connected before deciding can send `{"type":"preload"}`; the
+sidecar answers with `preloaded` and a fresh `ready` with `preloaded:true`.
+If preload cannot run (remote provider, missing model), the sidecar emits an
+`error` and still reports `ready` with `preloaded:false`, so it is never dead.
+
+Measured on macOS arm64, `tiny-q5_1`, 2026-11-07:
+
+| Path | ready | first transcribe | second |
+|------|-------|------------------|--------|
+| no preload | 46 ms | **1307 ms** | 202 ms |
+| `--preload` | 1009 ms | **164 ms** | 184 ms |
+
+The ~1.1 s of model load and first decode moves from the user's first utterance
+into a visible `warming` phase. On a machine that has never fetched the model,
+the same work is ~33 s (32 MB download plus first Metal/graph init) instead of
+~1 s; `aurum models prepare` is where a host should spend it, at install time.
+
+Install-time preparation is the same work without a sidecar:
+
+```bash
+aurum models prepare tiny-q5_1 --json   # download + load + warm, with timings
+```
 
 ### Commands (stdin)
 
 | type | fields | effect |
 |------|--------|--------|
-| `transcribe` | `path` (absolute file) | STT; emits `user_final` |
-| `synthesize` | `text`, `path` (absolute WAV out) | TTS write; **does not play**; emits `synthesized` |
-| `speak` | `text` | Play on default speaker; **requires `--mic`** |
+| `transcribe` | `path` (absolute file), up to 2 h | STT; emits one `user_final` |
+| `synthesize` | `text`, `path` (absolute WAV out), optional `speaking_rate` | TTS write; **does not play**; emits `synthesized` |
+| `speak` | `text`, optional `speaking_rate` | Play on default speaker; **requires `--mic`** |
+| `preload` | | Warm the STT model; emits `preloaded` + `ready` |
 | `end_turn` | | Drain playback if any; back to listening |
-| `abort` | | Cancel in-flight STT/TTS; reset turn |
+| `abort` | | Cancel in-flight STT/TTS (synthesis included); reset turn |
 | `shutdown` | | Exit after `shutdown` event |
 
 Paths must be absolute (no NUL/newline). Relative paths → `error` `category=user`.
+
+A `transcribe` longer than 30 s is accepted (up to 2 hours) and still produces
+one `user_final`; the 30 s cap applies only to a `--mic` turn, where it bounds a
+single utterance.
 
 ### Events (stdout)
 
 | type | notes |
 |------|--------|
+| `warming` | with `--preload` or `preload`: the model is loading |
+| `preloaded` | `model`, `load_ms`, `warm_ms`, `total_ms` |
 | `user_final` | `text`, `provider`, `model` |
-| `synthesized` | `path`, `duration_ms`, `provider`, `model`, `voice`, `sample_rate_hz` |
+| `synthesized` | `path`, `duration_ms`, `provider`, `model`, `voice`, `sample_rate_hz`, `speaking_rate` |
 | `listening` | after `end_turn` / `abort` |
 | `error` | `category` (`user` \| `environment` \| `provider` \| `internal`) + `message` |
 | `shutdown` | process exiting |
 
 Broken stdout (EPIPE) exits the sidecar with a non-zero status. Overlapping
 `transcribe`/`synthesize` while one is running returns `error` `category=provider`
-(`busy`). `abort` sets the session cancel flag immediately.
+(`busy`). `abort` sets the session cancel flag immediately and reaches the
+running synthesis as well as the decoder.
 
 `--stdio` is incompatible with `--llm-provider`, `--reply-text`, `--reply-file`,
 and `--emit-json`.

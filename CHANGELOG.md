@@ -7,6 +7,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.0.24] - Unreleased
+
+The host surface `opencode-voice` needs for its first release: a taggable
+sidecar with honest capabilities, device capture and playback, a cache the
+host owns, JSON inventories, an explicit warm start, and a dictation eval gate
+(#11 from the Hex review). No breaking change to the sidecar protocol: version
+1 gains fields and capability ids.
+
+### Added
+
+- **`aurum record` / `aurum play` (A2/A3):** microphone capture to 16 kHz mono
+  PCM WAV (`-O`, `--device`, `--seconds`, `--level-events`) and native-rate WAV
+  playback (`--rate` 0.5–2.0, `--device`) on the existing `cpal` stack. A host
+  no longer needs `ffmpeg -f avfoundation` or `afplay`. Capture resamples with a
+  phase-carrying resampler, so a long recording has no boundary drift, and
+  playback drains its last device buffer instead of truncating the tail.
+- **`--cache-dir` and `AURUM_CACHE` (A4):** one cache root for models and voice
+  packs, on every platform, with `~/` expansion. The flag sets the environment
+  for the process and its children; the platform cache directory is only the
+  fallback. Hosts stop rewriting `HOME`.
+- **JSON inventories (A5):** `aurum models --json` and `aurum tts models --json`
+  report id, aliases, tier, licence, size, SHA-256, revision, per-file path and
+  cache state, from the reviewed catalogue. Neither loads the TTS runtime or
+  touches the network.
+- **The capabilities document (A1/#10):** `aurum capabilities --json` publishes
+  schema and protocol versions, platform, commands, capability flags, the
+  sidecar contract, cache root and default models. A host reads one document
+  instead of parsing prose.
+- **Sidecar capability negotiation (A6):** `ready.caps` names
+  `synthesize_speaking_rate`, `synthesize_abort` and `long_audio`, plus `speak`
+  only when `--mic` is on. `synthesize`/`speak` accept `speaking_rate`
+  (0.5–2.0), `abort` cancels an in-flight synthesis, and a host-owned
+  `transcribe` accepts up to two hours instead of 30 seconds.
+- **Warm start (#3):** `aurum models prepare [MODEL] [--json]` downloads (if
+  needed), loads and runs one short decode, reporting `load_ms`/`warm_ms`.
+  `converse --stdio --preload` and a `preload` sidecar command do the same inside
+  a sidecar and emit `warming` / `preloaded` before `ready`, so ready means the
+  next transcription is warm.
+- **Doctor surface (A7):** `aurum doctor --json` gains additive v1 fields
+  `engine` (version + protocol), `platform`, `models` (ids + cache presence),
+  `audio` (formats and rates) and `microphone` (probed availability, device and
+  reason), with support bundles redacting the new paths.
+- **Linux arm64 binary (A8):** the release matrix builds
+  `aurum-linux-arm64` on a native arm runner and attests it alongside the other
+  assets; `install.sh` maps it and the clean-install CI matrix covers it.
+- **Dictation eval corpus and WER gate (#11):** `evals/dictation/` ships 14
+  synthetic, CC0, dictation-length clips (1–11 s: code terms, fillers, numbers,
+  fan noise, a quiet microphone, three accents, silence) with `SHA256SUMS`.
+  `scripts/run_dictation_eval.py` scores WER, CER, vocabulary recall, silence
+  false positives and RTF against manifest budgets; `make eval-dictation-check`
+  is offline and in `make ci`, `make eval-dictation` (and the new
+  `dictation-eval` CI job) runs the real gate.
+- **Rust API:** `aurum_core::WarmReport`, `AurumEngine::warm_stt`,
+  `LiveSession::speak_text_with_rate`, `audio::read_wav_native` / `PcmWav`,
+  `Config::CACHE_ENV`, the `surface` module (`sidecar_caps`, `PlatformInfo`,
+  `PROTOCOL_VERSION`, `SIDECAR_MAX_AUDIO_SECS`) and the doctor surface structs
+  (`EngineSurface`, `ModelSurface`, `AudioSurface`, `MicrophoneSurface`,
+  `DoctorReport::attach_microphone`).
+
+### Changed
+
+- `aurum models` accepts `--json`; `aurum tts models` becomes a subcommand with
+  `--json` (the plain form is unchanged).
+- `DoctorReport` keeps `schema_version = 1`; the new fields are additive and
+  default when absent, so an existing consumer keeps working.
+- `aurum play` waits about 200 ms after the last sample before dropping the
+  stream, so the final buffer is audible.
+
+### Fixed
+
+- Sidecar playback no longer reports a device underrun on every clip and no
+  longer prints a speaker error to stderr on a successful play.
+
+### Known limits
+
+- `--partials` is not advertised: streaming ASR is still a non-goal here (Hex
+  rank 1 follows with the streaming work).
+- Intel Mac and other Linux hosts remain source builds (Tier B).
+- `whisper-tiny` emits the token "you" for a file of digital silence through the
+  file path. The new dictation corpus records it (one permitted inserted word);
+  the neural VAD follow-up closes it. Hosts gate on speech before `transcribe`.
+- A `transcribe` over 30 s is accepted by the sidecar but is decoded as one
+  utterance; it is not chunked at pauses yet (Hex rank 8 follow-up).
+
 ### Added
 
 - **Live session (#140):** `aurum_core::live::LiveSession` — device-agnostic,
@@ -926,7 +1012,8 @@ backlog (JOE-1652–1655).
 - crates.io publish is **not** part of automated release yet
 - No GitHub Release tag until maintainer approval
 
-[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.23...HEAD
+[Unreleased]: https://github.com/joe-broadhead/aurum/compare/v0.0.24...HEAD
+[0.0.24]: https://github.com/joe-broadhead/aurum/compare/v0.0.23...v0.0.24
 [0.0.23]: https://github.com/joe-broadhead/aurum/compare/v0.0.22...v0.0.23
 [0.0.22]: https://github.com/joe-broadhead/aurum/compare/v0.0.21...v0.0.22
 [0.0.21]: https://github.com/joe-broadhead/aurum/compare/v0.0.20...v0.0.21

@@ -51,6 +51,7 @@ detect_asset() {
   arch="$(uname -m)"
   case "${os}-${arch}" in
     linux-x86_64|linux-amd64) echo "aurum-linux-x86_64" ;;
+    linux-aarch64|linux-arm64) echo "aurum-linux-arm64" ;;
     darwin-arm64|darwin-aarch64) echo "aurum-macos-arm64" ;;
     darwin-x86_64)
       echo "error: prebuilt Intel Mac binaries are not published; use --from-source" >&2

@@ -7,7 +7,7 @@ guarantee. Use this matrix for install planning and clean-install qualification.
 
 | Tier | Platforms | Install method | Evidence |
 |------|-----------|----------------|----------|
-| **A — binary** | macOS arm64 (Apple Silicon), Linux x86_64 (gnu), Windows x86_64 (MSVC) | GitHub Release CLI + `SHA256SUMS` | Built in `release.yml`; integration smoke on macOS arm64 in CI |
+| **A — binary** | macOS arm64 (Apple Silicon), Linux x86_64 (gnu), Linux arm64 (gnu), Windows x86_64 (MSVC) | GitHub Release CLI + `SHA256SUMS` | Built in `release.yml`; integration smoke on macOS arm64 in CI |
 | **B — source** | macOS x86_64 (Intel), other Linux glibc hosts | `cargo install aurum-stt --locked` or `./scripts/install.sh --from-source` | Compile on stable MSRV; no prebuilt ONNX for Intel Mac cross-compile |
 | **C — experimental** | Other targets / musl / freeBSD | `cargo build` best-effort | Community; no release gate |
 
@@ -51,6 +51,7 @@ The script checks:
 | Runner | Maps to |
 |--------|---------|
 | `ubuntu-24.04` | linux-x86_64 |
+| `ubuntu-24.04-arm` | linux-arm64 |
 | `macos-14` | macos-arm64 |
 | `windows-latest` | windows-x86_64 |
 

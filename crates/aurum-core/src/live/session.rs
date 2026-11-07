@@ -74,6 +74,14 @@ impl LiveSession {
         self.cancel.clone()
     }
 
+    /// Clear a previous `abort` before starting a host-owned operation.
+    ///
+    /// `abort` latches the flag; a sidecar operation that reuses it without a
+    /// reset would cancel itself on the first check.
+    pub fn reset_cancel(&self) {
+        self.cancel.reset();
+    }
+
     /// Exclusive sidecar op (transcribe/synthesize). Fail closed if busy.
     pub fn begin_sidecar_op(&mut self) -> Result<()> {
         if self.sidecar_busy {

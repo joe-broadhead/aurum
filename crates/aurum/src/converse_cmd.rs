@@ -737,6 +737,7 @@ fn require_absolute_path(path: &str) -> Result<&std::path::Path> {
 
 async fn sidecar_transcribe(live: &mut LiveSession, path: &str) -> Result<()> {
     live.begin_sidecar_op()?;
+    live.reset_cancel();
     let result = sidecar_transcribe_inner(live, path).await;
     live.end_sidecar_op();
     result
@@ -771,6 +772,7 @@ async fn sidecar_synthesize(
     speaking_rate: Option<f32>,
 ) -> Result<()> {
     live.begin_sidecar_op()?;
+    live.reset_cancel();
     let result = sidecar_synthesize_inner(live, text, path, speaking_rate).await;
     live.end_sidecar_op();
     result

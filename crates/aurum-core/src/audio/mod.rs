@@ -283,7 +283,7 @@ pub fn read_wav_native(path: &Path) -> Result<PcmWav> {
     }
     let samples = mono
         .into_iter()
-        .map(|v| (v.clamp(-1.0, 1.0) * 32_767.0) as i16)
+        .map(|v| (v.clamp(-1.0, 1.0) * 32_768.0).clamp(-32_768.0, 32_767.0) as i16)
         .collect();
     Ok(PcmWav {
         samples,

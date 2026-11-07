@@ -105,6 +105,12 @@ impl StreamResampler {
             return Vec::new();
         }
         let n = input.len();
+        // Same rate: pass everything through. Falling through the interpolator
+        // would defer one sample per chunk, and a 16 kHz device is common.
+        if (self.ratio - 1.0).abs() < f64::EPSILON {
+            self.carry = Some(input[n - 1]);
+            return input.to_vec();
+        }
         let sample = |i: isize| -> f32 {
             if i < 0 {
                 self.carry.unwrap_or(input[0])

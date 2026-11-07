@@ -67,6 +67,15 @@ pub fn build_support_bundle(cfg: &Config, user_notes: Option<String>) -> Support
             *h = redact_path_str(h);
         }
     }
+    // The surface fields are user-facing paths too (cache root, model ids are
+    // not paths but the cache root is), so they get the same tokenisation.
+    doctor.models.cache_dir = redact_path_str(&doctor.models.cache_dir);
+    if let Some(name) = doctor.microphone.name.as_mut() {
+        *name = redact_path_str(name);
+    }
+    if let Some(reason) = doctor.microphone.reason.as_mut() {
+        *reason = redact_path_str(reason);
+    }
     let mut diag = cfg.effective_diagnostic();
     // Extra redaction pass on path-like fields.
     diag.cache_dir = redact_path_str(&diag.cache_dir);

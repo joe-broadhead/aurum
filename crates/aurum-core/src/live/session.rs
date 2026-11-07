@@ -177,6 +177,15 @@ impl LiveSession {
 
     /// Synthesize `text` via the engine TTS provider and enqueue [`LiveEvent::AgentPcm`].
     pub async fn speak_text(&mut self, text: &str) -> Result<SynthesisResult> {
+        self.speak_text_with_rate(text, None).await
+    }
+
+    /// [`Self::speak_text`] with an explicit speaking-rate override (sidecar).
+    pub async fn speak_text_with_rate(
+        &mut self,
+        text: &str,
+        speaking_rate: Option<f32>,
+    ) -> Result<SynthesisResult> {
         validate_text(text)?;
         self.prepare_speak()?;
         self.cancel.reset();
@@ -195,7 +204,7 @@ impl LiveSession {
             model,
             voice,
             language: cfg.tts_language.clone(),
-            speaking_rate: cfg.tts_speaking_rate,
+            speaking_rate: speaking_rate.unwrap_or(cfg.tts_speaking_rate),
             timeout_ms: cfg.tts_timeout_ms,
             cancel: Some(self.cancel.clone()),
             local_only: cfg.local_only,

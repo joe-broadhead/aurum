@@ -54,6 +54,18 @@ use crate::tts::local::{LocalTtsProvider, TtsSessionPool};
 #[cfg(feature = "tts")]
 use crate::tts::provider::{SynthesisOptions, SynthesisProvider, SynthesisResult};
 
+/// What a preload actually did, with the timings a host needs to explain it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct WarmReport {
+    pub model: String,
+    pub path: String,
+    /// Time to make the weights ready (download excluded when already cached).
+    pub load_ms: u64,
+    /// Time for the warm-up decode: graph/shader compilation happens here.
+    pub warm_ms: u64,
+    pub total_ms: u64,
+}
+
 /// Library-facing engine: validated config + owned governor/metrics/model pools + registry.
 pub struct AurumEngine {
     config: ValidatedConfig,
@@ -457,6 +469,49 @@ impl AurumEngine {
         // disabled models exactly like `run_stt`.
         self.config().check_local_model_allowed(model)?;
         self.local_whisper()?.preload(model).await
+    }
+
+    /// Load the weights **and** run one short decode, so the next real
+    /// transcription is not the one paying for graph/shader compilation (#3).
+    ///
+    /// The first ever whisper run costs seconds on Metal (shader compile) and
+    /// tens of milliseconds to a second elsewhere. A host that shows a "ready"
+    /// status must not be showing it before this returns: `preload_stt` alone
+    /// only loads weights and leaves the first decode cold. Half a second of
+    /// silence is enough to build the compute path and produces no speech.
+    pub async fn warm_stt(&self, model: &str) -> Result<WarmReport> {
+        self.ensure_open()?;
+        self.config().check_local_model_allowed(model)?;
+        if !self.config().provider.trim().eq_ignore_ascii_case("local") {
+            return Err(UserError::Other {
+                message: format!(
+                    "warm_stt preloads a local model, but [stt].provider is `{}`",
+                    self.config().provider
+                ),
+            }
+            .into());
+        }
+        let started = std::time::Instant::now();
+        let path = self.preload_stt(model).await?;
+        let load_ms = started.elapsed().as_millis() as u64;
+
+        let samples = vec![0.0f32; (crate::audio::WHISPER_SAMPLE_RATE as usize) / 2];
+        let options = crate::providers::TranscriptionOptions {
+            model: model.to_string(),
+            language: "en".to_string(),
+            ..Default::default()
+        };
+        let decode_started = std::time::Instant::now();
+        self.transcribe_pcm(&samples, &options).await?;
+        let warm_ms = decode_started.elapsed().as_millis() as u64;
+
+        Ok(WarmReport {
+            model: model.to_string(),
+            path: path.display().to_string(),
+            load_ms,
+            warm_ms,
+            total_ms: started.elapsed().as_millis() as u64,
+        })
     }
 
     /// High-level TTS synthesis via config `tts_provider` (JOE-1787 / JOE-1938).

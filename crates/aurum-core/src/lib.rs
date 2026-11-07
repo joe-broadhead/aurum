@@ -94,14 +94,16 @@ pub mod runtime;
 pub mod sdk;
 pub mod secret;
 pub mod support;
+pub mod surface;
 #[cfg(feature = "tts")]
 pub mod tts;
 pub mod window;
 
 pub use audio::{
-    load_audio, normalize_remote_audio, try_load_wav_file, AudioInput, BoundedAudioBody,
-    ChannelPolicy, EncodedAudioFormat, NormalizedAudio, RemoteAudioLimits, ALLOWED_SAMPLE_RATES_HZ,
-    DEFAULT_MAX_DURATION, DEFAULT_MAX_ENCODED_BYTES, DEFAULT_MAX_PCM_SAMPLES, WHISPER_SAMPLE_RATE,
+    load_audio, normalize_remote_audio, read_wav_native, try_load_wav_file, AudioInput,
+    BoundedAudioBody, ChannelPolicy, EncodedAudioFormat, NormalizedAudio, PcmWav,
+    RemoteAudioLimits, ALLOWED_SAMPLE_RATES_HZ, DEFAULT_MAX_DURATION, DEFAULT_MAX_ENCODED_BYTES,
+    DEFAULT_MAX_PCM_SAMPLES, WHISPER_SAMPLE_RATE,
 };
 pub use batch::{
     acquire_batch_lock, build_items, discover_inputs, discovery_preflight_id,
@@ -129,7 +131,7 @@ pub use config::{Config, ConfigFile, EffectiveConfigDiagnostic, ValidatedConfig}
 pub use doctor::{run_doctor, DoctorCheck, DoctorReport, DoctorSeverity, DOCTOR_SCHEMA_VERSION};
 pub use domain::{FiniteDurationSecs, ModelId, SampleRateHz};
 pub use dto::{ErrorDto, SttResultDto, ERROR_SCHEMA_VERSION, STT_RESULT_SCHEMA_VERSION};
-pub use engine::AurumEngine;
+pub use engine::{AurumEngine, WarmReport};
 pub use error::{AurumError, ErrorCategory, Result, TranscriptionError};
 pub use eval::{
     aggregate_listening, allowed_mean_wer, budget_exit_code, build_report, char_error_rate,
@@ -225,6 +227,9 @@ pub use sdk::{SynthesisRequest, TtsConfig};
 pub use secret::SecretString;
 pub use support::{
     build_support_bundle, default_bundle_path, SupportBundle, SUPPORT_BUNDLE_VERSION,
+};
+pub use surface::{
+    sidecar_caps, PlatformInfo, PROTOCOL_VERSION, SIDECAR_MAX_AUDIO_SECS, SURFACE_SCHEMA_VERSION,
 };
 pub use window::{PartialClock, PartialWindowPolicy};
 

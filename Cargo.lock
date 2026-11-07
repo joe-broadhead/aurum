@@ -168,6 +168,7 @@ dependencies = [
  "clap_complete",
  "clap_mangen",
  "cpal",
+ "hound",
  "reqwest",
  "serde_json",
  "tempfile",

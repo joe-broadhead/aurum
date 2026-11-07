@@ -251,10 +251,12 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 60
     env:
-      # Private cache for the model: never the runner's shared HOME cache.
-      AURUM_CACHE: ${{ runner.temp }}/aurum-dictation-cache
       AURUM_EVAL_MODEL: tiny-q5_1
     steps:
+      # Private cache for the model: never the runner's shared HOME cache. The `runner` context is not
+      # available in job-level env, so the path is set from RUNNER_TEMP in a step.
+      - name: Private model cache
+        run: echo "AURUM_CACHE=${RUNNER_TEMP}/aurum-dictation-cache" >> "$GITHUB_ENV"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false

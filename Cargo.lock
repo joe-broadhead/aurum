@@ -601,7 +601,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1330,9 +1330,9 @@ dependencies = [
 
 [[package]]
 name = "misaki-rs"
-version = "0.6.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e868d9d070425960dc6c40c84caeaa4e6ebfabb1af454c8f4b9fbe6dbc01ff04"
+checksum = "636ea16993323bcdf8455c0984ca96dc55caf2bf796fe1eca6a016355df37a91"
 dependencies = [
  "fancy-regex",
  "language-tokenizer",
@@ -1342,6 +1342,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1750,7 +1751,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1927,7 +1928,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2245,7 +2246,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
